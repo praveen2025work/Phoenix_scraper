@@ -1,0 +1,86 @@
+# Skills catalog — the "existing skills file" the miner matches frequent prompts against.
+# Levels: global (any desk, any workflow) | asset_class (FX/Rates/...) | capability (workflow stage).
+# Replace or extend with your real catalog; SKILL.md directories are also supported
+# via PHEONIX_SKILLS_DIRS (frontmatter name/description is ingested automatically).
+skills:
+  - name: glossary-explainer
+    level: global
+    description: Explain finance and P&L terminology (FOBO, PLEX, flash, formal, break types).
+    keywords: [explain, what is, meaning, definition, glossary, term]
+    example_prompts:
+      - "What is a FOBO break?"
+      - "Explain the difference between flash and formal P&L"
+
+  - name: data-export-help
+    level: global
+    description: Help users export, download, or format data from the platform.
+    keywords: [export, download, csv, excel, format, report]
+    example_prompts:
+      - "Export today's adjustments to excel"
+      - "Download the recon summary as csv"
+
+  - name: fx-commentary-draft
+    level: asset_class
+    asset_class: fx
+    capability: commentary_signoff
+    description: Draft daily FX P&L commentary grounded in desk data.
+    keywords: [fx, commentary, draft, daily, pnl, currency]
+    example_prompts:
+      - "Draft FX commentary for today's P&L move"
+      - "Write the FX desk sign-off commentary"
+
+  - name: fx-recon-break-triage
+    level: asset_class
+    asset_class: fx
+    capability: fobo_recon
+    description: Triage FX front-office/back-office reconciliation breaks and classify causes.
+    keywords: [fx, break, recon, reconciliation, fobo, mismatch]
+    example_prompts:
+      - "Why is there an FX recon break on the EURUSD book?"
+      - "Classify today's FX FOBO breaks"
+
+  - name: rates-plex-analysis
+    level: asset_class
+    asset_class: rates
+    capability: plex
+    description: Explain rates P&L by risk factor (PLEX) — carry, curve, basis moves.
+    keywords: [rates, plex, risk factor, carry, curve, attribution]
+    example_prompts:
+      - "Run PLEX attribution for the rates desk"
+      - "Explain today's rates P&L by risk factor"
+
+  - name: fobo-break-triage
+    level: capability
+    capability: fobo_recon
+    description: Generic FOBO reconciliation break triage across asset classes.
+    keywords: [fobo, break, reconciliation, recon, unmatched, triage]
+    example_prompts:
+      - "List unexplained FOBO breaks above 100k"
+      - "Which recon breaks are still open?"
+
+  - name: adjustment-suggester
+    level: capability
+    capability: adjustments
+    description: Suggest and validate P&L adjustments against known break categories.
+    keywords: [adjustment, adjust, correction, book, post, amend]
+    example_prompts:
+      - "Suggest an adjustment for the unsettled trade break"
+      - "Post an adjustment for the missing dividend"
+
+  - name: flash-formal-variance
+    level: capability
+    capability: flash_vs_formal
+    description: Compare flash vs formal P&L and explain variances.
+    keywords: [flash, formal, variance, difference, compare]
+    example_prompts:
+      - "Why does flash differ from formal today?"
+      - "Show flash vs formal variance by desk"
+
+  - name: signoff-commentary-draft
+    level: capability
+    capability: commentary_signoff
+    description: Draft sign-off commentary grounded in the day's P&L data.
+    keywords: [commentary, signoff, sign-off, narrative, summary]
+    example_prompts:
+      - "Draft sign-off commentary for the desk"
+      - "Summarize today's P&L for sign-off"

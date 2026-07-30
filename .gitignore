@@ -1,0 +1,20 @@
+# local data store and exports
+data/
+*.db
+*.sqlite3
+
+# python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# env
+.env
+
+# os
+.DS_Store

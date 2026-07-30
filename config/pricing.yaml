@@ -1,0 +1,21 @@
+# Illustrative POC pricing (USD per 1k tokens). Adjust to your negotiated Bedrock rates.
+# Keys are matched against span model_name; longest matching prefix wins.
+models:
+  us.anthropic.claude-sonnet-4-6:
+    input_per_1k: 0.003
+    output_per_1k: 0.015
+  anthropic.claude-sonnet-4-6:
+    input_per_1k: 0.003
+    output_per_1k: 0.015
+  us.anthropic.claude-3-7-sonnet:
+    input_per_1k: 0.003
+    output_per_1k: 0.015
+  anthropic.claude-3-5-haiku:
+    input_per_1k: 0.0008
+    output_per_1k: 0.004
+  us.anthropic.claude-haiku-4-5:
+    input_per_1k: 0.001
+    output_per_1k: 0.005
+default:
+  input_per_1k: 0.003
+  output_per_1k: 0.015
