@@ -51,19 +51,30 @@ bundle: `export SSL_CERT_FILE=/path/to/corp-ca.pem REQUESTS_CA_BUNDLE=/path/to/c
 
 ### 3. Install
 
-**Option A — uv (preferred):**
+**Option A — one-shot script (pip only, no uv needed):**
+
+```bash
+./scripts/office_setup.sh            # offline analysis only
+./scripts/office_setup.sh --live     # + Phoenix client for live scraping
+```
+
+Windows: `scripts\office_setup.bat [--live]`. Either variant finds a Python 3.11+,
+creates `.venv`, installs pinned deps, installs the `pheonix` CLI, and runs the
+offline demo to verify everything works.
+
+**Option B — uv (if approved on your machine):**
 
 ```bash
 make setup                 # = uv sync --all-extras (creates .venv, fetches Python 3.11 if needed)
 ```
 
-**Option B — pip only:**
+**Option C — manual pip:**
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt          # pinned runtime deps
+                                         # (use requirements-live.txt instead for live scraping)
 pip install -e . --no-deps               # installs the `pheonix` command
-pip install arize-phoenix-client~=2.13   # only if you'll scrape live Phoenix
 ```
 
 With pip, skip the Makefile (it shells out to uv) and call `pheonix ...` directly —
@@ -130,7 +141,7 @@ Without `PHEONIX_API_KEY`, `serve` refuses non-loopback hosts by design.
 | --- | --- |
 | `SyntaxError` on install/run | Python is < 3.11 — install 3.11+ or let `uv sync` fetch it |
 | SSL certificate errors | corporate TLS inspection — set `SSL_CERT_FILE`/`REQUESTS_CA_BUNDLE` (step 2) |
-| `Phoenix is not available` from `pheonix scrape` | endpoint unset/wrong, or `arize-phoenix-client` not installed (`uv sync --extra live`) |
+| `Phoenix is not available` from `pheonix scrape` | endpoint unset/wrong, or `arize-phoenix-client` not installed (`uv sync --extra live`, or `pip install -r requirements-live.txt`) |
 | `401` from Phoenix | key expired/revoked — issue a fresh System key in Phoenix Settings |
 | Scrape succeeds but 0 spans | wrong `PHEONIX_PROJECT` name, or the time window: the watermark starts from your first run — wait a cycle or check the project has recent traces |
 | Prompts cluster poorly on real data | tune `PHEONIX_` cluster/match thresholds in `.env` (see `src/phoenix_scraper/config.py` defaults) |
