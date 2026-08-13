@@ -152,9 +152,11 @@ def _flatten_keys(data: dict, prefix: str = "") -> dict[str, Any]:
 def _frame_rows(frame: pd.DataFrame) -> list[dict]:
     if frame.empty:
         return []
-    # get_spans_dataframe indexes on context.span_id; recover it as a column.
+    # get_spans_dataframe indexes on context.span_id; recover it as a column —
+    # unless the response also kept it as a column, where reset_index() would
+    # raise "cannot insert ..., already exists".
     if frame.index.name:
-        frame = frame.reset_index()
+        frame = frame.reset_index(drop=frame.index.name in frame.columns)
     return frame.to_dict("records")
 
 

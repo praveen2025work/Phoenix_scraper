@@ -518,6 +518,30 @@ class TestScrapeOnce:
         assert report.watermark_after is None
         assert tmp_store.get_watermark(f"phoenix:{PROJECT}") is None
 
+    def test_span_id_as_both_index_and_column(self, tmp_store: Store, tmp_path: Path) -> None:
+        # Some Phoenix responses index on context.span_id AND keep it as a column;
+        # a plain reset_index() then raises "cannot insert ..., already exists".
+        settings = make_settings(tmp_path, project=PROJECT)
+        frame = pd.DataFrame([flat_row(i) for i in range(3)])
+        frame = frame.set_index("context.span_id", drop=False)
+        client = FakeWrapper([frame])
+
+        report = scrape_once(tmp_store, client, settings)
+
+        assert report.pulled == 3
+        assert report.inserted == 3
+
+    def test_span_id_only_in_index(self, tmp_store: Store, tmp_path: Path) -> None:
+        # The other documented shape: span_id lives only in the index.
+        settings = make_settings(tmp_path, project=PROJECT)
+        frame = pd.DataFrame([flat_row(i) for i in range(3)])
+        frame = frame.set_index("context.span_id", drop=True)
+        client = FakeWrapper([frame])
+
+        report = scrape_once(tmp_store, client, settings)
+
+        assert report.inserted == 3
+
     def test_since_bounds_first_run(self, tmp_store: Store, tmp_path: Path) -> None:
         settings = make_settings(tmp_path, project=PROJECT)
         client = FakeWrapper([pd.DataFrame([flat_row(0)])])
