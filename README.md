@@ -128,66 +128,100 @@ pheonix report
 
 Your browser trusts the internal Phoenix cert via the OS trust store, but Python
 uses its own bundled CA list (`certifi`), which doesn't include your corporate CA.
-The HTTP client used for scraping (httpx) honors `SSL_CERT_FILE`, so no code
-change is needed:
+The fix is to give the app your corporate **root CA** certificate.
 
-**Which certificate do you need?** The corporate **root CA** — the top of the
-chain. Prefer it over an intermediate: Python only trusts chains anchored at a
-self-signed root by default, and one root CA typically covers every internal
-service, not just Phoenix. The file must be **PEM** format (text starting with
-`-----BEGIN CERTIFICATE-----`); `.pem`/`.crt`/`.cer` extensions are all fine.
-If you have several certs (root + intermediates), concatenate the PEM blocks
-into one file — a bundle works too.
+**Always start with `pheonix doctor`.** It prints exactly what the app sees —
+endpoint, whether a CA bundle was picked up, the certificates inside it (up to
+the first 10, with whether a self-signed **root** is present), and a live TLS
+probe against your endpoint with hints when it fails. Re-run it after every
+step below; when the probe says `OK`, the TLS problem is solved and
+`pheonix scrape` will no longer fail with `CERTIFICATE_VERIFY_FAILED`
+(authentication or project-name issues are separate — see Troubleshooting).
 
-1. Get the CA certificate — any one of these:
+##### Extract and install the certificate, one step at a time
 
-   - **Ask IT** for the "corporate root CA certificate in PEM / Base64 format".
-   - **Export from your browser** (works because the Phoenix UI already loads):
-     open the Phoenix URL → click the padlock → *Connection is secure* →
-     *Certificate is valid* → **Details** tab → select the **top-most** entry in
-     the certificate hierarchy (the root) → **Export** → save as
-     *Base64-encoded ASCII / single certificate*.
-   - **Windows certificate store** (corp root is usually deployed there) — in
-     PowerShell, replace `<YourCompany>` with a word from your company's CA name:
+1. **Find your host and port** from `PHOENIX_COLLECTOR_ENDPOINT`:
+   `https://phoenix.corp.example` → host `phoenix.corp.example`, port `443`
+   (use the explicit port if the URL has one, e.g. `https://host:8443`).
 
-     ```powershell
-     $cert = (Get-ChildItem Cert:\LocalMachine\Root | Where-Object Subject -match "<YourCompany>")[0]
-     "-----BEGIN CERTIFICATE-----`n" + [Convert]::ToBase64String($cert.RawData,'InsertLineBreaks') + "`n-----END CERTIFICATE-----" |
-       Set-Content phoenix-ca.pem
-     ```
-
-     (Browse candidates first with `certmgr.msc` → *Trusted Root Certification
-     Authorities* if you're not sure of the name.)
-   - **macOS Keychain**: Keychain Access → *System* keychain → find the corporate
-     CA → File → Export Items… → format *Privacy Enhanced Mail (.pem)*.
-   - **Extract from the server** (last resort — servers often omit the root, so
-     this may yield an incomplete chain):
-
-     ```bash
-     openssl s_client -showcerts -connect phoenix.<internal-host>:443 </dev/null 2>/dev/null \
-       | awk '/BEGIN CERTIFICATE/,/END CERTIFICATE/' > phoenix-ca.pem
-     ```
-
-     (hostname and port from your Phoenix URL — no `https://` prefix here)
-
-2. Drop the file into the project as `certs/phoenix-ca.pem` — done. The scraper
-   picks it up automatically on the next run; no environment variables, no extra
-   installs. (Different location? Set `PHEONIX_CA_BUNDLE=/path/to/ca.pem` in
-   `.env`. The file stays local — `certs/*.pem` is gitignored.)
+2. **Extract the certificate chain the server presents** (run from the project
+   root so the file lands in the right place):
 
    ```bash
-   pheonix scrape      # should now connect cleanly
+   openssl s_client -showcerts -connect phoenix.corp.example:443 </dev/null 2>/dev/null \
+     | awk '/BEGIN CERTIFICATE/,/END CERTIFICATE/' > certs/phoenix-ca.pem
    ```
 
-   Alternative without touching the project: export `SSL_CERT_FILE` in your
-   shell (`export SSL_CERT_FILE=/full/path/ca.pem`, Windows
-   `set SSL_CERT_FILE=C:\path\ca.pem`). Note this one must be a **shell**
-   variable — in `.env` only `PHEONIX_CA_BUNDLE` works.
+   Expected: `certs/phoenix-ca.pem` containing one or more
+   `-----BEGIN CERTIFICATE-----` blocks. If your original error said
+   *"self-signed certificate in certificate chain"*, the server **does** send its
+   root, so this command captures it. (No `openssl` on Windows? Git Bash ships
+   one — or use the browser/PowerShell exports below.)
 
-3. Still failing? Servers often don't send the root certificate, so the extracted
-   chain may be incomplete — ask IT for the actual root CA PEM. As a last resort
-   **on a trusted internal network only**, set `PHEONIX_TLS_VERIFY=false` in
-   `.env` to disable certificate verification for the Phoenix connection.
+3. **Check the root is in the file:**
+
+   ```bash
+   openssl crl2pkcs7 -nocrl -certfile certs/phoenix-ca.pem | openssl pkcs7 -print_certs -noout
+   ```
+
+   Expected: at least one entry whose `subject` and `issuer` are **identical** —
+   that's the root. `pheonix doctor` shows the same thing as `[ROOT (self-signed)]`
+   and warns when it's missing.
+
+4. **Verify pickup and connectivity:**
+
+   ```bash
+   pheonix doctor
+   ```
+
+   Expected: the `CA bundle:` line shows `certs/phoenix-ca.pem` with your certs
+   listed, and `connection probe: OK`. If the bundle line says `none`, you're
+   not running from the directory containing `certs/`.
+
+5. **Run the scraper:**
+
+   ```bash
+   pheonix scrape
+   ```
+
+**Other ways to obtain the certificate** (if the `openssl` extraction isn't
+possible — however you get the file, put it at `certs/phoenix-ca.pem` and go
+back to step 4). You want the corporate **root CA** — the top of the chain —
+in **PEM** format (text starting with `-----BEGIN CERTIFICATE-----`;
+`.pem`/`.crt`/`.cer` extensions are all fine, and concatenating several PEM
+blocks into one file works):
+
+- **Ask IT** for the "corporate root CA certificate in PEM / Base64 format".
+- **Export from your browser** (works because the Phoenix UI already loads):
+  open the Phoenix URL → click the padlock → *Connection is secure* →
+  *Certificate is valid* → **Details** tab → select the **top-most** entry in
+  the certificate hierarchy (the root) → **Export** → save as
+  *Base64-encoded ASCII / single certificate*.
+- **Windows certificate store** (corp root is usually deployed there) — in
+  PowerShell from the project root, replace `<YourCompany>` with a word from
+  your company's CA name:
+
+  ```powershell
+  $cert = (Get-ChildItem Cert:\LocalMachine\Root | Where-Object Subject -match "<YourCompany>")[0]
+  "-----BEGIN CERTIFICATE-----`n" + [Convert]::ToBase64String($cert.RawData,'InsertLineBreaks') + "`n-----END CERTIFICATE-----" |
+    Set-Content certs\phoenix-ca.pem
+  ```
+
+  (Browse candidates first with `certmgr.msc` → *Trusted Root Certification
+  Authorities* if you're not sure of the name.)
+- **macOS Keychain**: Keychain Access → *System* keychain → find the corporate
+  CA → File → Export Items… → format *Privacy Enhanced Mail (.pem)*.
+
+**Different location or name?** Set `PHEONIX_CA_BUNDLE=/path/to/ca.pem` in
+`.env`. The file stays local either way — `certs/*.pem` is gitignored. A shell
+`SSL_CERT_FILE` export also works (shell only — in `.env` only
+`PHEONIX_CA_BUNDLE` is read).
+
+**Still failing?** Re-run `pheonix doctor` and read its hints. If the bundle
+shows no `[ROOT (self-signed)]` entry, ask IT for the actual root CA PEM. As a
+last resort **on a trusted internal network only**, set
+`PHEONIX_TLS_VERIFY=false` in `.env` to disable certificate verification for
+the Phoenix connection (the scraper logs a warning so it is never silent).
 
 No network path to Phoenix? Export spans from the Phoenix UI/API as JSONL on a
 machine that has access, transfer the file, and run `pheonix ingest spans.jsonl`.
@@ -219,7 +253,7 @@ Without `PHEONIX_API_KEY`, `serve` refuses non-loopback hosts by design.
 | --- | --- |
 | `SyntaxError` on install/run | Python is < 3.11 — install 3.11+ or let `uv sync` fetch it |
 | SSL errors during `pip install` | corporate TLS inspection — set `SSL_CERT_FILE`/`REQUESTS_CA_BUNDLE` (step 2) |
-| `CERTIFICATE_VERIFY_FAILED` from `pheonix scrape` | Python doesn't trust the internal Phoenix cert — drop the corporate root CA at `certs/phoenix-ca.pem` (see the SSL note in step 5) |
+| `CERTIFICATE_VERIFY_FAILED` from `pheonix scrape` | run `pheonix doctor`, then drop the corporate root CA at `certs/phoenix-ca.pem` (walkthrough in the "HTTPS endpoint" section) |
 | `Phoenix is not available` from `pheonix scrape` | endpoint unset/wrong (did you edit `.env.example` instead of `.env`?), or `arize-phoenix-client` not installed (`uv sync --extra live`, or `pip install -r requirements-live.txt`) |
 | `401` from Phoenix | key expired/revoked — issue a fresh System key in Phoenix Settings |
 | Scrape succeeds but 0 spans | wrong `PHEONIX_PROJECT` name, or the time window: the watermark starts from your first run — wait a cycle or check the project has recent traces |
@@ -262,7 +296,7 @@ Two sources, merged (catalog wins on name collisions):
 ## CLI
 
 ```bash
-uv run pheonix demo|seed|scrape|ingest|analyze|report|serve
+uv run pheonix demo|seed|scrape|ingest|analyze|report|serve|doctor
 uv run pheonix export --what spans|clusters|matches|proposals|sessions \
                       --fmt csv|json|parquet \
                       [--project X] [--start ...] [--end ...] [--stage ...] \
@@ -296,7 +330,7 @@ src/phoenix_scraper/
   costs/sessions  token->cost from pricing.yaml, session derivation
   storage         SQLite store (spans, state, analysis results)
   pipeline/cli/api        orchestration, Typer CLI, FastAPI service
-tests/            203 tests, ~91% coverage (`make test`)
+tests/            240+ tests, ~90% coverage (`make test`)
 ```
 
 ## POC limitations (deliberate)

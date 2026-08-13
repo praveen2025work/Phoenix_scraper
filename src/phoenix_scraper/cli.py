@@ -1,5 +1,6 @@
-"""Typer CLI: demo, seed, scrape, ingest, analyze, report, export, serve."""
+"""Typer CLI: demo, seed, scrape, ingest, analyze, report, export, serve, doctor."""
 
+import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -20,6 +21,17 @@ app = typer.Typer(
     help="Mine Arize Phoenix traces for frequent prompts, costs, and skill gaps.",
     no_args_is_help=True,
 )
+
+
+@app.callback()
+def _init_logging() -> None:
+    """Surface this package's INFO logs (e.g. which CA bundle TLS trusts)."""
+    pkg_logger = logging.getLogger("phoenix_scraper")
+    if not pkg_logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
+        pkg_logger.addHandler(handler)
+        pkg_logger.setLevel(logging.INFO)
 
 _TOP_N = 10
 _PROMPT_PREVIEW_CHARS = 70
@@ -202,6 +214,25 @@ def export(
             df = store.sessions_frame()
     path = export_mod.export_frame(df, settings.export_dir, what.value, fmt.value)
     typer.echo(f"Exported {len(df)} {what.value} rows to {path}")
+
+
+@app.command()
+def doctor() -> None:
+    """Print connection/TLS diagnostics: endpoint, CA bundle contents, live probe."""
+    from pydantic import ValidationError
+
+    from . import diagnostics
+
+    try:
+        settings = _settings()
+    except ValidationError as exc:
+        for error in exc.errors():
+            loc = ".".join(str(part) for part in error["loc"]) or "settings"
+            typer.secho(f"config: INVALID — {loc}: {error['msg']} (check .env)",
+                        fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1) from None
+    for line in diagnostics.doctor_report(settings):
+        typer.echo(line)
 
 
 @app.command()
