@@ -16,7 +16,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-live = ["arize-phoenix-client~=2.13"]
+live = ["arize-phoenix-client~=2.13", "certifi"]
 
 [dependency-groups]
 dev = [

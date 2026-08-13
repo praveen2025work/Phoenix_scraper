@@ -76,6 +76,7 @@ def make_settings(tmp_path: Path, **kwargs) -> Settings:
 def _clean_phoenix_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("PHOENIX_COLLECTOR_ENDPOINT", raising=False)
     monkeypatch.delenv("PHOENIX_API_KEY", raising=False)
+    monkeypatch.delenv("PHOENIX_CLIENT_HEADERS", raising=False)
 
 
 # ---------------------------------------------------------------------------
@@ -308,6 +309,46 @@ class TestPhoenixClientWrapper:
         assert isinstance(http_client, httpx.Client)
         assert str(http_client.base_url).rstrip("/") == "https://phx:6006"
         assert http_client.headers["authorization"] == "Bearer sekret"
+        assert http_client.is_closed  # no connection-pool leak per fetch
+
+    def test_custom_http_client_carries_env_client_headers(
+        self, tmp_path: Path, fake_phoenix, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import certifi
+        import httpx
+
+        monkeypatch.setenv("PHOENIX_CLIENT_HEADERS", "x-proxy-auth=abc123")
+        FakeClient.spans_api = FakeSpansAPI([pd.DataFrame()])
+        settings = make_settings(
+            tmp_path,
+            PHOENIX_COLLECTOR_ENDPOINT="https://phx:6006",
+            ca_bundle=certifi.where(),
+        )
+
+        PhoenixClientWrapper(settings).fetch_spans(PROJECT, None, None, 10)
+
+        assert FakeClient.last_instance is not None
+        http_client = FakeClient.last_instance.kwargs["http_client"]
+        assert isinstance(http_client, httpx.Client)
+        assert http_client.headers["x-proxy-auth"] == "abc123"
+
+    def test_custom_http_client_closed_even_when_all_retries_fail(
+        self, tmp_path: Path, fake_phoenix
+    ) -> None:
+        import certifi
+
+        FakeClient.spans_api = FakeSpansAPI([], failures=99)
+        settings = make_settings(
+            tmp_path,
+            PHOENIX_COLLECTOR_ENDPOINT="https://phx:6006",
+            ca_bundle=certifi.where(),
+        )
+
+        with pytest.raises(RuntimeError):
+            PhoenixClientWrapper(settings).fetch_spans(PROJECT, None, None, 10)
+
+        assert FakeClient.last_instance is not None
+        assert FakeClient.last_instance.kwargs["http_client"].is_closed
 
 
 class TestBlankEnvValues:

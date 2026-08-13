@@ -778,6 +778,7 @@ dependencies = [
 [package.optional-dependencies]
 live = [
     { name = "arize-phoenix-client" },
+    { name = "certifi" },
 ]
 
 [package.dev-dependencies]
@@ -791,6 +792,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "arize-phoenix-client", marker = "extra == 'live'", specifier = "~=2.13" },
+    { name = "certifi", marker = "extra == 'live'" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "pandas", specifier = ">=2.2" },
     { name = "pyarrow", specifier = ">=17.0" },
