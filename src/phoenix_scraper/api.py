@@ -5,23 +5,26 @@ import secrets
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Annotated, Any, Literal
 
 import pandas as pd
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Security
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.security.api_key import APIKeyHeader
 
-from . import __version__
+from . import __version__, insights, insights_llm, insights_users
 from .config import Settings, load_settings
 from .costs import cost_summary
 from .export import frame_to_csv_text
 from .fixtures import seed_demo
 from .models import QueryFilters
 from .phoenix_client import PhoenixClientWrapper
-from .pipeline import run_analysis
+from .pipeline import ANALYSIS_SPAN_LIMIT, run_analysis
 from .scraper import scrape_once
 from .storage import Store
+
+_DASHBOARD_PATH = Path(__file__).parent / "static" / "dashboard.html"
 
 Fmt = Literal["json", "csv"]
 
@@ -78,9 +81,171 @@ def create_app(settings: Settings) -> FastAPI:
 
     FiltersDep = Annotated[QueryFilters, Depends(span_filters)]
 
+    def analysis_filters(
+        project: str | None = None,
+        start: datetime | None = None,
+        end: datetime | None = None,
+        stage: str | None = None,
+        asset_class: str | None = None,
+        model_name: str | None = None,
+        session_id: str | None = None,
+        user_id: str | None = None,
+        search: str | None = None,
+        # Analytics must see the same corpus the analysis ran over — a 1000-span
+        # default here silently skews every panel above 1000 spans.
+        limit: int = Query(default=ANALYSIS_SPAN_LIMIT, ge=1, le=1_000_000),
+    ) -> QueryFilters:
+        return span_filters(
+            project, start, end, stage, asset_class, model_name, session_id,
+            user_id, search, limit,
+        )
+
+    AnalysisFiltersDep = Annotated[QueryFilters, Depends(analysis_filters)]
+
+    @app.middleware("http")
+    async def security_guard(request, call_next):
+        # CSRF: browsers attach Origin to cross-site POSTs; reject any that
+        # don't match the host we're serving on. Non-browser clients (curl,
+        # scripts) send no Origin and pass through.
+        if request.method not in ("GET", "HEAD", "OPTIONS"):
+            origin = request.headers.get("origin")
+            if origin is not None:
+                from urllib.parse import urlsplit
+
+                if urlsplit(origin).netloc != request.headers.get("host", ""):
+                    return JSONResponse(
+                        status_code=403,
+                        content={"detail": "Cross-origin request rejected"},
+                    )
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault(
+            "Content-Security-Policy",
+            "default-src 'self'; script-src 'self' 'unsafe-inline'; "
+            "style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+            "connect-src 'self'; frame-ancestors 'none'",
+        )
+        return response
+
     @app.get("/health")
     def health() -> dict[str, str]:
         return {"status": "ok", "version": __version__}
+
+    @app.get("/", include_in_schema=False)
+    def dashboard() -> HTMLResponse:
+        # Static shell only — every piece of data it shows comes from the
+        # protected endpoints below, so auth still applies.
+        return HTMLResponse(_DASHBOARD_PATH.read_text(encoding="utf-8"))
+
+    @protected.get("/overview")
+    def overview(filters: AnalysisFiltersDep) -> dict[str, Any]:
+        with open_store() as store:
+            spans = store.spans_frame(filters)
+            n_clusters = len(store.clusters_frame(limit=100_000))
+            n_matches = len(store.matches_frame())
+            n_proposals = len(store.proposals_frame())
+        if spans.empty:
+            return {"n_spans": 0, "n_clusters": n_clusters, "n_matches": n_matches,
+                    "n_proposals": n_proposals}
+        errors = insights.error_mask(spans["status_code"])
+        return {
+            "n_spans": int(len(spans)),
+            "n_traces": int(spans["trace_id"].nunique()),
+            "n_sessions": int(spans["session_id"].dropna().nunique()),
+            "n_users": int(spans["user_id"].dropna().nunique()),
+            "total_tokens": int(spans["tokens_total"].fillna(0).sum()),
+            "total_cost_usd": float(spans["cost_usd"].fillna(0.0).sum()),
+            "error_rate": float(errors.mean()),
+            "avg_latency_ms": float(spans["latency_ms"].dropna().mean())
+            if spans["latency_ms"].notna().any()
+            else None,
+            "first_span": str(spans["start_time"].min()),
+            "last_span": str(spans["start_time"].max()),
+            "n_clusters": n_clusters,
+            "n_matches": n_matches,
+            "n_proposals": n_proposals,
+        }
+
+    @protected.get("/insights/traces")
+    def insights_traces(filters: AnalysisFiltersDep, fmt: Fmt = "json") -> Response:
+        with open_store() as store:
+            df = insights.trace_profiles(store.spans_frame(filters))
+        return _frame_response(df, fmt, "trace_profiles")
+
+    @protected.get("/insights/questions")
+    def insights_questions(filters: AnalysisFiltersDep, fmt: Fmt = "json") -> Response:
+        with open_store() as store:
+            df = insights.question_taxonomy(store.spans_frame(filters))
+        return _frame_response(df, fmt, "question_taxonomy")
+
+    @protected.get("/insights/friction")
+    def insights_friction(filters: AnalysisFiltersDep, fmt: Fmt = "json") -> Response:
+        with open_store() as store:
+            df = insights.session_friction(store.spans_frame(filters))
+        return _frame_response(df, fmt, "session_friction")
+
+    @protected.get("/insights/efficiency")
+    def insights_efficiency(filters: AnalysisFiltersDep, fmt: Fmt = "json") -> Response:
+        with open_store() as store:
+            df = insights.cluster_efficiency(
+                store.spans_frame(filters),
+                store.clusters_frame(limit=100_000),
+                store.cluster_members_frame(),
+            )
+        return _frame_response(df, fmt, "cluster_efficiency")
+
+    @protected.get("/users")
+    def users_list(filters: AnalysisFiltersDep, fmt: Fmt = "json") -> Response:
+        with open_store() as store:
+            df = insights_users.user_profiles(store.spans_frame(filters))
+        return _frame_response(df, fmt, "users")
+
+    @protected.get("/users/questions")
+    def users_questions(filters: AnalysisFiltersDep, fmt: Fmt = "json") -> Response:
+        with open_store() as store:
+            df = insights_users.user_question_matrix(store.spans_frame(filters))
+        return _frame_response(df, fmt, "user_questions")
+
+    @protected.get("/insights/activity")
+    def insights_activity(filters: AnalysisFiltersDep, fmt: Fmt = "json") -> Response:
+        with open_store() as store:
+            df = insights_users.daily_activity(store.spans_frame(filters))
+        return _frame_response(df, fmt, "daily_activity")
+
+    @protected.get("/insights/tools")
+    def insights_tools(filters: AnalysisFiltersDep, fmt: Fmt = "json") -> Response:
+        with open_store() as store:
+            df = insights_llm.tool_usage(store.spans_frame(filters))
+        return _frame_response(df, fmt, "tool_usage")
+
+    @protected.get("/insights/models")
+    def insights_models(filters: AnalysisFiltersDep, fmt: Fmt = "json") -> Response:
+        with open_store() as store:
+            df = insights_llm.model_usage(store.spans_frame(filters))
+        return _frame_response(df, fmt, "model_usage")
+
+    @protected.get("/insights/flows")
+    def insights_flows(filters: AnalysisFiltersDep, fmt: Fmt = "json") -> Response:
+        with open_store() as store:
+            df = insights_llm.agent_flows(store.spans_frame(filters))
+        return _frame_response(df, fmt, "agent_flows")
+
+    @protected.get("/insights/breakdown")
+    def insights_breakdown(filters: AnalysisFiltersDep, fmt: Fmt = "json") -> Response:
+        with open_store() as store:
+            df = insights_llm.stage_asset_breakdown(store.spans_frame(filters))
+        return _frame_response(df, fmt, "stage_asset_breakdown")
+
+    @protected.get("/insights/skill-health")
+    def insights_skill_health(filters: AnalysisFiltersDep, fmt: Fmt = "json") -> Response:
+        with open_store() as store:
+            efficiency = insights.cluster_efficiency(
+                store.spans_frame(filters),
+                store.clusters_frame(limit=100_000),
+                store.cluster_members_frame(),
+            )
+            df = insights.skill_health(efficiency, store.matches_frame())
+        return _frame_response(df, fmt, "skill_health")
 
     @protected.post("/demo/seed")
     def demo_seed(n_sessions: int = 60, seed: int = 42) -> dict[str, Any]:

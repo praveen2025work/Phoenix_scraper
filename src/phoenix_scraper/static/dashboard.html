@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pheonix — prompt mining dashboard</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page:        #f9f9f7;
+    --surface:     #fcfcfb;
+    --ink:         #0b0b0b;
+    --ink-2:       #52514e;
+    --muted:       #898781;
+    --grid:        #e1e0d9;
+    --border:      rgba(11,11,11,0.10);
+    --series-1:    #2a78d6;
+    --seq-250:     #86b6ef;
+    --good:        #0ca30c;
+    --good-text:   #006300;
+    --serious:     #ec835a;
+    --critical:    #d03b3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --page:      #0d0d0d;
+      --surface:   #1a1a19;
+      --ink:       #ffffff;
+      --ink-2:     #c3c2b7;
+      --muted:     #898781;
+      --grid:      #2c2c2a;
+      --border:    rgba(255,255,255,0.10);
+      --series-1:  #3987e5;
+      --seq-250:   #184f95;
+      --good-text: #0ca30c;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--page); color: var(--ink);
+    padding: 20px; max-width: 1240px; margin: 0 auto;
+  }
+  header { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+  header h1 { font-size: 20px; font-weight: 650; }
+  header .sub { color: var(--ink-2); font-size: 13px; }
+  header .controls { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  input[type=password], select {
+    background: var(--surface); color: var(--ink); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 10px; font-size: 13px;
+  }
+  input[type=password] { width: 180px; }
+  button {
+    background: var(--series-1); border: none; color: #fff; font-size: 13px;
+    padding: 7px 14px; border-radius: 6px; cursor: pointer; font-weight: 600;
+  }
+  #status { font-size: 12px; color: var(--muted); min-height: 16px; margin-bottom: 10px; }
+  #status.error { color: var(--critical); }
+
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 20px; }
+  .kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+  .kpi .label { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  .kpi .value { font-size: 26px; font-weight: 650; margin-top: 2px; }
+
+  section { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; margin-bottom: 18px; }
+  section h2 { font-size: 15px; font-weight: 650; margin-bottom: 2px; }
+  section .hint { font-size: 12.5px; color: var(--ink-2); margin-bottom: 12px; }
+  .empty { color: var(--muted); font-size: 13px; padding: 10px 0; }
+
+  /* horizontal bar chart */
+  .bars { display: grid; grid-template-columns: max-content 1fr max-content; gap: 2px 10px; align-items: center; }
+  .bars .name { font-size: 13px; color: var(--ink-2); text-align: right; padding-right: 2px; }
+  .bars .track { position: relative; height: 18px; }
+  .bars .bar {
+    position: absolute; inset: 2px auto 2px 0; background: var(--series-1);
+    border-radius: 0 4px 4px 0; min-width: 2px;
+  }
+  .bars .bar:hover { filter: brightness(1.15); }
+  .bars .val { font-size: 12.5px; font-variant-numeric: tabular-nums; color: var(--ink-2); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: var(--muted); font-weight: 600; font-size: 11.5px;
+       text-transform: uppercase; letter-spacing: .03em; padding: 6px 10px 6px 0;
+       border-bottom: 1px solid var(--grid); }
+  td { padding: 7px 10px 7px 0; border-bottom: 1px solid var(--grid); vertical-align: top; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td.prompt { max-width: 420px; overflow-wrap: anywhere; color: var(--ink); }
+  tr:hover td { background: color-mix(in srgb, var(--series-1) 6%, transparent); }
+
+  .meter { display: inline-block; width: 90px; height: 8px; vertical-align: middle;
+           background: var(--grid); border-radius: 4px; overflow: hidden; margin-right: 8px; }
+  .meter i { display: block; height: 100%; background: var(--series-1); border-radius: 0 4px 4px 0; }
+
+  .badge { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; }
+  .badge.review   { color: var(--critical); }
+  .badge.effective{ color: var(--good-text); }
+  .badge.long     { color: var(--critical); }
+  .badge.ok       { color: var(--muted); font-weight: 400; }
+
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 980px) { .cols { grid-template-columns: 1fr; } }
+  .scroll-x { overflow-x: auto; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Pheonix</h1>
+  <span class="sub">what users ask · where the agent works too hard · which skills to build or fix</span>
+  <div class="controls">
+    <select id="userfilter" title="Filter every panel to one user"><option value="">All users</option></select>
+    <input type="password" id="apikey" placeholder="X-API-Key (if required)" autocomplete="off">
+    <button id="refresh">Refresh</button>
+  </div>
+</header>
+<div id="status">loading…</div>
+
+<div class="kpis" id="kpis"></div>
+
+<div class="cols">
+  <section>
+    <h2>What users are asking</h2>
+    <div class="hint">Every user turn, classified by intent — counts per question type, with token cost.</div>
+    <div id="questions"></div>
+  </section>
+  <section>
+    <h2>Activity by day</h2>
+    <div class="hint">Asks per day, with sessions and cost on hover.</div>
+    <div id="activity"></div>
+  </section>
+</div>
+
+<section>
+  <h2>Users — who asks what</h2>
+  <div class="hint">Per-user activity, spend, friction, and their dominant intents and prompt patterns.
+    Use the user selector in the header to focus every panel on one person.</div>
+  <div class="scroll-x" id="users"></div>
+</section>
+
+<section>
+  <h2>What the LLM is doing — agent flows</h2>
+  <div class="hint">The step sequences the agent runs per ask (consecutive repeats collapsed).
+    Long tool chains on frequent asks are the routes worth shortcutting with a skill.</div>
+  <div class="scroll-x" id="flows"></div>
+</section>
+
+<div class="cols">
+  <section>
+    <h2>Tool usage</h2>
+    <div class="hint">Which tools the agent calls, how often they fail, and how slow they are.</div>
+    <div class="scroll-x" id="tools"></div>
+  </section>
+  <section>
+    <h2>Model usage</h2>
+    <div class="hint">Calls, tokens in/out, and cost per model.</div>
+    <div class="scroll-x" id="models"></div>
+  </section>
+</div>
+
+<section>
+  <h2>Workflow stage × asset class</h2>
+  <div class="hint">Where the asks come from, when spans carry
+    <code>metadata.workflow_stage</code> / <code>metadata.asset_class</code> attributes.</div>
+  <div class="scroll-x" id="breakdown"></div>
+</section>
+
+<section>
+  <h2>Where the agent works too hard — build a skill here first</h2>
+  <div class="hint">Prompt patterns ranked by opportunity (asks × tokens per ask). <b>Long route</b> means
+    the agent takes over 1.5× the steps of the average trace to answer this (flagged from 3 asks up) —
+    the strongest signal that a dedicated skill (or a fix to a broken one) would pay off.</div>
+  <div class="scroll-x" id="efficiency"></div>
+</section>
+
+<div class="cols">
+  <section>
+    <h2>Top prompts</h2>
+    <div class="hint">Most frequent normalized prompt patterns (always all users — clusters are computed globally by <code>pheonix analyze</code>).</div>
+    <div class="scroll-x" id="prompts"></div>
+  </section>
+  <section>
+    <h2>High-friction sessions</h2>
+    <div class="hint">Users re-asking the same question, errors, empty answers.</div>
+    <div class="scroll-x" id="friction"></div>
+  </section>
+</div>
+
+<div class="cols">
+  <section>
+    <h2>Skill health</h2>
+    <div class="hint">Matched skills where the agent still takes long routes are flagged
+      <b>⚠ review</b> — the skill may be stale, wrong, or not being picked up.</div>
+    <div class="scroll-x" id="skillhealth"></div>
+  </section>
+  <section>
+    <h2>Proposed new skills</h2>
+    <div class="hint">Frequent asks not covered by any existing skill.</div>
+    <div class="scroll-x" id="gaps"></div>
+  </section>
+</div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const fmtInt = n => n == null ? "–" : Number(n).toLocaleString();
+const fmtNum = (n, d=1) => n == null || Number.isNaN(Number(n)) ? "–" : Number(n).toFixed(d);
+const fmtUsd = n => n == null ? "–" : "$" + Number(n).toFixed(2);
+const clip = (s, n=90) => { s = String(s ?? ""); return s.length > n ? s.slice(0, n-1) + "…" : s; };
+
+const keyInput = $("apikey");
+keyInput.value = sessionStorage.getItem("pheonix_api_key") || "";
+const userFilter = $("userfilter");
+
+function apiUrl(path, params = {}) {
+  const url = new URL(path, window.location.origin);
+  const user = userFilter.value;
+  if (user) url.searchParams.set("user_id", user);
+  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+  return url.pathname + url.search;
+}
+
+async function api(path, params) {
+  const headers = {};
+  const key = keyInput.value.trim();
+  if (key) headers["X-API-Key"] = key;
+  const response = await fetch(apiUrl(path, params), { headers });
+  if (!response.ok) throw new Error(path + " → HTTP " + response.status);
+  return response.json();
+}
+
+function fillUserFilter(users) {
+  const current = userFilter.value;
+  const names = users.map(u => u.user_id);
+  userFilter.innerHTML = `<option value="">All users</option>` +
+    names.map(u => `<option value="${esc(u)}"${u === current ? " selected" : ""}>${esc(u)}</option>`).join("");
+}
+
+function kpiTile(label, value) {
+  return `<div class="kpi"><div class="label">${esc(label)}</div><div class="value">${value}</div></div>`;
+}
+
+function renderKpis(o) {
+  $("kpis").innerHTML =
+    kpiTile("Spans", fmtInt(o.n_spans)) +
+    kpiTile("Traces (asks)", fmtInt(o.n_traces)) +
+    kpiTile("Sessions", fmtInt(o.n_sessions)) +
+    kpiTile("Users", fmtInt(o.n_users)) +
+    kpiTile("Tokens", fmtInt(o.total_tokens)) +
+    kpiTile("Cost", fmtUsd(o.total_cost_usd)) +
+    kpiTile("Error rate", o.error_rate == null ? "–" : (o.error_rate * 100).toFixed(1) + "%") +
+    kpiTile("Prompt patterns", fmtInt(o.n_clusters));
+}
+
+function renderQuestions(rows) {
+  if (!rows.length) { $("questions").innerHTML = `<div class="empty">No user turns yet — scrape first.</div>`; return; }
+  const max = Math.max(...rows.map(r => r.count));
+  $("questions").innerHTML = `<div class="bars">` + rows.map(r => `
+    <div class="name">${esc(r.question_type)}</div>
+    <div class="track"><div class="bar" style="width:${Math.max(1, 100 * r.count / max)}%"
+      title="${esc(r.question_type)}: ${fmtInt(r.count)} asks · ${fmtInt(r.n_sessions)} sessions · avg ${fmtNum(r.avg_tokens, 0)} tokens — e.g. ${esc(clip(r.example, 140))}"></div></div>
+    <div class="val">${fmtInt(r.count)}</div>`).join("") + `</div>`;
+}
+
+function table(headers, rowsHtml) {
+  return `<table><thead><tr>${headers.map(h =>
+    `<th${h.startsWith("#") ? ' class="num"' : ""}>${esc(h.replace(/^#/, ""))}</th>`).join("")}</tr></thead>
+    <tbody>${rowsHtml}</tbody></table>`;
+}
+
+function renderActivity(rows) {
+  if (!rows.length) { $("activity").innerHTML = `<div class="empty">No activity yet.</div>`; return; }
+  const max = Math.max(...rows.map(r => r.n_asks));
+  const recent = rows.slice(-21);
+  $("activity").innerHTML = `<div class="bars">` + recent.map(r => `
+    <div class="name">${esc(r.day)}</div>
+    <div class="track"><div class="bar" style="width:${Math.max(1, 100 * r.n_asks / max)}%"
+      title="${esc(r.day)}: ${fmtInt(r.n_asks)} asks · ${fmtInt(r.n_sessions)} sessions · ${fmtInt(r.n_users)} users · ${fmtUsd(r.total_cost_usd)}"></div></div>
+    <div class="val">${fmtInt(r.n_asks)}</div>`).join("") + `</div>`;
+}
+
+function renderUsers(rows) {
+  if (!rows.length) { $("users").innerHTML = `<div class="empty">No user ids on spans — the agent must emit <code>user.id</code> span attributes.</div>`; return; }
+  $("users").innerHTML = table(
+    ["User", "#Asks", "#Sessions", "#Re-asks", "#Errors", "#Route len", "#Tokens", "#Cost", "Top intents", "Top prompt patterns"],
+    rows.slice(0, 25).map(r => `<tr>
+      <td>${esc(r.user_id)}</td>
+      <td class="num">${fmtInt(r.n_asks)}</td>
+      <td class="num">${fmtInt(r.n_sessions)}</td>
+      <td class="num">${fmtInt(r.n_reformulations)}</td>
+      <td class="num">${fmtInt(r.n_errors)}</td>
+      <td class="num">${fmtNum(r.avg_route_len)}</td>
+      <td class="num">${fmtInt(r.total_tokens)}</td>
+      <td class="num">${fmtUsd(r.total_cost_usd)}</td>
+      <td>${esc(r.top_intents)}</td>
+      <td class="prompt">${esc(clip(r.top_prompts, 110))}</td></tr>`).join(""));
+}
+
+function renderFlows(rows) {
+  if (!rows.length) { $("flows").innerHTML = `<div class="empty">No traces yet.</div>`; return; }
+  $("flows").innerHTML = table(
+    ["Flow", "#Traces", "#Avg steps", "#Avg tokens", "Example ask"],
+    rows.slice(0, 12).map(r => `<tr>
+      <td style="white-space:nowrap">${esc(r.flow)}</td>
+      <td class="num">${fmtInt(r.n_traces)}</td>
+      <td class="num">${fmtNum(r.avg_steps)}</td>
+      <td class="num">${fmtNum(r.avg_tokens, 0)}</td>
+      <td class="prompt">${esc(clip(r.example_prompt, 80))}</td></tr>`).join(""));
+}
+
+function renderTools(rows) {
+  if (!rows.length) { $("tools").innerHTML = `<div class="empty">No TOOL spans — the agent either calls no tools or doesn't trace them.</div>`; return; }
+  $("tools").innerHTML = table(
+    ["Tool", "#Calls", "#Traces", "#Err %", "#Avg ms", "#p95 ms"],
+    rows.slice(0, 15).map(r => `<tr>
+      <td>${esc(r.tool)}</td>
+      <td class="num">${fmtInt(r.n_calls)}</td>
+      <td class="num">${fmtInt(r.n_traces)}</td>
+      <td class="num">${fmtNum((r.error_rate || 0) * 100, 0)}</td>
+      <td class="num">${fmtNum(r.avg_latency_ms, 0)}</td>
+      <td class="num">${fmtNum(r.p95_latency_ms, 0)}</td></tr>`).join(""));
+}
+
+function renderModels(rows) {
+  if (!rows.length) { $("models").innerHTML = `<div class="empty">No model names on spans.</div>`; return; }
+  $("models").innerHTML = table(
+    ["Model", "#Calls", "#Tokens in", "#Tokens out", "#Cost", "#Avg ms", "#Err %"],
+    rows.map(r => `<tr>
+      <td>${esc(clip(r.model, 40))}</td>
+      <td class="num">${fmtInt(r.n_calls)}</td>
+      <td class="num">${fmtInt(r.tokens_in)}</td>
+      <td class="num">${fmtInt(r.tokens_out)}</td>
+      <td class="num">${fmtUsd(r.total_cost_usd)}</td>
+      <td class="num">${fmtNum(r.avg_latency_ms, 0)}</td>
+      <td class="num">${fmtNum((r.error_rate || 0) * 100, 0)}</td></tr>`).join(""));
+}
+
+function renderBreakdown(rows) {
+  if (!rows.length) { $("breakdown").innerHTML = `<div class="empty">No attributed asks yet — spans need <code>metadata.workflow_stage</code> / <code>metadata.asset_class</code>.</div>`; return; }
+  $("breakdown").innerHTML = table(
+    ["Workflow stage", "Asset class", "#Asks", "#Sessions", "#Users", "#Tokens", "#Cost"],
+    rows.slice(0, 20).map(r => `<tr>
+      <td>${esc(r.workflow_stage)}</td>
+      <td>${esc(r.asset_class)}</td>
+      <td class="num">${fmtInt(r.n_asks)}</td>
+      <td class="num">${fmtInt(r.n_sessions)}</td>
+      <td class="num">${fmtInt(r.n_users)}</td>
+      <td class="num">${fmtInt(r.total_tokens)}</td>
+      <td class="num">${fmtUsd(r.total_cost_usd)}</td></tr>`).join(""));
+}
+
+function renderEfficiency(rows) {
+  if (!rows.length) { $("efficiency").innerHTML = `<div class="empty">Run <code>pheonix analyze</code> to build prompt clusters first.</div>`; return; }
+  const maxOpp = Math.max(...rows.map(r => r.opportunity_score || 0)) || 1;
+  $("efficiency").innerHTML = table(
+    ["Opportunity", "Prompt pattern", "#Asks", "#Route len", "#Baseline", "Route", "#Tokens/ask", "#Err %", "#Cost"],
+    rows.slice(0, 20).map(r => `<tr>
+      <td><span class="meter"><i style="width:${Math.max(2, 100 * (r.opportunity_score || 0) / maxOpp)}%"></i></span></td>
+      <td class="prompt">${esc(clip(r.representative))}</td>
+      <td class="num">${fmtInt(r.count)}</td>
+      <td class="num">${fmtNum(r.route_len_avg)}</td>
+      <td class="num">${fmtNum(r.baseline_route)}</td>
+      <td>${r.long_route ? '<span class="badge long">⚠ long</span>' : '<span class="badge ok">ok</span>'}</td>
+      <td class="num">${fmtNum(r.tokens_per_ask, 0)}</td>
+      <td class="num">${fmtNum((r.error_rate || 0) * 100, 0)}</td>
+      <td class="num">${fmtUsd(r.total_cost_usd)}</td></tr>`).join(""));
+}
+
+function renderPrompts(rows) {
+  if (!rows.length) { $("prompts").innerHTML = `<div class="empty">Run <code>pheonix analyze</code> first.</div>`; return; }
+  $("prompts").innerHTML = table(
+    ["Prompt", "#Count", "#Sessions", "#Users", "#Cost"],
+    rows.slice(0, 15).map(r => `<tr>
+      <td class="prompt">${esc(clip(r.representative))}</td>
+      <td class="num">${fmtInt(r.count)}</td>
+      <td class="num">${fmtInt(r.n_sessions)}</td>
+      <td class="num">${fmtInt(r.n_users)}</td>
+      <td class="num">${fmtUsd(r.total_cost_usd)}</td></tr>`).join(""));
+}
+
+function renderFriction(rows) {
+  if (!rows.length) { $("friction").innerHTML = `<div class="empty">No session data yet — scrape first (or run <code>pheonix demo</code>).</div>`; return; }
+  const noisy = rows.filter(r => r.friction_score > 0);
+  if (!noisy.length) { $("friction").innerHTML = `<div class="empty">No friction detected — no re-asks, errors, or empty answers.</div>`; return; }
+  $("friction").innerHTML = table(
+    ["Session", "#Turns", "#Re-asks", "#Errors", "#Empty", "#Score", "First prompt"],
+    noisy.slice(0, 15).map(r => `<tr>
+      <td>${esc(clip(r.session_id, 18))}<div style="color:var(--muted);font-size:11px">${esc(r.user_id ?? "")}</div></td>
+      <td class="num">${fmtInt(r.n_turns)}</td>
+      <td class="num">${fmtInt(r.n_reformulations)}</td>
+      <td class="num">${fmtInt(r.n_errors)}</td>
+      <td class="num">${fmtInt(r.n_empty_responses)}</td>
+      <td class="num">${fmtInt(r.friction_score)}</td>
+      <td class="prompt">${esc(clip(r.first_prompt, 70))}</td></tr>`).join(""));
+}
+
+function renderSkillHealth(rows) {
+  if (!rows.length) {
+    $("skillhealth").innerHTML = `<div class="empty">No skills matched yet. Add your catalog to
+      <code>config/skills_catalog.yaml</code> (or set <code>PHEONIX_SKILLS_DIRS</code>) and re-run
+      <code>pheonix analyze</code>.</div>`;
+    return;
+  }
+  $("skillhealth").innerHTML = table(
+    ["Skill", "Status", "#Asks", "#Route len", "#Tokens/ask", "#Match"],
+    rows.map(r => `<tr>
+      <td>${esc(r.skill_name)}</td>
+      <td>${r.status === "review"
+        ? '<span class="badge review">⚠ review</span>'
+        : '<span class="badge effective">✓ effective</span>'}</td>
+      <td class="num">${fmtInt(r.n_asks)}</td>
+      <td class="num">${fmtNum(r.avg_route_len)}</td>
+      <td class="num">${fmtNum(r.avg_tokens_per_ask, 0)}</td>
+      <td class="num">${fmtNum(r.match_score, 2)}</td></tr>`).join(""));
+}
+
+function renderGaps(rows) {
+  if (!rows.length) { $("gaps").innerHTML = `<div class="empty">No gap proposals yet — run <code>pheonix analyze</code>.</div>`; return; }
+  $("gaps").innerHTML = table(
+    ["Proposed skill", "Level", "#Evidence", "Prompt"],
+    rows.slice(0, 12).map(r => `<tr>
+      <td>${esc(r.proposed_name)}</td>
+      <td>${esc(r.level)}</td>
+      <td class="num">${fmtInt(r.evidence_count)}</td>
+      <td class="prompt">${esc(clip(r.representative_prompt, 80))}</td></tr>`).join(""));
+}
+
+async function load() {
+  const status = $("status");
+  status.className = ""; status.textContent = "loading…";
+  sessionStorage.setItem("pheonix_api_key", keyInput.value.trim());
+  try {
+    const [overview, questions, activity, users, flows, tools, models, breakdown,
+           efficiency, prompts, friction, health, gaps] = await Promise.all([
+      api("/overview"),
+      api("/insights/questions"),
+      api("/insights/activity"),
+      api("/users"),
+      api("/insights/flows"),
+      api("/insights/tools"),
+      api("/insights/models"),
+      api("/insights/breakdown"),
+      api("/insights/efficiency"),
+      api("/prompts/frequent", { min_count: 1, limit: 50 }),
+      api("/insights/friction"),
+      api("/insights/skill-health"),
+      api("/skills/gaps"),
+    ]);
+    renderKpis(overview);
+    renderQuestions(questions);
+    renderActivity(activity);
+    if (!userFilter.value) fillUserFilter(users);
+    renderUsers(users);
+    renderFlows(flows);
+    renderTools(tools);
+    renderModels(models);
+    renderBreakdown(breakdown);
+    renderEfficiency(efficiency);
+    renderPrompts(prompts);
+    renderFriction(friction);
+    renderSkillHealth(health);
+    renderGaps(gaps);
+    status.textContent = overview.n_spans
+      ? `${fmtInt(overview.n_spans)} spans · ${overview.first_span ?? ""} → ${overview.last_span ?? ""}`
+      : "No spans yet — run `pheonix scrape` (or `pheonix demo` for sample data), then `pheonix analyze`.";
+  } catch (err) {
+    status.className = "error";
+    status.textContent = err.message.includes("401")
+      ? "Unauthorized — enter the X-API-Key configured via PHEONIX_API_KEY, then Refresh."
+      : "Failed to load: " + err.message + " — is the analysis run? Try `pheonix analyze`.";
+  }
+}
+
+$("refresh").addEventListener("click", load);
+keyInput.addEventListener("keydown", e => { if (e.key === "Enter") load(); });
+userFilter.addEventListener("change", load);
+load();
+</script>
+</body>
+</html>

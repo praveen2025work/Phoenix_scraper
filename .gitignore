@@ -21,3 +21,4 @@ certs/*.pem
 
 # os
 .DS_Store
+.gstack/

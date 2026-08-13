@@ -11,7 +11,7 @@ from .skills import load_all_skills
 from .skills_mapper import match_clusters
 from .storage import Store
 
-_ANALYSIS_SPAN_LIMIT = 100_000
+ANALYSIS_SPAN_LIMIT = 100_000
 
 
 def run_analysis(
@@ -23,7 +23,7 @@ def run_analysis(
     every downstream aggregate (clusters, sessions) sees priced spans. Analysis
     output is replaced wholesale in the store on each run.
     """
-    query = filters or QueryFilters(limit=_ANALYSIS_SPAN_LIMIT)
+    query = filters or QueryFilters(limit=ANALYSIS_SPAN_LIMIT)
     spans_df = store.spans_frame(query)
 
     if not spans_df.empty:

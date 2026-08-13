@@ -245,6 +245,11 @@ class Store:
             params=[min_count, limit],
         )
 
+    def cluster_members_frame(self) -> pd.DataFrame:
+        return pd.read_sql_query(
+            "SELECT cluster_id, span_id FROM cluster_members", self._conn
+        )
+
     def matches_frame(self) -> pd.DataFrame:
         return pd.read_sql_query(
             "SELECT m.*, c.representative, c.count FROM skill_matches m "

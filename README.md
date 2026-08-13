@@ -310,6 +310,31 @@ Two sources, merged (catalog wins on name collisions):
    `SKILL.md` files with YAML frontmatter (`name:` / `description:`), i.e. the format
    Claude-style skills already use.
 
+## Dashboard UI
+
+`pheonix serve` and open **http://127.0.0.1:8000/** — a self-contained dashboard
+(no CDN, works offline) over the analytics below. A **user selector** in the
+header refocuses every panel on one person; the **X-API-Key** field applies when
+`PHEONIX_API_KEY` is set.
+
+| Panel | What it answers |
+| --- | --- |
+| KPI row | volume, sessions, users, tokens, cost, error rate at a glance |
+| What users are asking | every user turn classified by intent (why/what/how/check/request/…) |
+| Activity by day | asks per day with sessions and cost |
+| Users — who asks what | per-user asks, re-asks, errors, route length, spend, top intents and prompt patterns |
+| Agent flows | the step sequences the agent runs per ask (`LLM → TOOL ×3 → LLM`) |
+| Tool / model usage | which tools the agent calls (failure rate, latency); tokens and cost per model |
+| Workflow stage × asset class | where asks come from, when spans carry those metadata attributes |
+| Where the agent works too hard | prompt patterns ranked by opportunity; **long route** = far more steps than the median trace — build/fix a skill here first |
+| High-friction sessions | users re-asking the same question, errors, empty answers |
+| Skill health | matched skills whose clusters still take long routes are flagged **review** |
+| Proposed new skills | frequent asks no existing skill covers |
+
+Every panel's data is also an endpoint (`/overview`, `/users`, `/insights/...`),
+all filterable (`user_id`, `stage`, `asset_class`, `model_name`, `start`, `end`)
+and downloadable with `fmt=csv`.
+
 ## CLI
 
 ```bash

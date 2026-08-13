@@ -1,0 +1,276 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - heading "Pheonix" [level=1] [ref=e3]
+    - generic [ref=e4]: what users ask · where the agent works too hard · which skills to build or fix
+    - generic [ref=e5]:
+      - combobox "Filter every panel to one user" [ref=e6]:
+        - option "All users" [selected]
+        - 'option "<script>window.__XSS_SCRIPT__=1</script> \"><img src=x onerror=window.__XSS_DQ__=1> ''><img src=x onerror=window.__XSS_SQ__=1> `${(window.__XSS_TICK__=1)}` <b>fx</b> & \"quote\" '' backtick`"'
+      - textbox "X-API-Key (if required)" [ref=e7]
+      - button "Refresh" [ref=e8] [cursor=pointer]
+  - generic [ref=e9]: "5 spans · <script>window.__XSS_SCRIPT__=1</script> \"><img src=x onerror=window.__XSS_DQ__=1> '><img src=x onerror=window.__XSS_SQ__=1> `${(window.__XSS_TICK__=1)}` <b>fx</b> & \"quote\" ' backtick` → <script>window.__XSS_SCRIPT__=1</script> \"><img src=x onerror=window.__XSS_DQ__=1> '><img src=x onerror=window.__XSS_SQ__=1> `${(window.__XSS_TICK__=1)}` <b>fx</b> & \"quote\" ' backtick`"
+  - generic [ref=e10]:
+    - generic [ref=e11]:
+      - generic [ref=e12]: Spans
+      - generic [ref=e13]: "5"
+    - generic [ref=e14]:
+      - generic [ref=e15]: Traces (asks)
+      - generic [ref=e16]: "3"
+    - generic [ref=e17]:
+      - generic [ref=e18]: Sessions
+      - generic [ref=e19]: "2"
+    - generic [ref=e20]:
+      - generic [ref=e21]: Users
+      - generic [ref=e22]: "2"
+    - generic [ref=e23]:
+      - generic [ref=e24]: Tokens
+      - generic [ref=e25]: "100"
+    - generic [ref=e26]:
+      - generic [ref=e27]: Cost
+      - generic [ref=e28]: $1.20
+    - generic [ref=e29]:
+      - generic [ref=e30]: Error rate
+      - generic [ref=e31]: 10.0%
+    - generic [ref=e32]:
+      - generic [ref=e33]: Prompt patterns
+      - generic [ref=e34]: "2"
+  - generic [ref=e35]:
+    - generic [ref=e36]:
+      - heading "What users are asking" [level=2] [ref=e37]
+      - generic [ref=e38]: Every user turn, classified by intent — counts per question type, with token cost.
+      - generic [ref=e40]:
+        - generic [ref=e41]: "<script>window.__XSS_SCRIPT__=1</script> \"><img src=x onerror=window.__XSS_DQ__=1> '><img src=x onerror=window.__XSS_SQ__=1> `${(window.__XSS_TICK__=1)}` <b>fx</b> & \"quote\" ' backtick`"
+        - 'generic "<script>window.__XSS_SCRIPT__=1</script> \"><img src=x onerror=window.__XSS_DQ__=1> ''><img src=x onerror=window.__XSS_SQ__=1> `${(window.__XSS_TICK__=1)}` <b>fx</b> & \"quote\" '' backtick`: 3 asks · 1 sessions · avg 10 tokens — e.g. <script>window.__XSS_SCRIPT__=1</script> \"><img src=x onerror=window.__XSS_DQ__=1> ''><img src=x onerror=window.__XSS_SQ__=1> `${(window.__X…" [ref=e42]'
+        - generic [ref=e43]: "3"
+    - generic [ref=e44]:
+      - heading "Activity by day" [level=2] [ref=e45]
+      - generic [ref=e46]: Asks per day, with sessions and cost on hover.
+      - generic [ref=e48]:
+        - generic [ref=e49]: "<script>window.__XSS_SCRIPT__=1</script> \"><img src=x onerror=window.__XSS_DQ__=1> '><img src=x onerror=window.__XSS_SQ__=1> `${(window.__XSS_TICK__=1)}` <b>fx</b> & \"quote\" ' backtick`"
+        - 'generic "<script>window.__XSS_SCRIPT__=1</script> \"><img src=x onerror=window.__XSS_DQ__=1> ''><img src=x onerror=window.__XSS_SQ__=1> `${(window.__XSS_TICK__=1)}` <b>fx</b> & \"quote\" '' backtick`: 2 asks · 1 sessions · 1 users · $0.50" [ref=e50]'
+        - generic [ref=e51]: "2"
+  - generic [ref=e52]:
+    - heading "Users — who asks what" [level=2] [ref=e53]
+    - generic [ref=e54]: Per-user activity, spend, friction, and their dominant intents and prompt patterns. Use the user selector in the header to focus every panel on one person.
+    - table [ref=e56]:
+      - rowgroup [ref=e57]:
+        - row [ref=e58]:
+          - columnheader "User" [ref=e59]
+          - columnheader "Asks" [ref=e60]
+          - columnheader "Sessions" [ref=e61]
+          - columnheader "Re-asks" [ref=e62]
+          - columnheader "Errors" [ref=e63]
+          - columnheader "Route len" [ref=e64]
+          - columnheader "Tokens" [ref=e65]
+          - columnheader "Cost" [ref=e66]
+          - columnheader "Top intents" [ref=e67]
+          - columnheader "Top prompt patterns" [ref=e68]
+      - rowgroup [ref=e69]:
+        - row [ref=e70]:
+          - 'cell "<script>window.__XSS_SCRIPT__=1</script> \"><img src=x onerror=window.__XSS_DQ__=1> ''><img src=x onerror=window.__XSS_SQ__=1> `${(window.__XSS_TICK__=1)}` <b>fx</b> & \"quote\" '' backtick`" [ref=e71]'
+          - cell "2" [ref=e72]
+          - cell "1" [ref=e73]
+          - cell "0" [ref=e74]
+          - cell "0" [ref=e75]
+          - cell "1.0" [ref=e76]
+          - cell "5" [ref=e77]
+          - cell "$0.10" [ref=e78]
+          - 'cell "<script>window.__XSS_SCRIPT__=1</script> \"><img src=x onerror=window.__XSS_DQ__=1> ''><img src=x onerror=window.__XSS_SQ__=1> `${(window.__XSS_TICK__=1)}` <b>fx</b> & \"quote\" '' backtick`" [ref=e79]'
+          - cell "<script>window.__XSS_SCRIPT__=1</script> \"><img src=x onerror=window.__XSS_DQ__=1> '><img src=x onerror=windo…" [ref=e80]
+  - generic [ref=e81]:
+    - heading "What the LLM is doing — agent flows" [level=2] [ref=e82]
+    - generic [ref=e83]: The step sequences the agent runs per ask (consecutive repeats collapsed). Long tool chains on frequent asks are the routes worth shortcutting with a skill.
+    - table [ref=e85]:
+      - rowgroup [ref=e86]:
+        - row [ref=e87]:
+          - columnheader "Flow" [ref=e88]
+          - columnheader "Traces" [ref=e89]
+          - columnheader "Avg steps" [ref=e90]
+          - columnheader "Avg tokens" [ref=e91]
+          - columnheader "Example ask" [ref=e92]
+      - rowgroup [ref=e93]:
+        - row [ref=e94]:
+          - 'cell "<script>window.__XSS_SCRIPT__=1</script> \"><img src=x onerror=window.__XSS_DQ__=1> ''><img src=x onerror=window.__XSS_SQ__=1> `${(window.__XSS_TICK__=1)}` <b>fx</b> & \"quote\" '' backtick`" [ref=e95]'
+          - cell "1" [ref=e96]
+          - cell "1.0" [ref=e97]
+          - cell "1" [ref=e98]
+          - cell "<script>window.__XSS_SCRIPT__=1</script> \"><img src=x onerror=window.__XSS_DQ__…" [ref=e99]
+  - generic [ref=e100]:
+    - generic [ref=e101]:
+      - heading "Tool usage" [level=2] [ref=e102]
+      - generic [ref=e103]: Which tools the agent calls, how often they fail, and how slow they are.
+      - table [ref=e105]:
+        - rowgroup [ref=e106]:
+          - row [ref=e107]:
+            - columnheader "Tool" [ref=e108]
+            - columnheader "Calls" [ref=e109]
+            - columnheader "Traces" [ref=e110]
+            - columnheader "Err %" [ref=e111]
+            - columnheader "Avg ms" [ref=e112]
+            - columnheader "p95 ms" [ref=e113]
+        - rowgroup [ref=e114]:
+          - row [ref=e115]:
+            - 'cell "<script>window.__XSS_SCRIPT__=1</script> \"><img src=x onerror=window.__XSS_DQ__=1> ''><img src=x onerror=window.__XSS_SQ__=1> `${(window.__XSS_TICK__=1)}` <b>fx</b> & \"quote\" '' backtick`" [ref=e116]'
+            - cell "1" [ref=e117]
+            - cell "1" [ref=e118]
+            - cell "0" [ref=e119]
+            - cell "1" [ref=e120]
+            - cell "1" [ref=e121]
+    - generic [ref=e122]:
+      - heading "Model usage" [level=2] [ref=e123]
+      - generic [ref=e124]: Calls, tokens in/out, and cost per model.
+      - table [ref=e126]:
+        - rowgroup [ref=e127]:
+          - row [ref=e128]:
+            - columnheader "Model" [ref=e129]
+            - columnheader "Calls" [ref=e130]
+            - columnheader "Tokens in" [ref=e131]
+            - columnheader "Tokens out" [ref=e132]
+            - columnheader "Cost" [ref=e133]
+            - columnheader "Avg ms" [ref=e134]
+            - columnheader "Err %" [ref=e135]
+        - rowgroup [ref=e136]:
+          - row [ref=e137]:
+            - cell "<script>window.__XSS_SCRIPT__=1</script…" [ref=e138]
+            - cell "1" [ref=e139]
+            - cell "1" [ref=e140]
+            - cell "1" [ref=e141]
+            - cell "$0.10" [ref=e142]
+            - cell "1" [ref=e143]
+            - cell "0" [ref=e144]
+  - generic [ref=e145]:
+    - heading "Workflow stage × asset class" [level=2] [ref=e146]
+    - generic [ref=e147]:
+      - text: Where the asks come from, when spans carry
+      - code [ref=e148]: metadata.workflow_stage
+      - text: /
+      - code [ref=e149]: metadata.asset_class
+      - text: attributes.
+    - table [ref=e151]:
+      - rowgroup [ref=e152]:
+        - row [ref=e153]:
+          - columnheader "Workflow stage" [ref=e154]
+          - columnheader "Asset class" [ref=e155]
+          - columnheader "Asks" [ref=e156]
+          - columnheader "Sessions" [ref=e157]
+          - columnheader "Users" [ref=e158]
+          - columnheader "Tokens" [ref=e159]
+          - columnheader "Cost" [ref=e160]
+      - rowgroup [ref=e161]:
+        - row [ref=e162]:
+          - 'cell "<script>window.__XSS_SCRIPT__=1</script> \"><img src=x onerror=window.__XSS_DQ__=1> ''><img src=x onerror=window.__XSS_SQ__=1> `${(window.__XSS_TICK__=1)}` <b>fx</b> & \"quote\" '' backtick`" [ref=e163]'
+          - 'cell "<script>window.__XSS_SCRIPT__=1</script> \"><img src=x onerror=window.__XSS_DQ__=1> ''><img src=x onerror=window.__XSS_SQ__=1> `${(window.__XSS_TICK__=1)}` <b>fx</b> & \"quote\" '' backtick`" [ref=e164]'
+          - cell "1" [ref=e165]
+          - cell "1" [ref=e166]
+          - cell "1" [ref=e167]
+          - cell "1" [ref=e168]
+          - cell "$0.10" [ref=e169]
+  - generic [ref=e170]:
+    - heading "Where the agent works too hard — build a skill here first" [level=2] [ref=e171]
+    - generic [ref=e172]: Prompt patterns ranked by opportunity (asks × tokens per ask). Long route means the agent takes far more steps than the median trace to answer this — the strongest signal that a dedicated skill (or a fix to a broken one) would pay off.
+    - table [ref=e174]:
+      - rowgroup [ref=e175]:
+        - row [ref=e176]:
+          - columnheader "Opportunity" [ref=e177]
+          - columnheader "Prompt pattern" [ref=e178]
+          - columnheader "Asks" [ref=e179]
+          - columnheader "Route len" [ref=e180]
+          - columnheader "Baseline" [ref=e181]
+          - columnheader "Route" [ref=e182]
+          - columnheader "Tokens/ask" [ref=e183]
+          - columnheader "Err %" [ref=e184]
+          - columnheader "Cost" [ref=e185]
+      - rowgroup [ref=e186]:
+        - row [ref=e187]:
+          - cell [ref=e188]
+          - cell "<script>window.__XSS_SCRIPT__=1</script> \"><img src=x onerror=window.__XSS_DQ__=1> '><img…" [ref=e191]
+          - cell "3" [ref=e192]
+          - cell "2.0" [ref=e193]
+          - cell "1.0" [ref=e194]
+          - cell "⚠ long" [ref=e195]
+          - cell "10" [ref=e197]
+          - cell "0" [ref=e198]
+          - cell "$0.10" [ref=e199]
+  - generic [ref=e200]:
+    - generic [ref=e201]:
+      - heading "Top prompts" [level=2] [ref=e202]
+      - generic [ref=e203]:
+        - text: Most frequent normalized prompt patterns (always all users — clusters are computed globally by
+        - code [ref=e204]: pheonix analyze
+        - text: ).
+      - table [ref=e206]:
+        - rowgroup [ref=e207]:
+          - row [ref=e208]:
+            - columnheader "Prompt" [ref=e209]
+            - columnheader "Count" [ref=e210]
+            - columnheader "Sessions" [ref=e211]
+            - columnheader "Users" [ref=e212]
+            - columnheader "Cost" [ref=e213]
+        - rowgroup [ref=e214]:
+          - row [ref=e215]:
+            - cell "<script>window.__XSS_SCRIPT__=1</script> \"><img src=x onerror=window.__XSS_DQ__=1> '><img…" [ref=e216]
+            - cell "3" [ref=e217]
+            - cell "1" [ref=e218]
+            - cell "1" [ref=e219]
+            - cell "$0.10" [ref=e220]
+    - generic [ref=e221]:
+      - heading "High-friction sessions" [level=2] [ref=e222]
+      - generic [ref=e223]: Users re-asking the same question, errors, empty answers.
+      - table [ref=e225]:
+        - rowgroup [ref=e226]:
+          - row [ref=e227]:
+            - columnheader "Session" [ref=e228]
+            - columnheader "Turns" [ref=e229]
+            - columnheader "Re-asks" [ref=e230]
+            - columnheader "Errors" [ref=e231]
+            - columnheader "Empty" [ref=e232]
+            - columnheader "Score" [ref=e233]
+            - columnheader "First prompt" [ref=e234]
+        - rowgroup [ref=e235]:
+          - row [ref=e236]:
+            - 'cell "<script>window.__… <script>window.__XSS_SCRIPT__=1</script> \"><img src=x onerror=window.__XSS_DQ__=1> ''><img src=x onerror=window.__XSS_SQ__=1> `${(window.__XSS_TICK__=1)}` <b>fx</b> & \"quote\" '' backtick`" [ref=e237]':
+              - text: <script>window.__…
+              - generic [ref=e238]: "<script>window.__XSS_SCRIPT__=1</script> \"><img src=x onerror=window.__XSS_DQ__=1> '><img src=x onerror=window.__XSS_SQ__=1> `${(window.__XSS_TICK__=1)}` <b>fx</b> & \"quote\" ' backtick`"
+            - cell "2" [ref=e239]
+            - cell "1" [ref=e240]
+            - cell "0" [ref=e241]
+            - cell "0" [ref=e242]
+            - cell "2" [ref=e243]
+            - cell "<script>window.__XSS_SCRIPT__=1</script> \"><img src=x onerror=window.…" [ref=e244]
+  - generic [ref=e245]:
+    - generic [ref=e246]:
+      - heading "Skill health" [level=2] [ref=e247]
+      - generic [ref=e248]: Matched skills where the agent still takes long routes are flagged ⚠ review — the skill may be stale, wrong, or not being picked up.
+      - table [ref=e250]:
+        - rowgroup [ref=e251]:
+          - row [ref=e252]:
+            - columnheader "Skill" [ref=e253]
+            - columnheader "Status" [ref=e254]
+            - columnheader "Asks" [ref=e255]
+            - columnheader "Route len" [ref=e256]
+            - columnheader "Tokens/ask" [ref=e257]
+            - columnheader "Match" [ref=e258]
+        - rowgroup [ref=e259]:
+          - row [ref=e260]:
+            - 'cell "<script>window.__XSS_SCRIPT__=1</script> \"><img src=x onerror=window.__XSS_DQ__=1> ''><img src=x onerror=window.__XSS_SQ__=1> `${(window.__XSS_TICK__=1)}` <b>fx</b> & \"quote\" '' backtick`" [ref=e261]'
+            - cell "⚠ review" [ref=e262]
+            - cell "1" [ref=e264]
+            - cell "2.0" [ref=e265]
+            - cell "10" [ref=e266]
+            - cell "0.50" [ref=e267]
+    - generic [ref=e268]:
+      - heading "Proposed new skills" [level=2] [ref=e269]
+      - generic [ref=e270]: Frequent asks not covered by any existing skill.
+      - table [ref=e272]:
+        - rowgroup [ref=e273]:
+          - row [ref=e274]:
+            - columnheader "Proposed skill" [ref=e275]
+            - columnheader "Level" [ref=e276]
+            - columnheader "Evidence" [ref=e277]
+            - columnheader "Prompt" [ref=e278]
+        - rowgroup [ref=e279]:
+          - row [ref=e280]:
+            - 'cell "<script>window.__XSS_SCRIPT__=1</script> \"><img src=x onerror=window.__XSS_DQ__=1> ''><img src=x onerror=window.__XSS_SQ__=1> `${(window.__XSS_TICK__=1)}` <b>fx</b> & \"quote\" '' backtick`" [ref=e281]'
+            - 'cell "<script>window.__XSS_SCRIPT__=1</script> \"><img src=x onerror=window.__XSS_DQ__=1> ''><img src=x onerror=window.__XSS_SQ__=1> `${(window.__XSS_TICK__=1)}` <b>fx</b> & \"quote\" '' backtick`" [ref=e282]'
+            - cell "1" [ref=e283]
+            - cell "<script>window.__XSS_SCRIPT__=1</script> \"><img src=x onerror=window.__XSS_DQ__…" [ref=e284]
