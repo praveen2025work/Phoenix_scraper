@@ -103,6 +103,12 @@ Fill in:
 | `PHOENIX_API_KEY` | Phoenix UI → **Settings → API Keys** → create a **System** key (survives user changes; ask a Phoenix admin if the menu is missing) |
 | `PHEONIX_PROJECT` | the Phoenix project name your agent traces land in (visible in the Phoenix UI project list) |
 
+The app reads a file named exactly `.env` from the directory you run it in —
+`.env.example` is only a template and is never loaded. If `pheonix scrape` says
+*"Phoenix is not available: set PHOENIX_COLLECTOR_ENDPOINT"* after you filled in
+values, check you edited `.env` (not `.env.example`) and that you are running
+from the project root.
+
 Then:
 
 ```bash
@@ -110,6 +116,40 @@ pheonix scrape      # one incremental watermark cycle
 pheonix analyze
 pheonix report
 ```
+
+#### HTTPS endpoint: `SSL: CERTIFICATE_VERIFY_FAILED`
+
+Your browser trusts the internal Phoenix cert via the OS trust store, but Python
+uses its own bundled CA list (`certifi`), which doesn't include your corporate CA.
+The HTTP client used for scraping (httpx) honors `SSL_CERT_FILE`, so no code
+change is needed:
+
+1. Get the corporate root CA in **PEM** format from IT, or extract the chain the
+   server presents:
+
+   ```bash
+   openssl s_client -showcerts -connect phoenix.<internal-host>:443 </dev/null 2>/dev/null \
+     | awk '/BEGIN CERTIFICATE/,/END CERTIFICATE/' > phoenix-ca.pem
+   ```
+
+   (hostname and port from your Phoenix URL — no `https://` prefix here)
+
+2. Export it in your **shell**, then run:
+
+   ```bash
+   export SSL_CERT_FILE=/full/path/to/phoenix-ca.pem
+   pheonix scrape
+   ```
+
+   Windows cmd: `set SSL_CERT_FILE=C:\path\phoenix-ca.pem` — PowerShell:
+   `$env:SSL_CERT_FILE="C:\path\phoenix-ca.pem"`
+
+   Putting `SSL_CERT_FILE` in `.env` does **not** work: the app loads `.env` into
+   its own settings only; httpx reads this variable from the process environment.
+   Add the `export` to your shell profile to make it permanent.
+
+3. Still failing? Servers often don't send the root certificate, so the extracted
+   chain may be incomplete — ask IT for the actual root CA PEM.
 
 No network path to Phoenix? Export spans from the Phoenix UI/API as JSONL on a
 machine that has access, transfer the file, and run `pheonix ingest spans.jsonl`.
@@ -140,8 +180,9 @@ Without `PHEONIX_API_KEY`, `serve` refuses non-loopback hosts by design.
 | Symptom | Fix |
 | --- | --- |
 | `SyntaxError` on install/run | Python is < 3.11 — install 3.11+ or let `uv sync` fetch it |
-| SSL certificate errors | corporate TLS inspection — set `SSL_CERT_FILE`/`REQUESTS_CA_BUNDLE` (step 2) |
-| `Phoenix is not available` from `pheonix scrape` | endpoint unset/wrong, or `arize-phoenix-client` not installed (`uv sync --extra live`, or `pip install -r requirements-live.txt`) |
+| SSL errors during `pip install` | corporate TLS inspection — set `SSL_CERT_FILE`/`REQUESTS_CA_BUNDLE` (step 2) |
+| `CERTIFICATE_VERIFY_FAILED` from `pheonix scrape` | Python doesn't trust the internal Phoenix cert — export `SSL_CERT_FILE` pointing at the corporate CA (see the SSL note in step 5) |
+| `Phoenix is not available` from `pheonix scrape` | endpoint unset/wrong (did you edit `.env.example` instead of `.env`?), or `arize-phoenix-client` not installed (`uv sync --extra live`, or `pip install -r requirements-live.txt`) |
 | `401` from Phoenix | key expired/revoked — issue a fresh System key in Phoenix Settings |
 | Scrape succeeds but 0 spans | wrong `PHEONIX_PROJECT` name, or the time window: the watermark starts from your first run — wait a cycle or check the project has recent traces |
 | Prompts cluster poorly on real data | tune `PHEONIX_` cluster/match thresholds in `.env` (see `src/phoenix_scraper/config.py` defaults) |
