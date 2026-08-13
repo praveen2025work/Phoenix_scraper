@@ -193,6 +193,43 @@
 </div>
 
 <section>
+  <h2>Validation — are the answers any good? <button class="csvbtn" data-csv="/quality/checks">CSV</button></h2>
+  <div class="hint">Every span is judged by deterministic <b>code checks</b> (Phoenix
+    <code>annotator_kind=CODE</code>) covering the answer side (empty, refusal, truncation,
+    repetition, malformed JSON, off-topic, ungrounded figures) and the prompt side (injection,
+    PII, vague asks). Human thumbs-up/down and LLM-judge evals pulled from Phoenix appear here
+    too. <b>Fail rate</b> is failed checks over the checks that applied.</div>
+  <div class="scroll-x" id="qualitychecks"></div>
+</section>
+
+<div class="cols">
+  <section>
+    <h2>Answer quality by user <button class="csvbtn" data-csv="/quality/by" data-csv-dimension="user_id">CSV</button></h2>
+    <div class="hint">Who is getting bad answers — and whose prompts trip the prompt-side checks.</div>
+    <div class="scroll-x" id="qualityusers"></div>
+  </section>
+  <section>
+    <h2>Answer quality by model <button class="csvbtn" data-csv="/quality/by" data-csv-dimension="model_name">CSV</button></h2>
+    <div class="hint">Whether one model refuses, truncates, or drifts off-topic more than another.</div>
+    <div class="scroll-x" id="qualitymodels"></div>
+  </section>
+</div>
+
+<section>
+  <h2>Prompt patterns the agent answers badly <button class="csvbtn" data-csv="/quality/by-prompt">CSV</button></h2>
+  <div class="hint">Frequency × failure. A common ask that fails validation is the strongest case
+    for a new skill: it is not merely expensive, it is being answered <b>wrong</b>.</div>
+  <div class="scroll-x" id="qualityprompts"></div>
+</section>
+
+<section>
+  <h2>Failed spans — validate the findings yourself <button class="csvbtn" data-csv="/quality/failures">CSV</button></h2>
+  <div class="hint">Every span that failed a check, with the prompt, the answer, and the reason.
+    Each check states its evidence so you can confirm or dismiss it without opening Phoenix.</div>
+  <div class="scroll-x" id="qualityfailures"></div>
+</section>
+
+<section>
   <h2>Workflow stage × asset class <button class="csvbtn" data-csv="/insights/breakdown">CSV</button></h2>
   <div class="hint">Where the asks come from, when spans carry
     <code>metadata.workflow_stage</code> / <code>metadata.asset_class</code> attributes.</div>
@@ -296,18 +333,36 @@ function fillFilterOptions(options) {
 async function downloadCsv(path, extra = {}) {
   const response = await fetch(apiUrl(path, { ...extra, fmt: "csv" }), { headers: authHeaders() });
   if (!response.ok) { alert("Export failed: HTTP " + response.status); return; }
+  // Prefer the filename the endpoint chose — it distinguishes exports that share
+  // a path but not their content (e.g. /quality/by per dimension).
+  const disposition = response.headers.get("Content-Disposition") || "";
+  const named = /filename="([^"]+)"/.exec(disposition);
   const link = document.createElement("a");
   link.href = URL.createObjectURL(await response.blob());
-  link.download = (path.split("/").filter(Boolean).join("_") || "export") + ".csv";
+  link.download = named ? named[1]
+    : (path.split("/").filter(Boolean).join("_") || "export") + ".csv";
   link.click();
   URL.revokeObjectURL(link.href);
+}
+
+// Any data-csv-<param> attribute becomes a query param on that panel's export.
+function csvParams(btn) {
+  const params = {};
+  for (const [key, value] of Object.entries(btn.dataset))
+    if (key.startsWith("csv") && key !== "csv")
+      params[key.slice(3).toLowerCase()] = value;
+  return params;
 }
 
 function kpiTile(label, value) {
   return `<div class="kpi"><div class="label">${esc(label)}</div><div class="value">${value}</div></div>`;
 }
 
-function renderKpis(o) {
+function renderKpis(o, quality) {
+  const clean = quality && quality.span_pass_rate != null
+    ? `<span style="color:${quality.span_pass_rate >= 0.9 ? "var(--good-text)" : "var(--critical)"}">${
+        (quality.span_pass_rate * 100).toFixed(1)}%</span>`
+    : "–";
   $("kpis").innerHTML =
     kpiTile("Spans", fmtInt(o.n_spans)) +
     kpiTile("Traces (asks)", fmtInt(o.n_traces)) +
@@ -316,7 +371,9 @@ function renderKpis(o) {
     kpiTile("Tokens", fmtInt(o.total_tokens)) +
     kpiTile("Cost", fmtUsd(o.total_cost_usd)) +
     kpiTile("Error rate", o.error_rate == null ? "–" : (o.error_rate * 100).toFixed(1) + "%") +
-    kpiTile("Prompt patterns", fmtInt(o.n_clusters));
+    kpiTile("Prompt patterns", fmtInt(o.n_clusters)) +
+    kpiTile("Spans passing validation", clean) +
+    kpiTile("Failed checks", quality ? fmtInt(quality.n_failed_checks) : "–");
 }
 
 function renderQuestions(rows) {
@@ -400,6 +457,89 @@ function renderModels(rows) {
       <td class="num">${fmtUsd(r.total_cost_usd)}</td>
       <td class="num">${fmtNum(r.avg_latency_ms, 0)}</td>
       <td class="num">${fmtNum((r.error_rate || 0) * 100, 0)}</td></tr>`).join(""));
+}
+
+const fmtPct = (n, d=0) => n == null || Number.isNaN(Number(n)) ? "–" : (Number(n) * 100).toFixed(d) + "%";
+
+// A failing check is a finding, not a decoration — colour it by how much of the
+// evaluated population it hits, so a 2% niggle never looks like a 40% outage.
+function failBadge(rate, count) {
+  if (!count) return `<span class="badge ok">clean</span>`;
+  const cls = rate >= 0.25 ? "review" : "long";
+  return `<span class="badge ${cls}">⚠ ${fmtPct(rate, 1)}</span>`;
+}
+
+function renderQualityChecks(rows) {
+  if (!rows.length) {
+    $("qualitychecks").innerHTML = `<div class="empty">No validation results yet — run
+      <code>pheonix evaluate</code> (or <code>pheonix analyze</code>, which validates by default).</div>`;
+    return;
+  }
+  $("qualitychecks").innerHTML = table(
+    ["Check", "Judges", "By", "#Evaluated", "#Failed", "Fail rate", "#Avg score", "#Users hit", "Why it failed"],
+    rows.map(r => `<tr>
+      <td>${esc(r.check)}</td>
+      <td>${esc(r.target)}</td>
+      <td>${esc(r.annotator_kind)}${r.source === "phoenix" ? " (phoenix)" : ""}</td>
+      <td class="num">${fmtInt(r.n_evaluated)}</td>
+      <td class="num">${fmtInt(r.n_failed)}</td>
+      <td>${failBadge(r.fail_rate, r.n_failed)}</td>
+      <td class="num">${fmtNum(r.avg_score, 2)}</td>
+      <td class="num">${fmtInt(r.n_users_affected)}</td>
+      <td class="prompt">${esc(clip(r.example, 120))}</td></tr>`).join(""));
+}
+
+function renderQualityBy(elementId, keyColumn, rows, emptyMessage) {
+  if (!rows.length) { $(elementId).innerHTML = `<div class="empty">${emptyMessage}</div>`; return; }
+  $(elementId).innerHTML = table(
+    [keyColumn === "user_id" ? "User" : "Model", "#Spans", "#Failed", "Fail rate", "#Output", "#Prompt", "Top issues"],
+    rows.slice(0, 15).map(r => `<tr>
+      <td>${esc(clip(r[keyColumn], 34))}</td>
+      <td class="num">${fmtInt(r.n_spans)}</td>
+      <td class="num">${fmtInt(r.n_spans_failed)}</td>
+      <td>${failBadge(r.fail_rate, r.n_failed)}</td>
+      <td class="num">${fmtInt(r.n_output_issues)}</td>
+      <td class="num">${fmtInt(r.n_prompt_issues)}</td>
+      <td class="prompt">${esc(clip(r.top_issues, 90))}</td></tr>`).join(""));
+}
+
+function renderQualityPrompts(rows) {
+  if (!rows.length) {
+    $("qualityprompts").innerHTML = `<div class="empty">No cluster-level quality yet — run
+      <code>pheonix analyze</code> so prompts are clustered first.</div>`;
+    return;
+  }
+  const failing = rows.filter(r => r.n_spans_failed > 0);
+  if (!failing.length) {
+    $("qualityprompts").innerHTML = `<div class="empty">No prompt pattern is failing validation.</div>`;
+    return;
+  }
+  $("qualityprompts").innerHTML = table(
+    ["Prompt pattern", "#Asks", "#Spans failed", "Fail rate", "#Users hit", "Top issues"],
+    failing.slice(0, 15).map(r => `<tr>
+      <td class="prompt">${esc(clip(r.representative))}</td>
+      <td class="num">${fmtInt(r.count)}</td>
+      <td class="num">${fmtInt(r.n_spans_failed)}</td>
+      <td>${failBadge(r.span_fail_rate, r.n_spans_failed)}</td>
+      <td class="num">${fmtInt(r.n_users_affected)}</td>
+      <td class="prompt">${esc(clip(r.top_issues, 80))}</td></tr>`).join(""));
+}
+
+function renderQualityFailures(rows) {
+  if (!rows.length) {
+    $("qualityfailures").innerHTML = `<div class="empty">No span failed a check.</div>`;
+    return;
+  }
+  $("qualityfailures").innerHTML = table(
+    ["Time", "User", "Model", "Failed checks", "Prompt", "Answer", "Why"],
+    rows.slice(0, 50).map(r => `<tr>
+      <td style="white-space:nowrap">${esc(String(r.start_time ?? "").replace("T", " ").slice(0, 19))}</td>
+      <td>${esc(r.user_id ?? "")}</td>
+      <td>${esc(clip(r.model_name ?? "", 22))}</td>
+      <td><span class="badge review">${esc(r.failed_checks)}</span></td>
+      <td class="prompt">${esc(clip(r.input_text, 80))}</td>
+      <td class="prompt">${r.output_text ? esc(clip(r.output_text, 80)) : '<i style="color:var(--muted)">(empty)</i>'}</td>
+      <td class="prompt">${esc(clip(r.explanations, 120))}</td></tr>`).join(""));
 }
 
 function renderBreakdown(rows) {
@@ -516,7 +656,9 @@ async function load() {
   sessionStorage.setItem("pheonix_api_key", keyInput.value.trim());
   try {
     const [options, overview, questions, activity, users, flows, tools, models,
-           breakdown, efficiency, prompts, friction, health, gaps, spans] = await Promise.all([
+           breakdown, efficiency, prompts, friction, health, gaps, spans,
+           quality, qualityChecks, qualityUsers, qualityModels, qualityPrompts,
+           qualityFailures] = await Promise.all([
       api("/filters/options"),
       api("/overview"),
       api("/insights/questions"),
@@ -532,9 +674,15 @@ async function load() {
       api("/insights/skill-health"),
       api("/skills/gaps"),
       api("/spans", { limit: 200 }),
+      api("/quality/overview"),
+      api("/quality/checks"),
+      api("/quality/by", { dimension: "user_id" }),
+      api("/quality/by", { dimension: "model_name" }),
+      api("/quality/by-prompt"),
+      api("/quality/failures", { top: 50 }),
     ]);
     fillFilterOptions(options);
-    renderKpis(overview);
+    renderKpis(overview, quality);
     renderQuestions(questions);
     renderActivity(activity);
     renderUsers(users);
@@ -548,6 +696,13 @@ async function load() {
     renderSkillHealth(health);
     renderGaps(gaps);
     renderSpans(spans);
+    renderQualityChecks(qualityChecks);
+    renderQualityBy("qualityusers", "user_id", qualityUsers,
+      "No user ids on evaluated spans.");
+    renderQualityBy("qualitymodels", "model_name", qualityModels,
+      "No model names on evaluated spans.");
+    renderQualityPrompts(qualityPrompts);
+    renderQualityFailures(qualityFailures);
     status.textContent = overview.n_spans
       ? `${fmtInt(overview.n_spans)} spans · ${overview.first_span ?? ""} → ${overview.last_span ?? ""}`
       : "No spans yet — run `pheonix scrape` (or `pheonix demo` for sample data), then `pheonix analyze`.";
@@ -570,8 +725,7 @@ $("reset").addEventListener("click", () => {
   load();
 });
 for (const btn of document.querySelectorAll(".csvbtn"))
-  btn.addEventListener("click", () =>
-    downloadCsv(btn.dataset.csv, btn.dataset.csvLimit ? { limit: btn.dataset.csvLimit } : {}));
+  btn.addEventListener("click", () => downloadCsv(btn.dataset.csv, csvParams(btn)));
 load();
 </script>
 </body>

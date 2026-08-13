@@ -1,4 +1,4 @@
-.PHONY: setup demo seed scrape analyze report api test lint clean
+.PHONY: setup demo seed scrape analyze evaluate report api test lint clean
 
 setup:            ## install deps into .venv via uv
 	uv sync --all-extras
@@ -14,6 +14,9 @@ scrape:           ## one incremental scrape cycle from live Phoenix (needs PHOEN
 
 analyze:          ## cluster prompts, map skills, persist analysis
 	uv run pheonix analyze
+
+evaluate:         ## validate stored LLM outputs and user prompts, print the scoreboard
+	uv run pheonix evaluate
 
 report:           ## write markdown report + exports to data/exports
 	uv run pheonix report

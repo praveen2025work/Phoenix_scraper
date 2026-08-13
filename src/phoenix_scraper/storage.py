@@ -14,6 +14,7 @@ from .models import (
     SessionRecord,
     SkillGapProposal,
     SkillMatch,
+    SpanEvaluation,
     SpanRecord,
 )
 
@@ -92,6 +93,26 @@ CREATE TABLE IF NOT EXISTS skill_proposals (
     representative_prompt TEXT NOT NULL DEFAULT '',
     sample_span_ids TEXT NOT NULL DEFAULT '[]'
 );
+
+-- Span annotations in Phoenix's shape: locally computed CODE checks
+-- (source='local') and HUMAN/LLM annotations pulled from Phoenix
+-- (source='phoenix') share one table so they roll up together. Keying on
+-- source as well as name keeps a Phoenix eval called "correctness" from
+-- colliding with a local check of the same name.
+CREATE TABLE IF NOT EXISTS span_evaluations (
+    span_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT 'local',
+    label TEXT NOT NULL DEFAULT '',
+    score REAL,
+    explanation TEXT NOT NULL DEFAULT '',
+    annotator_kind TEXT NOT NULL DEFAULT 'CODE',
+    target TEXT NOT NULL DEFAULT 'span',
+    created_at TEXT,
+    PRIMARY KEY (span_id, name, source)
+);
+CREATE INDEX IF NOT EXISTS idx_evals_name ON span_evaluations (name);
+CREATE INDEX IF NOT EXISTS idx_evals_span ON span_evaluations (span_id);
 
 CREATE TABLE IF NOT EXISTS sessions (
     session_id TEXT PRIMARY KEY,
@@ -238,6 +259,59 @@ class Store:
         )
         c.commit()
 
+    # ---- span evaluations (validation) --------------------------------------
+    def replace_local_evaluations(self, evaluations: Iterable[SpanEvaluation]) -> int:
+        """Swap in a fresh set of locally computed checks.
+
+        Only source='local' rows are cleared: annotations pulled from Phoenix are
+        that server's data, not ours to discard on a re-analysis.
+        """
+        rows = [_evaluation_row(e) for e in evaluations]
+        self._conn.execute("DELETE FROM span_evaluations WHERE source = 'local'")
+        self._conn.executemany(
+            "INSERT OR REPLACE INTO span_evaluations VALUES (?,?,?,?,?,?,?,?,?)", rows
+        )
+        self._conn.commit()
+        return len(rows)
+
+    def upsert_evaluations(self, evaluations: Iterable[SpanEvaluation]) -> int:
+        """Idempotent insert used for incrementally pulled Phoenix annotations."""
+        rows = [_evaluation_row(e) for e in evaluations]
+        before = self._count("span_evaluations")
+        self._conn.executemany(
+            "INSERT OR REPLACE INTO span_evaluations VALUES (?,?,?,?,?,?,?,?,?)", rows
+        )
+        self._conn.commit()
+        return self._count("span_evaluations") - before
+
+    def evaluations_frame(self, filters: QueryFilters | None = None) -> pd.DataFrame:
+        """Judgements joined to their span, filtered on the span's dimensions.
+
+        The join is what makes validation slice by user/model/stage like every
+        other panel: the filters describe spans, the rows describe checks.
+
+        NOTE: ``filters.limit`` bounds returned CHECK ROWS, not spans — a span
+        carries one row per applicable check. Callers computing rollups must
+        pass a limit sized for rows (see api.EVALUATION_ROW_LIMIT), or the
+        aggregates silently describe a truncated corpus.
+        """
+        f = filters or QueryFilters()
+        where, params = _span_where(f, alias="s")
+        sql = (
+            "SELECT e.span_id, e.name, e.source, e.label, e.score, e.explanation, "
+            "e.annotator_kind, e.target, e.created_at, "
+            "s.trace_id, s.session_id, s.project, s.user_id, s.model_name, "
+            "s.workflow_stage, s.asset_class, s.span_kind, s.status_code, "
+            "s.start_time, s.latency_ms, s.tokens_total, s.cost_usd, "
+            "s.input_text, s.output_text "
+            f"FROM span_evaluations e JOIN spans s ON s.span_id = e.span_id{where} "
+            "ORDER BY s.start_time, e.name LIMIT ?"
+        )
+        df = pd.read_sql_query(sql, self._conn, params=[*params, f.limit])
+        if "start_time" in df.columns:
+            df["start_time"] = pd.to_datetime(df["start_time"], errors="coerce")
+        return df
+
     def clusters_frame(self, min_count: int = 1, limit: int = 500) -> pd.DataFrame:
         return pd.read_sql_query(
             "SELECT * FROM prompt_clusters WHERE count >= ? ORDER BY count DESC LIMIT ?",
@@ -300,37 +374,47 @@ def _iso(dt: datetime | None) -> str | None:
     return dt.isoformat() if dt is not None else None
 
 
-def _span_where(f: QueryFilters) -> tuple[str, list]:
+def _evaluation_row(evaluation: SpanEvaluation) -> tuple:
+    return (
+        evaluation.span_id, evaluation.name, evaluation.source, evaluation.label,
+        evaluation.score, evaluation.explanation, evaluation.annotator_kind,
+        evaluation.target, _iso(evaluation.created_at),
+    )
+
+
+def _span_where(f: QueryFilters, alias: str = "") -> tuple[str, list]:
+    """WHERE clause over span columns; ``alias`` qualifies them for joined queries."""
+    prefix = f"{alias}." if alias else ""
     clauses: list[str] = []
     params: list = []
     if f.project:
-        clauses.append("project = ?")
+        clauses.append(f"{prefix}project = ?")
         params.append(f.project)
     if f.start:
-        clauses.append("start_time >= ?")
+        clauses.append(f"{prefix}start_time >= ?")
         params.append(_iso(f.start))
     if f.end:
-        clauses.append("start_time < ?")
+        clauses.append(f"{prefix}start_time < ?")
         params.append(_iso(f.end))
     if f.span_kinds:
-        clauses.append(f"span_kind IN ({','.join(['?'] * len(f.span_kinds))})")
+        clauses.append(f"{prefix}span_kind IN ({','.join(['?'] * len(f.span_kinds))})")
         params.extend(f.span_kinds)
     if f.workflow_stage:
-        clauses.append("workflow_stage = ?")
+        clauses.append(f"{prefix}workflow_stage = ?")
         params.append(f.workflow_stage)
     if f.asset_class:
-        clauses.append("asset_class = ?")
+        clauses.append(f"{prefix}asset_class = ?")
         params.append(f.asset_class)
     if f.model_name:
-        clauses.append("model_name = ?")
+        clauses.append(f"{prefix}model_name = ?")
         params.append(f.model_name)
     if f.session_id:
-        clauses.append("session_id = ?")
+        clauses.append(f"{prefix}session_id = ?")
         params.append(f.session_id)
     if f.user_id:
-        clauses.append("user_id = ?")
+        clauses.append(f"{prefix}user_id = ?")
         params.append(f.user_id)
     if f.search:
-        clauses.append("input_text LIKE ?")
+        clauses.append(f"{prefix}input_text LIKE ?")
         params.append(f"%{f.search}%")
     return (" WHERE " + " AND ".join(clauses)) if clauses else "", params

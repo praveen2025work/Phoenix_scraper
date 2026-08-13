@@ -9,10 +9,18 @@ from pathlib import Path
 
 import typer
 
+from . import annotations as annotations_mod
+from . import evaluations as evaluations_mod
 from . import export as export_mod
-from . import fixtures, pipeline, scraper
+from . import fixtures, insights_quality, pipeline, scraper
 from .config import Settings, load_settings
-from .models import AnalysisResult, PromptCluster, QueryFilters, ScrapeReport
+from .models import (
+    AnalysisResult,
+    AnnotationSyncReport,
+    PromptCluster,
+    QueryFilters,
+    ScrapeReport,
+)
 from .phoenix_client import PhoenixClientWrapper
 from .storage import Store
 
@@ -44,6 +52,7 @@ class ExportWhat(StrEnum):
     matches = "matches"
     proposals = "proposals"
     sessions = "sessions"
+    evaluations = "evaluations"
 
 
 class ExportFmt(StrEnum):
@@ -82,6 +91,22 @@ SinceOpt = typer.Option(
     help="First scrape only: pull spans starting at/after this time (UTC) instead of "
     "the full project history. Ignored once a watermark exists.",
 )
+PullAnnotationsOpt = typer.Option(
+    False,
+    "--pull-annotations",
+    help="Also fetch HUMAN/LLM span annotations from Phoenix (needs a live connection).",
+)
+PushAnnotationsOpt = typer.Option(
+    False,
+    "--push",
+    help="Write the failing code checks back to Phoenix as CODE span annotations.",
+)
+PushAllOpt = typer.Option(
+    False,
+    "--push-all",
+    help="With --push, send passing checks too instead of failures only.",
+)
+UserOpt = typer.Option(None, "--user", help="Filter by user id.")
 
 
 @app.command()
@@ -176,6 +201,51 @@ def analyze(
 
 
 @app.command()
+def evaluate(
+    project: str | None = ProjectOpt,
+    start: datetime | None = StartOpt,
+    end: datetime | None = EndOpt,
+    stage: str | None = StageOpt,
+    asset_class: str | None = AssetClassOpt,
+    user: str | None = UserOpt,
+    limit: int = AnalyzeLimitOpt,
+    pull_annotations: bool = PullAnnotationsOpt,
+    push: bool = PushAnnotationsOpt,
+    push_all: bool = PushAllOpt,
+    db: Path | None = DbOpt,
+) -> None:
+    """Validate stored LLM outputs and user prompts, and sync annotations with Phoenix.
+
+    Runs the deterministic CODE checks over every stored span (no model calls),
+    optionally pulls the HUMAN/LLM annotations Phoenix already holds, and
+    optionally pushes the failures back so they show against the spans in the
+    Phoenix UI.
+    """
+    settings = _settings(db=db, project=project)
+    filters = _filters(project, start, end, stage, asset_class, limit, user_id=user)
+    with _open_store(settings) as store:
+        if pull_annotations:
+            _echo_sync(
+                annotations_mod.pull_annotations(
+                    store, _live_client(settings), settings, filters
+                )
+            )
+        spans_df = store.spans_frame(filters)
+        results = evaluations_mod.evaluate_spans(spans_df, settings)
+        store.replace_local_evaluations(results)
+        summary = insights_quality.quality_summary(store.evaluations_frame(filters))
+        overview = insights_quality.quality_overview(store.evaluations_frame(filters))
+        if push:
+            _echo_sync(
+                annotations_mod.push_annotations(
+                    store, _live_client(settings), settings, filters,
+                    only_failures=not push_all,
+                )
+            )
+    _echo_quality(overview, summary)
+
+
+@app.command()
 def report(
     out: Path | None = OutOpt,
     db: Path | None = DbOpt,
@@ -217,6 +287,9 @@ def export(
             df = store.matches_frame()
         elif what is ExportWhat.proposals:
             df = store.proposals_frame()
+        elif what is ExportWhat.evaluations:
+            filters = _filters(project, start, end, stage, asset_class, limit, search)
+            df = store.evaluations_frame(filters)
         else:
             df = store.sessions_frame()
     path = export_mod.export_frame(df, settings.export_dir, what.value, fmt.value)
@@ -302,6 +375,7 @@ def _filters(
     asset_class: str | None,
     limit: int,
     search: str | None = None,
+    user_id: str | None = None,
 ) -> QueryFilters:
     return QueryFilters(
         project=project,
@@ -310,8 +384,23 @@ def _filters(
         workflow_stage=stage,
         asset_class=asset_class,
         search=search,
+        user_id=user_id,
         limit=limit,
     )
+
+
+def _live_client(settings: Settings) -> PhoenixClientWrapper:
+    """A Phoenix client, or a clean exit explaining what is missing."""
+    client = PhoenixClientWrapper(settings)
+    if not client.available():
+        typer.secho(
+            "Phoenix is not available: set PHOENIX_COLLECTOR_ENDPOINT and install "
+            "the 'live' extra (arize-phoenix-client).",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(code=1)
+    return client
 
 
 def _utc(dt: datetime | None) -> datetime | None:
@@ -327,12 +416,65 @@ def _echo_scrape(report: ScrapeReport) -> None:
     )
 
 
+def _echo_sync(report: AnnotationSyncReport) -> None:
+    typer.echo(
+        f"[annotations:{report.direction}] spans={report.spans_considered} "
+        f"annotations={report.annotations} stored={report.stored} "
+        f"skipped={report.skipped}"
+    )
+
+
+def _echo_quality(overview: dict, summary_df) -> None:
+    """Print the validation scoreboard: headline pass rate then per-check failures."""
+    if not overview.get("n_checks"):
+        typer.echo("No spans to validate — scrape or seed first.")
+        return
+    pass_rate = overview.get("span_pass_rate")
+    typer.echo(
+        f"Validated {overview['n_evaluated_spans']} spans with {overview['n_checks']} "
+        f"checks: {overview['n_failed_checks']} failed across "
+        f"{overview['n_failed_spans']} spans "
+        f"({'n/a' if pass_rate is None else f'{pass_rate:.1%} clean'})."
+    )
+    typer.echo(
+        f"  {overview['n_output_issues']} output issues · "
+        f"{overview['n_prompt_issues']} prompt issues · "
+        f"sources: {', '.join(overview['sources']) or '-'}"
+    )
+    failing = summary_df[summary_df["n_failed"] > 0] if len(summary_df) else summary_df
+    if not len(failing):
+        typer.echo("")
+        typer.echo("Every check passed.")
+        return
+    typer.echo("")
+    header = f"{'check':<24} {'target':<8} {'failed':>7} {'rate':>7}  example"
+    typer.echo(header)
+    typer.echo("-" * (len(header) + 30))
+    for row in failing.head(_TOP_N).to_dict("records"):
+        example = str(row["example"]).replace("\n", " ")
+        if len(example) > _PROMPT_PREVIEW_CHARS:
+            example = example[: _PROMPT_PREVIEW_CHARS - 1] + "…"
+        typer.echo(
+            f"{row['check']:<24} {row['target']:<8} {row['n_failed']:>7} "
+            f"{row['fail_rate']:>6.1%}  {example}"
+        )
+
+
 def _echo_summary(result: AnalysisResult) -> None:
     typer.echo(
         f"Analyzed {result.n_spans_analyzed} spans -> {len(result.clusters)} clusters, "
         f"{len(result.matches)} skill matches, {len(result.proposals)} gap proposals, "
         f"{len(result.sessions)} sessions."
     )
+    if result.evaluations:
+        failed = sum(
+            1 for e in result.evaluations
+            if e.score is not None and e.score < evaluations_mod.PASS_SCORE
+        )
+        typer.echo(
+            f"Validation: {len(result.evaluations)} checks, {failed} failed "
+            f"(`pheonix evaluate` for the breakdown)."
+        )
 
 
 def _echo_top_prompts(clusters: tuple[PromptCluster, ...], top_n: int = _TOP_N) -> None:

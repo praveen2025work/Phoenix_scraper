@@ -147,20 +147,73 @@ def write_markdown_report(result: AnalysisResult, out_path: Path) -> Path
     # level (global / asset_class / capability), session + cost summary.
 ```
 
+## evaluations.py  (the CODE annotator — pure, offline, no model calls)
+```python
+PASS_SCORE = 0.5          # scores are 0-1, HIGHER IS BETTER; below this the check failed
+CHECKS: list[tuple[str, EvalTarget, Checker]]   # registry, populated by @_register
+
+def evaluate_spans(spans_df, settings, now=None) -> list[SpanEvaluation]
+    # one row per (span, APPLICABLE check). A checker returns None when it does not
+    # apply (prompt check on a tool span, groundedness on a tool-backed trace) so
+    # rollups never dilute fail rates with spans that were never in scope.
+def build_context(spans_df, settings) -> EvalContext
+    # corpus stats a single-span check cannot compute: per-span-kind latency outlier
+    # thresholds, prompt-length threshold, per-trace reference text, traces with tools.
+def check_names() -> tuple[tuple[str, EvalTarget], ...]
+def evaluations_frame(evaluations) -> pd.DataFrame     # adds derived `passed`
+
+# Every checker: (span_mapping, EvalContext) -> EvalOutcome | None, and every
+# EvalOutcome MUST carry an explanation naming its evidence — a heuristic that
+# cannot be audited is noise.
+```
+
+## annotations.py  (round-trip with Phoenix; uses phoenix_client, never httpx directly)
+```python
+def pull_annotations(store, client, settings, filters=None) -> AnnotationSyncReport
+    # fetch Phoenix annotations for the STORED spans; drop any whose span_id is
+    # unknown locally (it would break the join every quality view rests on).
+def push_annotations(store, client, settings, filters=None, only_failures=True) -> AnnotationSyncReport
+    # send source='local' checks only — echoing Phoenix's own rows back would
+    # duplicate its data. Opt-in: it writes to a shared system.
+def annotation_to_evaluation(annotation: dict) -> SpanEvaluation | None
+    # tolerate nested result{label,score,explanation} AND flattened columns;
+    # scores > 1.5 are read as percentages; unknown annotator_kind -> HUMAN.
+def to_phoenix_annotation(evaluation: dict) -> dict     # /v1/span_annotations shape
+```
+
+## insights_quality.py  (rollups over Store.evaluations_frame)
+```python
+def with_pass_flag(evals_df) -> pd.DataFrame       # unscored annotations count as PASSING
+def quality_summary(evals_df) -> pd.DataFrame      # per (check, source)
+def quality_by_dimension(evals_df, column) -> pd.DataFrame
+def failing_spans(evals_df, limit=200) -> pd.DataFrame
+def quality_by_cluster(evals_df, clusters_df, members_df) -> pd.DataFrame
+def quality_overview(evals_df) -> dict
+```
+
 ## pipeline.py  (owned by the cli/api implementer)
 ```python
 def run_analysis(store: Store, settings: Settings) -> AnalysisResult
     # spans_frame -> compute+persist costs -> build_clusters -> derive_sessions ->
-    # load_all_skills -> match_clusters -> store.replace_analysis -> AnalysisResult
+    # load_all_skills -> match_clusters -> evaluate_spans (when
+    # settings.evaluate_on_analyze) -> store.replace_analysis -> AnalysisResult
 ```
 
 ## cli.py (typer app named `app`) + api.py (fastapi app factory `create_app(settings)`)
 CLI commands: demo (seed fixtures + analyze + report), seed, scrape, ingest, analyze,
-report, export (--what spans|clusters|matches|proposals|sessions --fmt csv|json|parquet
-+ filter options), serve. API routes: GET /health, POST /demo/seed, POST /scrape/run,
-GET /prompts/frequent, GET /skills/matches, GET /skills/gaps, GET /sessions,
-GET /costs/summary, GET /spans — all list endpoints accept filter query params and
+evaluate (+ --pull-annotations / --push / --push-all / --user), report,
+export (--what spans|clusters|matches|proposals|sessions|evaluations
+--fmt csv|json|parquet + filter options), serve. API routes: GET /health,
+POST /demo/seed, POST /scrape/run, GET /prompts/frequent, GET /skills/matches,
+GET /skills/gaps, GET /sessions, GET /costs/summary, GET /spans,
+GET /quality/{overview,checks,by,failures,by-prompt,evaluations,catalog},
+POST /annotations/{pull,push} — all list endpoints accept filter query params and
 `fmt=json|csv` where csv returns a downloadable file response.
+
+Limit semantics: `Store.evaluations_frame` bounds CHECK ROWS, not spans (one span
+yields a row per applicable check). The /quality/* routes therefore use
+`EVALUATION_ROW_LIMIT`, not the span-sized analysis limit, or every rollup would
+silently describe a truncated corpus while presenting itself as complete.
 
 ## Testing rules (all modules)
 - TDD: write tests first in `tests/test_<module>.py`, then implement to green.

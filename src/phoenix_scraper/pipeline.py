@@ -1,11 +1,12 @@
-"""End-to-end analysis: spans -> costs -> clusters -> sessions -> skill mapping -> store."""
+"""End-to-end analysis: spans -> costs -> clusters -> sessions -> validation -> skills."""
 
 from datetime import UTC, datetime
 
 from .cluster import build_clusters
 from .config import Settings
 from .costs import compute_span_costs, load_pricing
-from .models import AnalysisResult, QueryFilters
+from .evaluations import evaluate_spans
+from .models import AnalysisResult, QueryFilters, SpanEvaluation
 from .sessions import derive_sessions
 from .skills import load_all_skills
 from .skills_mapper import match_clusters
@@ -40,12 +41,20 @@ def run_analysis(
         clusters, skills, threshold=settings.skill_match_threshold
     )
 
+    evaluations: list[SpanEvaluation] = []
+    if settings.evaluate_on_analyze:
+        # Validation is derived from the same span population as the clusters, so
+        # per-cluster quality and per-cluster cost always describe one corpus.
+        evaluations = evaluate_spans(spans_df, settings)
+        store.replace_local_evaluations(evaluations)
+
     store.replace_analysis(clusters, matches, proposals, sessions)
     return AnalysisResult(
         clusters=tuple(clusters),
         matches=tuple(matches),
         proposals=tuple(proposals),
         sessions=tuple(sessions),
+        evaluations=tuple(evaluations),
         n_spans_analyzed=int(len(spans_df)),
         generated_at=datetime.now(UTC),
     )

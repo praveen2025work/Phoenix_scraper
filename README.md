@@ -1,8 +1,9 @@
 # pheonix — Phoenix Prompt Miner (POC)
 
 Scrapes **Arize Phoenix** observability data (traces, spans, sessions, prompts, token
-usage/cost), identifies the **most frequently asked user prompts**, matches them against
-your **existing skills catalog**, and proposes **new skills** slotted at the right level:
+usage/cost), **validates what the LLM answered and what users asked**, identifies the
+**most frequently asked user prompts**, matches them against your **existing skills
+catalog**, and proposes **new skills** slotted at the right level:
 
 - **global** — cross-desk utility (glossary, export help, …)
 - **asset_class** — FX / rates / equities / credit / commodities
@@ -301,6 +302,79 @@ share one signature, so they count as one prompt pattern. Clusters observed acro
 multiple asset classes are never proposed as asset-class skills — they slot at
 capability (or global) level.
 
+## How validation works
+
+Phoenix judges an agent with **span annotations**: named verdicts attached to a span,
+each carrying a `label`, a `score` and an `explanation`, tagged with who made them —
+`HUMAN` (an analyst clicking thumbs up/down in the Phoenix UI), `LLM` (an
+`phoenix.evals` llm-as-judge run), or `CODE` (a deterministic programmatic check).
+This tool speaks all three:
+
+```
+stored spans ──> code checks ─────────> span_evaluations <──── Phoenix annotations
+                 (CODE, offline)         (one table)           (HUMAN + LLM, pulled)
+                                              │
+                                              ├──> quality panels / API / CSV
+                                              └──> pushed back to Phoenix (opt-in)
+```
+
+**Code checks run offline over every span** — no model calls, no network, no sampling.
+That is the split production teams use: cheap deterministic checks on 100% of traffic,
+expensive semantic judges on a sample. Scores are 0-1, **higher is better**, and a check
+fails below 0.5. Every failure states its evidence (the matched phrase, the ungrounded
+figures, the unaddressed terms), because a heuristic you cannot audit is noise.
+
+| Check | Judges | Fails when |
+| --- | --- | --- |
+| `output_empty` | output | a user turn produced no answer |
+| `output_refusal` | output | the answer *opens* with a refusal ("I cannot…", "As an AI…") |
+| `output_truncated` | output | `finish_reason=max_tokens`, no terminal punctuation, or unclosed brackets |
+| `output_repetition` | output | degenerate looping — low distinct-word ratio or a phrase repeating 4×+ |
+| `output_format_valid` | output | JSON was asked for or attempted and does not parse |
+| `answer_relevance` | output | the answer shares almost none of the question's vocabulary |
+| `answer_groundedness` | output | the answer states figures absent from the question **and** from every tool result in the trace |
+| `span_status` | span | the span status is `ERROR` |
+| `latency_outlier` | span | latency exceeds the outlier cut **for that span kind** |
+| `prompt_injection` | prompt | instruction-override / system-prompt-extraction / jailbreak patterns |
+| `prompt_pii` | prompt | email, phone, IBAN, SSN or account-number patterns in the prompt |
+| `prompt_clarity` | prompt | a short ask whose object is only a pronoun ("fix it again") |
+| `prompt_length` | prompt | prompt length exceeds the corpus outlier cut |
+
+Checks that do not apply to a span emit nothing rather than a pass, so a narrow check
+(JSON validity) never dilutes the headline numbers. Thresholds are tunable via
+`PHEONIX_EVAL_*` in `.env` — see `src/phoenix_scraper/config.py`.
+
+**Deliberate limits.** `answer_relevance` is lexical: it cannot tell that "PLEX" and
+"attribution" mean the same thing, so its bar is set low and it only reliably catches
+answers sharing *nothing* with the question. `answer_groundedness` abstains whenever a
+tool ran in the trace, since a tool may legitimately have supplied the figure. Neither
+replaces an LLM judge for semantic correctness — they catch the failures a judge is too
+expensive to look for on every span.
+
+```bash
+pheonix evaluate                      # validate stored spans, print the scoreboard
+pheonix evaluate --user analyst-priya # ... scoped, like every other filter
+pheonix evaluate --pull-annotations   # also fetch HUMAN/LLM annotations from Phoenix
+pheonix evaluate --push               # write failing CODE checks back to Phoenix
+```
+
+`pheonix analyze` (and `demo`) runs the checks by default; set
+`PHEONIX_EVALUATE_ON_ANALYZE=false` to skip them.
+
+### Round-tripping with Phoenix
+
+`--pull-annotations` calls `GET /v1/projects/{project}/span_annotations` (via
+`Client().spans.get_span_annotations`) for the spans already scraped, so a thumbs-down
+an analyst left in the Phoenix UI and a hallucination score an `phoenix.evals` run
+logged both show up in the panels beside the local checks. Pulled rows are keyed by
+`source='phoenix'` and are never dropped by a local re-analysis.
+
+`--push` sends the **failing** local checks to `POST /v1/span_annotations` as
+`annotator_kind=CODE` with `identifier=pheonix`, so they appear against the spans in
+Phoenix for everyone, upsert on repeat runs, and can never overwrite a human's
+annotation of the same name. Push is opt-in — it writes to a shared system. Add
+`--push-all` to mirror passing checks too.
+
 ## Skills catalog inputs
 
 Two sources, merged (catalog wins on name collisions):
@@ -327,7 +401,11 @@ Two sources, merged (catalog wins on name collisions):
 
 | Panel | What it answers |
 | --- | --- |
-| KPI row | volume, sessions, users, tokens, cost, error rate at a glance |
+| KPI row | volume, sessions, users, tokens, cost, error rate, **% of spans passing validation** |
+| **Validation** | every check, how often it applied and failed, with a failing example |
+| **Answer quality by user / model** | who is getting bad answers; whether one model refuses or truncates more |
+| **Prompt patterns answered badly** | frequency × failure — the strongest case for a new skill |
+| **Failed spans** | each failing span with its prompt, answer, and the reason, to confirm or dismiss |
 | What users are asking | every user turn classified by intent (why/what/how/check/request/…) |
 | Activity by day | asks per day with sessions and cost |
 | Users — who asks what | per-user asks, re-asks, errors, route length, spend, top intents and prompt patterns |
@@ -346,8 +424,10 @@ and downloadable with `fmt=csv`.
 ## CLI
 
 ```bash
-uv run pheonix demo|seed|scrape|ingest|analyze|report|serve|doctor
-uv run pheonix export --what spans|clusters|matches|proposals|sessions \
+uv run pheonix demo|seed|scrape|ingest|analyze|evaluate|report|serve|doctor
+uv run pheonix evaluate [--user U] [--stage S] [--asset-class A] [--start ...] [--end ...] \
+                        [--pull-annotations] [--push [--push-all]]
+uv run pheonix export --what spans|clusters|matches|proposals|sessions|evaluations \
                       --fmt csv|json|parquet \
                       [--project X] [--start ...] [--end ...] [--stage ...] \
                       [--asset-class ...] [--min-count N] [--search TEXT] [--limit N]
@@ -357,6 +437,15 @@ uv run pheonix export --what spans|clusters|matches|proposals|sessions \
 
 | Route | Purpose |
 | --- | --- |
+| `GET /quality/overview` | headline validation numbers (spans passing, failed checks) |
+| `GET /quality/checks` | per-check scoreboard: applied, failed, fail rate, example |
+| `GET /quality/by` | fail rates by `dimension=user_id\|model_name\|workflow_stage\|asset_class` |
+| `GET /quality/failures` | failing spans with prompt, answer, and reason (`top=N`) |
+| `GET /quality/by-prompt` | prompt clusters ranked by how badly they are answered |
+| `GET /quality/evaluations` | raw judgements — one row per (span, check) |
+| `GET /quality/catalog` | the registered checks and what each judges |
+| `POST /annotations/pull` | fetch HUMAN/LLM span annotations from Phoenix |
+| `POST /annotations/push` | write failing CODE checks back to Phoenix (`only_failures=`) |
 | `GET /prompts/frequent` | prompt clusters by frequency (`min_count`, `fmt=json\|csv`) |
 | `GET /skills/matches` | clusters matched to existing skills |
 | `GET /skills/gaps` | proposed new skills with level + evidence |
@@ -377,16 +466,25 @@ src/phoenix_scraper/
   scraper         OpenInference attr flattening + watermark scrape + jsonl ingest
   normalize/cluster       prompt signatures and frequency clustering
   skills/taxonomy/skills_mapper   catalog loading, level inference, matching + proposals
+  evaluations     the CODE annotator: offline output and prompt validators
+  annotations     pull HUMAN/LLM annotations from Phoenix, push CODE ones back
+  insights*       analytics: traces, users, LLM behaviour, quality rollups
   costs/sessions  token->cost from pricing.yaml, session derivation
-  storage         SQLite store (spans, state, analysis results)
+  storage         SQLite store (spans, state, analysis results, span_evaluations)
   pipeline/cli/api        orchestration, Typer CLI, FastAPI service
-tests/            240+ tests, ~90% coverage (`make test`)
+tests/            450 tests, ~93% coverage (`make test`)
 ```
 
 ## POC limitations (deliberate)
 
 - Clustering is lexical (normalize + rapidfuzz), not embedding-based — good enough to
   demonstrate the mechanism; swap in embeddings for semantic grouping later.
+- Validation is code-based only: no LLM judge is bundled, so nothing here scores
+  *semantic* correctness. `answer_relevance` and `answer_groundedness` are proxies with
+  the limits spelled out above. The natural next step is running `phoenix.evals`
+  (`HallucinationEvaluator`, `QAEvaluator`, …) on a sample and logging the results back
+  to Phoenix — `--pull-annotations` then brings those scores into these same panels
+  with no further work.
 - Cost falls back to `config/pricing.yaml` when spans carry no cost attribute — the
   prices are illustrative, not your negotiated Bedrock rates.
 - Single-writer SQLite; fine for a POC, not for concurrent production jobs.

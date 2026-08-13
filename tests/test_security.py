@@ -65,6 +65,28 @@ class TestApiAuth:
         assert not (settings.export_dir / "spans.csv").exists()
 
 
+class TestCsrfGuard:
+    """Cross-origin POSTs must be rejected — /annotations/push writes to Phoenix."""
+
+    def _client(self, settings) -> TestClient:
+        return TestClient(create_app(settings))
+
+    def test_cross_origin_post_rejected(self, settings):
+        client = self._client(settings)
+        for route in ("/annotations/pull", "/annotations/push", "/demo/seed"):
+            response = client.post(route, headers={"Origin": "http://evil.example"})
+            assert response.status_code == 403, route
+            assert "Cross-origin" in response.json()["detail"]
+
+    def test_same_origin_post_passes_the_guard(self, settings):
+        client = self._client(settings)
+        # 503 (no Phoenix configured), not 403 — the guard let it through.
+        response = client.post(
+            "/annotations/pull", headers={"Origin": "http://testserver"}
+        )
+        assert response.status_code == 503
+
+
 class TestServeGuard:
     def test_refuses_public_bind_without_key(self, monkeypatch):
         monkeypatch.delenv("PHEONIX_API_KEY", raising=False)

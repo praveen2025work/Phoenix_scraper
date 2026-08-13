@@ -13,9 +13,19 @@ from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Security
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.security.api_key import APIKeyHeader
 
-from . import __version__, insights, insights_llm, insights_users
+from . import (
+    __version__,
+    insights,
+    insights_llm,
+    insights_quality,
+    insights_users,
+)
+from . import (
+    annotations as annotations_mod,
+)
 from .config import Settings, load_settings
 from .costs import cost_summary
+from .evaluations import check_names
 from .export import frame_to_csv_text
 from .fixtures import seed_demo
 from .models import QueryFilters
@@ -27,6 +37,18 @@ from .storage import Store
 _DASHBOARD_PATH = Path(__file__).parent / "static" / "dashboard.html"
 
 Fmt = Literal["json", "csv"]
+
+# Span columns the quality rollup may group by — an allowlist, since the value
+# reaches a groupby on a joined frame.
+_QUALITY_DIMENSIONS = frozenset(
+    {"user_id", "model_name", "workflow_stage", "asset_class", "project", "span_kind"}
+)
+
+# Row ceiling for the quality endpoints. Each span contributes one row per
+# applicable check, so this must cover ANALYSIS_SPAN_LIMIT spans times the
+# number of registered checks — otherwise a rollup quietly describes a
+# truncated corpus while presenting itself as the whole picture.
+EVALUATION_ROW_LIMIT = ANALYSIS_SPAN_LIMIT * 20
 
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
@@ -101,6 +123,28 @@ def create_app(settings: Settings) -> FastAPI:
         )
 
     AnalysisFiltersDep = Annotated[QueryFilters, Depends(analysis_filters)]
+
+    def quality_filters(
+        project: str | None = None,
+        start: datetime | None = None,
+        end: datetime | None = None,
+        stage: str | None = None,
+        asset_class: str | None = None,
+        model_name: str | None = None,
+        session_id: str | None = None,
+        user_id: str | None = None,
+        search: str | None = None,
+        # evaluations_frame counts CHECK ROWS, and one span yields a row per
+        # applicable check — so the span-sized analysis limit would truncate
+        # every quality rollup above ~8k spans while still looking complete.
+        limit: int = Query(default=EVALUATION_ROW_LIMIT, ge=1, le=EVALUATION_ROW_LIMIT),
+    ) -> QueryFilters:
+        return span_filters(
+            project, start, end, stage, asset_class, model_name, session_id,
+            user_id, search, limit,
+        )
+
+    QualityFiltersDep = Annotated[QueryFilters, Depends(quality_filters)]
 
     @app.middleware("http")
     async def security_guard(request, call_next):
@@ -252,6 +296,101 @@ def create_app(settings: Settings) -> FastAPI:
             df = insights.skill_health(efficiency, store.matches_frame())
         return _frame_response(df, fmt, "skill_health")
 
+    @protected.get("/quality/overview")
+    def quality_overview(filters: QualityFiltersDep) -> dict[str, Any]:
+        with open_store() as store:
+            df = store.evaluations_frame(filters)
+        return insights_quality.quality_overview(df)
+
+    @protected.get("/quality/checks")
+    def quality_checks(filters: QualityFiltersDep, fmt: Fmt = "json") -> Response:
+        """Per-check scoreboard: how often each validation applied and failed."""
+        with open_store() as store:
+            df = insights_quality.quality_summary(store.evaluations_frame(filters))
+        return _frame_response(df, fmt, "quality_checks")
+
+    @protected.get("/quality/by")
+    def quality_by(
+        filters: QualityFiltersDep,
+        dimension: str = "user_id",
+        fmt: Fmt = "json",
+    ) -> Response:
+        """Fail rates grouped by any span dimension (user, model, stage, asset class)."""
+        if dimension not in _QUALITY_DIMENSIONS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"dimension must be one of {', '.join(sorted(_QUALITY_DIMENSIONS))}",
+            )
+        with open_store() as store:
+            df = insights_quality.quality_by_dimension(
+                store.evaluations_frame(filters), dimension
+            )
+        return _frame_response(df, fmt, f"quality_by_{dimension}")
+
+    @protected.get("/quality/failures")
+    def quality_failures(
+        filters: QualityFiltersDep,
+        top: int = Query(default=200, ge=1, le=10_000),
+        fmt: Fmt = "json",
+    ) -> Response:
+        """The failing spans themselves — prompt, answer, and why each check failed."""
+        with open_store() as store:
+            df = insights_quality.failing_spans(store.evaluations_frame(filters), limit=top)
+        return _frame_response(df, fmt, "quality_failures")
+
+    @protected.get("/quality/by-prompt")
+    def quality_by_prompt(filters: QualityFiltersDep, fmt: Fmt = "json") -> Response:
+        """Prompt patterns ranked by how badly the agent answers them."""
+        with open_store() as store:
+            df = insights_quality.quality_by_cluster(
+                store.evaluations_frame(filters),
+                store.clusters_frame(limit=100_000),
+                store.cluster_members_frame(),
+            )
+        return _frame_response(df, fmt, "quality_by_prompt")
+
+    @protected.get("/quality/evaluations")
+    def quality_evaluations(filters: QualityFiltersDep, fmt: Fmt = "json") -> Response:
+        """Raw judgements — one row per (span, check), for validating the validators."""
+        with open_store() as store:
+            df = store.evaluations_frame(filters)
+        return _frame_response(df, fmt, "evaluations")
+
+    @protected.get("/quality/catalog")
+    def quality_catalog() -> list[dict[str, str]]:
+        """The registered code checks, so the UI can describe what was validated."""
+        return [{"check": name, "target": target} for name, target in check_names()]
+
+    @protected.post("/annotations/pull")
+    def annotations_pull() -> dict[str, Any]:
+        """Pull HUMAN/LLM span annotations from Phoenix for the stored spans."""
+        client = _require_phoenix()
+        with open_store() as store:
+            report = annotations_mod.pull_annotations(store, client, settings)
+        return report.model_dump(mode="json")
+
+    @protected.post("/annotations/push")
+    def annotations_push(only_failures: bool = True) -> dict[str, Any]:
+        """Push locally computed CODE checks back to Phoenix as span annotations."""
+        client = _require_phoenix()
+        with open_store() as store:
+            report = annotations_mod.push_annotations(
+                store, client, settings, only_failures=only_failures
+            )
+        return report.model_dump(mode="json")
+
+    def _require_phoenix() -> PhoenixClientWrapper:
+        client = PhoenixClientWrapper(settings)
+        if not client.available():
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Phoenix is not available: set PHOENIX_COLLECTOR_ENDPOINT and "
+                    "install the 'live' extra (arize-phoenix-client)."
+                ),
+            )
+        return client
+
     @protected.post("/demo/seed")
     def demo_seed(n_sessions: int = 60, seed: int = 42) -> dict[str, Any]:
         with open_store() as store:
@@ -268,15 +407,7 @@ def create_app(settings: Settings) -> FastAPI:
 
     @protected.post("/scrape/run")
     def scrape_run() -> dict[str, Any]:
-        client = PhoenixClientWrapper(settings)
-        if not client.available():
-            raise HTTPException(
-                status_code=503,
-                detail=(
-                    "Phoenix is not available: set PHOENIX_COLLECTOR_ENDPOINT and "
-                    "install the 'live' extra (arize-phoenix-client)."
-                ),
-            )
+        client = _require_phoenix()
         with open_store() as store:
             report = scrape_once(store, client, settings)
         return report.model_dump(mode="json")

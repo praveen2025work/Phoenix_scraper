@@ -1,15 +1,18 @@
 """Export analysis dataframes to files and render the human-readable report."""
 
+from collections import Counter
 from pathlib import Path
 
 import pandas as pd
 
+from .evaluations import PASS_SCORE as _PASS_SCORE
 from .models import (
     AnalysisResult,
     PromptCluster,
     SessionRecord,
     SkillGapProposal,
     SkillMatch,
+    SpanEvaluation,
 )
 
 _SUPPORTED_FORMATS = ("csv", "json", "parquet")
@@ -71,6 +74,7 @@ def write_markdown_report(result: AnalysisResult, out_path: Path) -> Path:
     sections = [
         _header(result),
         _top_prompts_section(result.clusters),
+        _validation_section(result.evaluations),
         _matches_section(result.matches, result.clusters),
         _proposals_section(result.proposals),
         _sessions_section(result.sessions),
@@ -90,7 +94,8 @@ def _header(result: AnalysisResult) -> str:
         f"- Spans analyzed: {result.n_spans_analyzed}\n"
         f"- Prompt clusters: {len(result.clusters)}\n"
         f"- Skill matches: {len(result.matches)}\n"
-        f"- Skill gap proposals: {len(result.proposals)}"
+        f"- Skill gap proposals: {len(result.proposals)}\n"
+        f"- Validation checks: {len(result.evaluations)}"
     )
 
 
@@ -129,6 +134,48 @@ def _top_prompts_section(clusters: tuple[PromptCluster, ...]) -> str:
         rows,
     )
     return f"{title}\n\n{table}"
+
+
+def _validation_section(evaluations: tuple[SpanEvaluation, ...]) -> str:
+    """Per-check failure counts, worst first, with one failing example each."""
+    title = "## Output & prompt validation"
+    if not evaluations:
+        return f"{title}\n\nNo validation results."
+
+    applied: Counter[str] = Counter()
+    failed: Counter[str] = Counter()
+    targets: dict[str, str] = {}
+    examples: dict[str, str] = {}
+    for evaluation in evaluations:
+        applied[evaluation.name] += 1
+        targets.setdefault(evaluation.name, evaluation.target)
+        if evaluation.score is not None and evaluation.score < _PASS_SCORE:
+            failed[evaluation.name] += 1
+            examples.setdefault(evaluation.name, evaluation.explanation)
+
+    n_failed = sum(failed.values())
+    summary = (
+        f"{len(evaluations)} checks over {len({e.span_id for e in evaluations})} spans; "
+        f"{n_failed} failed."
+    )
+    if not n_failed:
+        return f"{title}\n\n{summary} Every check passed."
+
+    rows = [
+        [
+            _escape(name),
+            targets.get(name, ""),
+            str(count),
+            str(applied[name]),
+            f"{count / applied[name]:.0%}",
+            _escape(examples.get(name, "")),
+        ]
+        for name, count in failed.most_common()
+    ]
+    table = _md_table(
+        ["Check", "Judges", "Failed", "Evaluated", "Rate", "Example"], rows
+    )
+    return f"{title}\n\n{summary}\n\n{table}"
 
 
 def _matches_section(

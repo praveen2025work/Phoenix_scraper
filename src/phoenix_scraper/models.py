@@ -8,6 +8,12 @@ from pydantic import BaseModel, ConfigDict, Field
 SpanKind = Literal["LLM", "AGENT", "RETRIEVER", "TOOL", "CHAIN", "UNKNOWN"]
 SkillLevel = Literal["global", "asset_class", "capability"]
 
+# Phoenix's three annotator kinds: a human clicking thumbs up/down, an
+# llm-as-judge eval, or a deterministic programmatic check (what evaluations.py
+# produces). Kept as Phoenix spells them so annotations round-trip unchanged.
+AnnotatorKind = Literal["HUMAN", "LLM", "CODE"]
+EvalTarget = Literal["prompt", "output", "span"]
+
 
 class _Frozen(BaseModel):
     model_config = ConfigDict(frozen=True)
@@ -113,6 +119,36 @@ class SkillGapProposal(_Frozen):
     sample_span_ids: tuple[str, ...] = ()
 
 
+class SpanEvaluation(_Frozen):
+    """One judgement about a span, in Phoenix's span-annotation shape.
+
+    Mirrors the Phoenix `/v1/span_annotations` payload (name + annotator_kind +
+    result.label/score/explanation) so locally computed checks and annotations
+    pulled from Phoenix live in one table and roll up together. `score` is
+    always 0-1 with **higher = better**; `passed` derives from PASS_SCORE.
+    """
+
+    span_id: str
+    name: str  # check/annotation name, e.g. "output_refusal" or "correctness"
+    label: str = ""  # descriptive class, e.g. "refused" / "answered"
+    score: float | None = None
+    explanation: str = ""
+    annotator_kind: AnnotatorKind = "CODE"
+    target: EvalTarget = "span"  # which side of the exchange the check judges
+    source: str = "local"  # local (computed here) | phoenix (pulled from Phoenix)
+    created_at: datetime | None = None
+
+
+class AnnotationSyncReport(_Frozen):
+    """Outcome of exchanging span annotations with a live Phoenix server."""
+
+    direction: str  # pull | push
+    spans_considered: int = 0
+    annotations: int = 0
+    stored: int = 0
+    skipped: int = 0
+
+
 class ScrapeReport(_Frozen):
     source: str  # live | fixtures | jsonl
     pulled: int = 0
@@ -144,5 +180,6 @@ class AnalysisResult(_Frozen):
     matches: tuple[SkillMatch, ...] = ()
     proposals: tuple[SkillGapProposal, ...] = ()
     sessions: tuple[SessionRecord, ...] = ()
+    evaluations: tuple[SpanEvaluation, ...] = ()
     n_spans_analyzed: int = 0
     generated_at: datetime | None = None

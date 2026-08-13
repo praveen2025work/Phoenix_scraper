@@ -36,6 +36,19 @@ class Settings(BaseSettings):
     # analysis knobs
     cluster_fuzz_threshold: int = 90  # rapidfuzz token_set_ratio 0-100
     skill_match_threshold: float = 0.55  # 0-1 combined match score
+
+    # validation knobs (see evaluations.py). Defaults are deliberately lenient:
+    # a code check that cries wolf gets ignored, and then nothing gets validated.
+    evaluate_on_analyze: bool = True  # run the CODE checks as part of `analyze`
+    # Share of the question's content terms an answer must echo for full credit.
+    # Deliberately low: lexical overlap is a weak signal that only reliably
+    # catches answers sharing almost nothing with the question. Raising it makes
+    # the check fire on perfectly good short answers.
+    eval_relevance_overlap: float = 0.15
+    eval_repetition_threshold: float = 0.35  # min distinct-word ratio before "repetitive"
+    eval_outlier_quantile: float = 0.95  # latency / prompt-length outlier cut
+    eval_outlier_factor: float = 2.0  # ... and it must also exceed factor x median
+    annotation_batch_size: int = 100  # span_ids per Phoenix annotation request
     scrape_overlap_minutes: int = 15  # watermark lookback to catch late-arriving spans
     scrape_limit: int = 5000
     # Read timeout (seconds) for Phoenix API calls. The first scrape scans the

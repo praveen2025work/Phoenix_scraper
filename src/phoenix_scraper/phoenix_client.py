@@ -4,13 +4,18 @@ import importlib.util
 import logging
 import ssl
 import time
+from collections.abc import Callable, Iterator, Sequence
+from contextlib import contextmanager
 from datetime import datetime
+from typing import Any, TypeVar
 
 import pandas as pd
 
 from .config import Settings
 
 logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
 
 _MAX_ATTEMPTS = 3
 _BACKOFF_BASE_SECONDS = 1.0
@@ -60,13 +65,9 @@ class PhoenixClientWrapper:
         except (ImportError, ValueError):
             return False
 
-    def fetch_spans(
-        self,
-        project: str,
-        start: datetime | None,
-        end: datetime | None,
-        limit: int,
-    ) -> pd.DataFrame:
+    @contextmanager
+    def _client(self) -> Iterator[Any]:
+        """A configured phoenix Client, with our TLS/timeout overrides applied."""
         endpoint = self._settings.phoenix_endpoint
         if not endpoint:
             raise RuntimeError(
@@ -77,7 +78,6 @@ class PhoenixClientWrapper:
             # Lazy import: the phoenix extra is optional at runtime.
             import httpx
             from phoenix.client import Client
-            from phoenix.client.types.spans import SpanQuery
         except ImportError as exc:
             raise RuntimeError(
                 "arize-phoenix-client is not installed. Install the phoenix extra, "
@@ -113,34 +113,139 @@ class PhoenixClientWrapper:
             client = Client(http_client=http_client)
         else:
             client = Client(base_url=endpoint, api_key=self._settings.phoenix_api_key)
+        try:
+            yield client
+        finally:
+            # The phoenix Client only closes clients it created itself; ours
+            # would otherwise leak a connection pool per call under `serve`.
+            if http_client is not None:
+                http_client.close()
+
+    def _with_retries(self, operation: Callable[[], T], description: str) -> T:
+        """Run a Phoenix call, retrying transport failures with exponential backoff."""
+        import httpx
 
         retryable = (ConnectionError, TimeoutError, httpx.TransportError)
         last_error: Exception | None = None
-        try:
-            for attempt in range(1, _MAX_ATTEMPTS + 1):
-                try:
-                    return client.spans.get_spans_dataframe(
-                        query=SpanQuery(),
-                        start_time=start,
-                        end_time=end,
-                        limit=limit,
-                        project_identifier=project,
+        for attempt in range(1, _MAX_ATTEMPTS + 1):
+            try:
+                return operation()
+            except retryable as exc:
+                last_error = exc
+                if attempt < _MAX_ATTEMPTS:
+                    delay = _BACKOFF_BASE_SECONDS * (2 ** (attempt - 1))
+                    logger.warning(
+                        "Phoenix %s attempt %d/%d failed (%s); retrying in %.1fs",
+                        description, attempt, _MAX_ATTEMPTS, exc, delay,
                     )
-                except retryable as exc:
-                    last_error = exc
-                    if attempt < _MAX_ATTEMPTS:
-                        delay = _BACKOFF_BASE_SECONDS * (2 ** (attempt - 1))
-                        logger.warning(
-                            "Phoenix fetch attempt %d/%d failed (%s); retrying in %.1fs",
-                            attempt, _MAX_ATTEMPTS, exc, delay,
-                        )
-                        time.sleep(delay)
-            raise RuntimeError(
-                f"Failed to fetch spans from Phoenix at {endpoint} after "
-                f"{_MAX_ATTEMPTS} attempts: {last_error}"
-            ) from last_error
-        finally:
-            # The phoenix Client only closes clients it created itself; ours
-            # would otherwise leak a connection pool per fetch under `serve`.
-            if http_client is not None:
-                http_client.close()
+                    time.sleep(delay)
+        raise RuntimeError(
+            f"Failed to {description} from Phoenix at {self._settings.phoenix_endpoint} "
+            f"after {_MAX_ATTEMPTS} attempts: {last_error}"
+        ) from last_error
+
+    def fetch_spans(
+        self,
+        project: str,
+        start: datetime | None,
+        end: datetime | None,
+        limit: int,
+    ) -> pd.DataFrame:
+        from phoenix.client.types.spans import SpanQuery
+
+        with self._client() as client:
+            return self._with_retries(
+                lambda: client.spans.get_spans_dataframe(
+                    query=SpanQuery(),
+                    start_time=start,
+                    end_time=end,
+                    limit=limit,
+                    project_identifier=project,
+                ),
+                "fetch spans",
+            )
+
+    def fetch_span_annotations(
+        self, project: str, span_ids: Sequence[str]
+    ) -> list[dict]:
+        """Span annotations for ``span_ids`` — Phoenix's HUMAN feedback and LLM evals.
+
+        These are the judgements Phoenix itself holds: thumbs up/down an analyst
+        clicked in the UI, and the label/score/explanation rows any `phoenix.evals`
+        run logged back. Requested in batches because the endpoint takes span ids
+        as repeated query params and URLs are finite.
+
+        Returns raw annotation dicts; ``annotations.py`` maps them onto
+        SpanEvaluation. Note annotations are excluded by Phoenix's default.
+        """
+        if not span_ids:
+            return []
+        batch_size = max(1, self._settings.annotation_batch_size)
+        out: list[dict] = []
+        with self._client() as client:
+            for start in range(0, len(span_ids), batch_size):
+                batch = list(span_ids[start : start + batch_size])
+                page = self._with_retries(
+                    lambda batch=batch: client.spans.get_span_annotations(
+                        span_ids=batch, project_identifier=project
+                    ),
+                    "fetch span annotations",
+                )
+                out.extend(_as_dicts(page))
+        return out
+
+    def push_span_annotations(self, project: str, annotations: Sequence[dict]) -> int:
+        """Write annotations back to Phoenix so they show against the spans in its UI.
+
+        Each item must carry span_id, name, annotator_kind and a result dict —
+        the `/v1/span_annotations` payload shape. Returns the number sent.
+        """
+        if not annotations:
+            return 0
+        batch_size = max(1, self._settings.annotation_batch_size)
+        sent = 0
+        with self._client() as client:
+            for start in range(0, len(annotations), batch_size):
+                batch = list(annotations[start : start + batch_size])
+                self._with_retries(
+                    lambda batch=batch: client.spans.log_span_annotations(
+                        span_annotations=batch, project_identifier=project
+                    ),
+                    "push span annotations",
+                )
+                sent += len(batch)
+        return sent
+
+
+def _as_dicts(payload: object) -> list[dict]:
+    """Normalize a Phoenix client response into plain dicts.
+
+    The client returns TypedDict-like rows today, but has returned pydantic
+    models and a bare {"data": [...]} envelope across versions — accept all
+    three rather than pinning behaviour we do not control.
+    """
+    if payload is None:
+        return []
+    if isinstance(payload, pd.DataFrame):
+        return [] if payload.empty else payload.to_dict("records")
+    if isinstance(payload, dict):
+        data = payload.get("data", payload)
+        return _as_dicts(data) if isinstance(data, list) else [payload]
+    if isinstance(payload, (list, tuple)):
+        return [item for item in (_as_dict(row) for row in payload) if item]
+    return [item for item in [_as_dict(payload)] if item]
+
+
+def _as_dict(row: object) -> dict | None:
+    if isinstance(row, dict):
+        return row
+    for attribute in ("model_dump", "dict", "_asdict"):
+        method = getattr(row, attribute, None)
+        if callable(method):
+            try:
+                value = method()
+            except TypeError:
+                continue
+            if isinstance(value, dict):
+                return value
+    return None
