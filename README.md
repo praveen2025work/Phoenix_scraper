@@ -313,9 +313,17 @@ Two sources, merged (catalog wins on name collisions):
 ## Dashboard UI
 
 `pheonix serve` and open **http://127.0.0.1:8000/** — a self-contained dashboard
-(no CDN, works offline) over the analytics below. A **user selector** in the
-header refocuses every panel on one person; the **X-API-Key** field applies when
-`PHEONIX_API_KEY` is set.
+(no CDN, works offline) over the analytics below.
+
+- **Filter bar** — project, user, stage, asset class, model, date range, and
+  prompt-text search; every panel refetches with the active filters (options are
+  populated from your actual data via `/filters/options`).
+- **CSV on every panel** — exports exactly what the panel shows, honoring the
+  active filters.
+- **Spans explorer** — the raw filtered spans at the bottom, for validating what
+  the analytics are computed from; its CSV carries up to 100k rows.
+- The **X-API-Key** field applies when `PHEONIX_API_KEY` is set (kept in
+  sessionStorage only).
 
 | Panel | What it answers |
 | --- | --- |

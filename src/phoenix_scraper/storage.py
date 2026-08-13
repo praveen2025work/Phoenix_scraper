@@ -245,6 +245,29 @@ class Store:
             params=[min_count, limit],
         )
 
+    def distinct_options(self) -> dict:
+        """Distinct filterable values plus the span time range (for UI filters)."""
+
+        def column(name: str) -> list[str]:
+            rows = self._conn.execute(
+                f"SELECT DISTINCT {name} FROM spans "  # noqa: S608 — internal literals
+                f"WHERE {name} IS NOT NULL AND {name} != '' ORDER BY {name}"
+            ).fetchall()
+            return [row[0] for row in rows]
+
+        first, last = self._conn.execute(
+            "SELECT MIN(start_time), MAX(start_time) FROM spans"
+        ).fetchone()
+        return {
+            "projects": column("project"),
+            "users": column("user_id"),
+            "workflow_stages": column("workflow_stage"),
+            "asset_classes": column("asset_class"),
+            "models": column("model_name"),
+            "min_time": first,
+            "max_time": last,
+        }
+
     def cluster_members_frame(self) -> pd.DataFrame:
         return pd.read_sql_query(
             "SELECT cluster_id, span_id FROM cluster_members", self._conn

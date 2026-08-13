@@ -142,6 +142,23 @@ def test_insights_csv_download(client: TestClient) -> None:
     assert "attachment" in response.headers["content-disposition"]
 
 
+def test_filter_options(client: TestClient) -> None:
+    data = client.get("/filters/options").json()
+    assert data["users"]
+    assert data["models"]
+    assert data["workflow_stages"]
+    assert data["min_time"] <= data["max_time"]
+
+
+def test_spans_filter_by_search_and_time(client: TestClient) -> None:
+    everything = client.get("/spans", params={"limit": 100000}).json()
+    some_prompt = next(r["input_text"] for r in everything if r["input_text"])
+    word = some_prompt.split()[0]
+    filtered = client.get("/spans", params={"search": word, "limit": 100000}).json()
+    assert 0 < len(filtered) <= len(everything)
+    assert all(word.lower() in r["input_text"].lower() for r in filtered)
+
+
 def test_cross_origin_post_rejected(client: TestClient) -> None:
     response = client.post("/demo/seed", headers={"Origin": "http://evil.example:8200"})
     assert response.status_code == 403

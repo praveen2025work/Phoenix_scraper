@@ -58,6 +58,29 @@
   #status { font-size: 12px; color: var(--muted); min-height: 16px; margin-bottom: 10px; }
   #status.error { color: var(--critical); }
 
+  .filters {
+    display: flex; flex-wrap: wrap; gap: 10px; align-items: end;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 14px; margin-bottom: 12px;
+  }
+  .filters label { display: flex; flex-direction: column; gap: 3px; font-size: 11px;
+    text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  .filters .grow { flex: 1; min-width: 160px; }
+  .filters input[type=date], .filters input[type=search] {
+    background: var(--surface); color: var(--ink); border: 1px solid var(--border);
+    border-radius: 6px; padding: 5px 8px; font-size: 13px;
+  }
+  button.ghost {
+    background: transparent; color: var(--ink-2); border: 1px solid var(--border);
+  }
+
+  section h2 { display: flex; align-items: center; gap: 8px; }
+  .csvbtn {
+    margin-left: auto; background: transparent; color: var(--ink-2);
+    border: 1px solid var(--border); font-size: 11px; padding: 3px 9px; font-weight: 500;
+  }
+  .csvbtn:hover { color: var(--ink); }
+
   .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 20px; }
   .kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
   .kpi .label { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
@@ -108,37 +131,49 @@
   <h1>Pheonix</h1>
   <span class="sub">what users ask · where the agent works too hard · which skills to build or fix</span>
   <div class="controls">
-    <select id="userfilter" title="Filter every panel to one user"><option value="">All users</option></select>
     <input type="password" id="apikey" placeholder="X-API-Key (if required)" autocomplete="off">
-    <button id="refresh">Refresh</button>
+    <button id="refresh">Apply / Refresh</button>
   </div>
 </header>
+
+<div class="filters">
+  <label>Project <select id="f-project" data-opts="projects"><option value="">all</option></select></label>
+  <label>User <select id="f-user" data-opts="users"><option value="">all</option></select></label>
+  <label>Stage <select id="f-stage" data-opts="workflow_stages"><option value="">all</option></select></label>
+  <label>Asset class <select id="f-asset" data-opts="asset_classes"><option value="">all</option></select></label>
+  <label>Model <select id="f-model" data-opts="models"><option value="">all</option></select></label>
+  <label>From <input type="date" id="f-from"></label>
+  <label>To <input type="date" id="f-to"></label>
+  <label class="grow">Search <input type="search" id="f-search" placeholder="substring of the user prompt"></label>
+  <button id="reset" class="ghost">Reset</button>
+</div>
+
 <div id="status">loading…</div>
 
 <div class="kpis" id="kpis"></div>
 
 <div class="cols">
   <section>
-    <h2>What users are asking</h2>
+    <h2>What users are asking <button class="csvbtn" data-csv="/insights/questions">CSV</button></h2>
     <div class="hint">Every user turn, classified by intent — counts per question type, with token cost.</div>
     <div id="questions"></div>
   </section>
   <section>
-    <h2>Activity by day</h2>
+    <h2>Activity by day <button class="csvbtn" data-csv="/insights/activity">CSV</button></h2>
     <div class="hint">Asks per day, with sessions and cost on hover.</div>
     <div id="activity"></div>
   </section>
 </div>
 
 <section>
-  <h2>Users — who asks what</h2>
+  <h2>Users — who asks what <button class="csvbtn" data-csv="/users">CSV</button></h2>
   <div class="hint">Per-user activity, spend, friction, and their dominant intents and prompt patterns.
     Use the user selector in the header to focus every panel on one person.</div>
   <div class="scroll-x" id="users"></div>
 </section>
 
 <section>
-  <h2>What the LLM is doing — agent flows</h2>
+  <h2>What the LLM is doing — agent flows <button class="csvbtn" data-csv="/insights/flows">CSV</button></h2>
   <div class="hint">The step sequences the agent runs per ask (consecutive repeats collapsed).
     Long tool chains on frequent asks are the routes worth shortcutting with a skill.</div>
   <div class="scroll-x" id="flows"></div>
@@ -146,26 +181,26 @@
 
 <div class="cols">
   <section>
-    <h2>Tool usage</h2>
+    <h2>Tool usage <button class="csvbtn" data-csv="/insights/tools">CSV</button></h2>
     <div class="hint">Which tools the agent calls, how often they fail, and how slow they are.</div>
     <div class="scroll-x" id="tools"></div>
   </section>
   <section>
-    <h2>Model usage</h2>
+    <h2>Model usage <button class="csvbtn" data-csv="/insights/models">CSV</button></h2>
     <div class="hint">Calls, tokens in/out, and cost per model.</div>
     <div class="scroll-x" id="models"></div>
   </section>
 </div>
 
 <section>
-  <h2>Workflow stage × asset class</h2>
+  <h2>Workflow stage × asset class <button class="csvbtn" data-csv="/insights/breakdown">CSV</button></h2>
   <div class="hint">Where the asks come from, when spans carry
     <code>metadata.workflow_stage</code> / <code>metadata.asset_class</code> attributes.</div>
   <div class="scroll-x" id="breakdown"></div>
 </section>
 
 <section>
-  <h2>Where the agent works too hard — build a skill here first</h2>
+  <h2>Where the agent works too hard — build a skill here first <button class="csvbtn" data-csv="/insights/efficiency">CSV</button></h2>
   <div class="hint">Prompt patterns ranked by opportunity (asks × tokens per ask). <b>Long route</b> means
     the agent takes over 1.5× the steps of the average trace to answer this (flagged from 3 asks up) —
     the strongest signal that a dedicated skill (or a fix to a broken one) would pay off.</div>
@@ -174,12 +209,12 @@
 
 <div class="cols">
   <section>
-    <h2>Top prompts</h2>
+    <h2>Top prompts <button class="csvbtn" data-csv="/prompts/frequent">CSV</button></h2>
     <div class="hint">Most frequent normalized prompt patterns (always all users — clusters are computed globally by <code>pheonix analyze</code>).</div>
     <div class="scroll-x" id="prompts"></div>
   </section>
   <section>
-    <h2>High-friction sessions</h2>
+    <h2>High-friction sessions <button class="csvbtn" data-csv="/insights/friction">CSV</button></h2>
     <div class="hint">Users re-asking the same question, errors, empty answers.</div>
     <div class="scroll-x" id="friction"></div>
   </section>
@@ -187,17 +222,23 @@
 
 <div class="cols">
   <section>
-    <h2>Skill health</h2>
+    <h2>Skill health <button class="csvbtn" data-csv="/insights/skill-health">CSV</button></h2>
     <div class="hint">Matched skills where the agent still takes long routes are flagged
       <b>⚠ review</b> — the skill may be stale, wrong, or not being picked up.</div>
     <div class="scroll-x" id="skillhealth"></div>
   </section>
   <section>
-    <h2>Proposed new skills</h2>
+    <h2>Proposed new skills <button class="csvbtn" data-csv="/skills/gaps">CSV</button></h2>
     <div class="hint">Frequent asks not covered by any existing skill.</div>
     <div class="scroll-x" id="gaps"></div>
   </section>
 </div>
+
+<section>
+  <h2>Spans explorer — validate the raw data <button class="csvbtn" data-csv="/spans" data-csv-limit="100000">CSV</button></h2>
+  <div class="hint">First 200 spans matching the active filters. The CSV export carries up to 100k rows with every column.</div>
+  <div class="scroll-x" id="spans"></div>
+</section>
 
 <script>
 "use strict";
@@ -210,30 +251,56 @@ const clip = (s, n=90) => { s = String(s ?? ""); return s.length > n ? s.slice(0
 
 const keyInput = $("apikey");
 keyInput.value = sessionStorage.getItem("pheonix_api_key") || "";
-const userFilter = $("userfilter");
+
+function activeFilters() {
+  const params = {};
+  const set = (key, value) => { if (value) params[key] = value; };
+  set("project", $("f-project").value);
+  set("user_id", $("f-user").value);
+  set("stage", $("f-stage").value);
+  set("asset_class", $("f-asset").value);
+  set("model_name", $("f-model").value);
+  set("search", $("f-search").value.trim());
+  if ($("f-from").value) params.start = $("f-from").value + "T00:00:00";
+  if ($("f-to").value) params.end = $("f-to").value + "T23:59:59";
+  return params;
+}
 
 function apiUrl(path, params = {}) {
   const url = new URL(path, window.location.origin);
-  const user = userFilter.value;
-  if (user) url.searchParams.set("user_id", user);
-  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+  for (const [k, v] of Object.entries({ ...activeFilters(), ...params }))
+    url.searchParams.set(k, v);
   return url.pathname + url.search;
 }
 
-async function api(path, params) {
-  const headers = {};
+function authHeaders() {
   const key = keyInput.value.trim();
-  if (key) headers["X-API-Key"] = key;
-  const response = await fetch(apiUrl(path, params), { headers });
+  return key ? { "X-API-Key": key } : {};
+}
+
+async function api(path, params) {
+  const response = await fetch(apiUrl(path, params), { headers: authHeaders() });
   if (!response.ok) throw new Error(path + " → HTTP " + response.status);
   return response.json();
 }
 
-function fillUserFilter(users) {
-  const current = userFilter.value;
-  const names = users.map(u => u.user_id);
-  userFilter.innerHTML = `<option value="">All users</option>` +
-    names.map(u => `<option value="${esc(u)}"${u === current ? " selected" : ""}>${esc(u)}</option>`).join("");
+function fillFilterOptions(options) {
+  for (const select of document.querySelectorAll(".filters select")) {
+    const values = options[select.dataset.opts] || [];
+    const current = select.value;
+    select.innerHTML = `<option value="">all</option>` + values.map(v =>
+      `<option value="${esc(v)}"${v === current ? " selected" : ""}>${esc(v)}</option>`).join("");
+  }
+}
+
+async function downloadCsv(path, extra = {}) {
+  const response = await fetch(apiUrl(path, { ...extra, fmt: "csv" }), { headers: authHeaders() });
+  if (!response.ok) { alert("Export failed: HTTP " + response.status); return; }
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(await response.blob());
+  link.download = (path.split("/").filter(Boolean).join("_") || "export") + ".csv";
+  link.click();
+  URL.revokeObjectURL(link.href);
 }
 
 function kpiTile(label, value) {
@@ -414,6 +481,24 @@ function renderSkillHealth(rows) {
       <td class="num">${fmtNum(r.match_score, 2)}</td></tr>`).join(""));
 }
 
+function renderSpans(rows) {
+  if (!rows.length) { $("spans").innerHTML = `<div class="empty">No spans match the active filters.</div>`; return; }
+  $("spans").innerHTML = table(
+    ["Time", "User", "Session", "Kind", "Name", "Model", "Status", "#Tokens", "#Cost", "Prompt"],
+    rows.slice(0, 200).map(r => `<tr>
+      <td style="white-space:nowrap">${esc(String(r.start_time ?? "").replace("T", " ").slice(0, 19))}</td>
+      <td>${esc(r.user_id ?? "")}</td>
+      <td>${esc(clip(r.session_id ?? "", 16))}</td>
+      <td>${esc(r.span_kind)}</td>
+      <td>${esc(clip(r.name ?? "", 24))}</td>
+      <td>${esc(clip(r.model_name ?? "", 24))}</td>
+      <td>${r.status_code && r.status_code.toUpperCase() === "ERROR"
+        ? '<span class="badge review">⚠ ERROR</span>' : esc(r.status_code ?? "")}</td>
+      <td class="num">${fmtInt(r.tokens_total)}</td>
+      <td class="num">${r.cost_usd == null ? "–" : "$" + Number(r.cost_usd).toFixed(4)}</td>
+      <td class="prompt">${esc(clip(r.input_text ?? "", 90))}</td></tr>`).join(""));
+}
+
 function renderGaps(rows) {
   if (!rows.length) { $("gaps").innerHTML = `<div class="empty">No gap proposals yet — run <code>pheonix analyze</code>.</div>`; return; }
   $("gaps").innerHTML = table(
@@ -430,8 +515,9 @@ async function load() {
   status.className = ""; status.textContent = "loading…";
   sessionStorage.setItem("pheonix_api_key", keyInput.value.trim());
   try {
-    const [overview, questions, activity, users, flows, tools, models, breakdown,
-           efficiency, prompts, friction, health, gaps] = await Promise.all([
+    const [options, overview, questions, activity, users, flows, tools, models,
+           breakdown, efficiency, prompts, friction, health, gaps, spans] = await Promise.all([
+      api("/filters/options"),
       api("/overview"),
       api("/insights/questions"),
       api("/insights/activity"),
@@ -445,11 +531,12 @@ async function load() {
       api("/insights/friction"),
       api("/insights/skill-health"),
       api("/skills/gaps"),
+      api("/spans", { limit: 200 }),
     ]);
+    fillFilterOptions(options);
     renderKpis(overview);
     renderQuestions(questions);
     renderActivity(activity);
-    if (!userFilter.value) fillUserFilter(users);
     renderUsers(users);
     renderFlows(flows);
     renderTools(tools);
@@ -460,6 +547,7 @@ async function load() {
     renderFriction(friction);
     renderSkillHealth(health);
     renderGaps(gaps);
+    renderSpans(spans);
     status.textContent = overview.n_spans
       ? `${fmtInt(overview.n_spans)} spans · ${overview.first_span ?? ""} → ${overview.last_span ?? ""}`
       : "No spans yet — run `pheonix scrape` (or `pheonix demo` for sample data), then `pheonix analyze`.";
@@ -473,7 +561,17 @@ async function load() {
 
 $("refresh").addEventListener("click", load);
 keyInput.addEventListener("keydown", e => { if (e.key === "Enter") load(); });
-userFilter.addEventListener("change", load);
+$("f-search").addEventListener("keydown", e => { if (e.key === "Enter") load(); });
+for (const select of document.querySelectorAll(".filters select"))
+  select.addEventListener("change", load);
+for (const input of ["f-from", "f-to"]) $(input).addEventListener("change", load);
+$("reset").addEventListener("click", () => {
+  for (const el of document.querySelectorAll(".filters select, .filters input")) el.value = "";
+  load();
+});
+for (const btn of document.querySelectorAll(".csvbtn"))
+  btn.addEventListener("click", () =>
+    downloadCsv(btn.dataset.csv, btn.dataset.csvLimit ? { limit: btn.dataset.csvLimit } : {}));
 load();
 </script>
 </body>

@@ -137,6 +137,11 @@ def create_app(settings: Settings) -> FastAPI:
         # protected endpoints below, so auth still applies.
         return HTMLResponse(_DASHBOARD_PATH.read_text(encoding="utf-8"))
 
+    @protected.get("/filters/options")
+    def filter_options() -> dict[str, Any]:
+        with open_store() as store:
+            return store.distinct_options()
+
     @protected.get("/overview")
     def overview(filters: AnalysisFiltersDep) -> dict[str, Any]:
         with open_store() as store:
