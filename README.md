@@ -91,9 +91,16 @@ the whole pipeline works; everything after this is just pointing it at real data
 
 ### 5. Connect to your Phoenix instance
 
+The repo ships a placeholder `.env` — edit it in place (no need to copy
+`.env.example`). **After entering a real API key, run:**
+
 ```bash
-cp .env.example .env
+git update-index --skip-worktree .env
 ```
+
+This tells git to ignore your local edits so the key can never be committed or
+pushed (the repo is public). Undo later with `--no-skip-worktree` if you ever
+need to pull upstream changes to the file.
 
 Fill in:
 
@@ -124,15 +131,44 @@ uses its own bundled CA list (`certifi`), which doesn't include your corporate C
 The HTTP client used for scraping (httpx) honors `SSL_CERT_FILE`, so no code
 change is needed:
 
-1. Get the corporate root CA in **PEM** format from IT, or extract the chain the
-   server presents:
+**Which certificate do you need?** The corporate **root CA** — the top of the
+chain. Prefer it over an intermediate: Python only trusts chains anchored at a
+self-signed root by default, and one root CA typically covers every internal
+service, not just Phoenix. The file must be **PEM** format (text starting with
+`-----BEGIN CERTIFICATE-----`); `.pem`/`.crt`/`.cer` extensions are all fine.
+If you have several certs (root + intermediates), concatenate the PEM blocks
+into one file — a bundle works too.
 
-   ```bash
-   openssl s_client -showcerts -connect phoenix.<internal-host>:443 </dev/null 2>/dev/null \
-     | awk '/BEGIN CERTIFICATE/,/END CERTIFICATE/' > phoenix-ca.pem
-   ```
+1. Get the CA certificate — any one of these:
 
-   (hostname and port from your Phoenix URL — no `https://` prefix here)
+   - **Ask IT** for the "corporate root CA certificate in PEM / Base64 format".
+   - **Export from your browser** (works because the Phoenix UI already loads):
+     open the Phoenix URL → click the padlock → *Connection is secure* →
+     *Certificate is valid* → **Details** tab → select the **top-most** entry in
+     the certificate hierarchy (the root) → **Export** → save as
+     *Base64-encoded ASCII / single certificate*.
+   - **Windows certificate store** (corp root is usually deployed there) — in
+     PowerShell, replace `<YourCompany>` with a word from your company's CA name:
+
+     ```powershell
+     $cert = (Get-ChildItem Cert:\LocalMachine\Root | Where-Object Subject -match "<YourCompany>")[0]
+     "-----BEGIN CERTIFICATE-----`n" + [Convert]::ToBase64String($cert.RawData,'InsertLineBreaks') + "`n-----END CERTIFICATE-----" |
+       Set-Content phoenix-ca.pem
+     ```
+
+     (Browse candidates first with `certmgr.msc` → *Trusted Root Certification
+     Authorities* if you're not sure of the name.)
+   - **macOS Keychain**: Keychain Access → *System* keychain → find the corporate
+     CA → File → Export Items… → format *Privacy Enhanced Mail (.pem)*.
+   - **Extract from the server** (last resort — servers often omit the root, so
+     this may yield an incomplete chain):
+
+     ```bash
+     openssl s_client -showcerts -connect phoenix.<internal-host>:443 </dev/null 2>/dev/null \
+       | awk '/BEGIN CERTIFICATE/,/END CERTIFICATE/' > phoenix-ca.pem
+     ```
+
+     (hostname and port from your Phoenix URL — no `https://` prefix here)
 
 2. Export it in your **shell**, then run:
 
@@ -147,6 +183,13 @@ change is needed:
    Putting `SSL_CERT_FILE` in `.env` does **not** work: the app loads `.env` into
    its own settings only; httpx reads this variable from the process environment.
    Add the `export` to your shell profile to make it permanent.
+
+   Quick check that the cert is accepted (should print a status code, not an
+   SSL error):
+
+   ```bash
+   python -c "import httpx; print(httpx.get('https://phoenix.<internal-host>').status_code)"
+   ```
 
 3. Still failing? Servers often don't send the root certificate, so the extracted
    chain may be incomplete — ask IT for the actual root CA PEM.

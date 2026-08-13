@@ -13,8 +13,8 @@ __pycache__/
 .coverage
 htmlcov/
 
-# env
-.env
+# env — .env IS tracked (placeholders only); protect real values with:
+#   git update-index --skip-worktree .env
 
 # os
 .DS_Store
