@@ -196,7 +196,11 @@ blocks into one file works):
   open the Phoenix URL → click the padlock → *Connection is secure* →
   *Certificate is valid* → **Details** tab → select the **top-most** entry in
   the certificate hierarchy (the root) → **Export** → save as
-  *Base64-encoded ASCII / single certificate*.
+  *Base64-encoded ASCII / single certificate*. Exporting a lower entry gives
+  you the intermediate — verification then fails with *"unable to get issuer
+  certificate"*. If that happens, export the top entry too and **append** it
+  to the bundle: `type root.cer >> certs\phoenix-ca.pem` (Windows) or
+  `cat root.pem >> certs/phoenix-ca.pem` (macOS/Linux).
 - **Windows certificate store** (corp root is usually deployed there) — in
   PowerShell from the project root, replace `<YourCompany>` with a word from
   your company's CA name:
@@ -222,6 +226,17 @@ shows no `[ROOT (self-signed)]` entry, ask IT for the actual root CA PEM. As a
 last resort **on a trusted internal network only**, set
 `PHEONIX_TLS_VERIFY=false` in `.env` to disable certificate verification for
 the Phoenix connection (the scraper logs a warning so it is never silent).
+
+#### After TLS works: endpoint and project sanity checks
+
+- `PHOENIX_COLLECTOR_ENDPOINT` must be the **base URL only** — no `/graphql`,
+  no `/projects/...`. Those are the web UI's routes; the scraper calls the REST
+  API under `/v1/` on the base URL.
+- Quick API check from your browser (it already trusts the cert): open
+  `https://<phoenix-host>/v1/projects`. JSON with your projects means the API
+  works — copy the exact `name` (or `id`) into `PHEONIX_PROJECT`. A browser URL
+  like `/projects/UHJvamVjdDox/spans` is the UI page; the token in the middle is
+  the project **id**, which also works as `PHEONIX_PROJECT`.
 
 No network path to Phoenix? Export spans from the Phoenix UI/API as JSONL on a
 machine that has access, transfer the file, and run `pheonix ingest spans.jsonl`.
@@ -254,6 +269,7 @@ Without `PHEONIX_API_KEY`, `serve` refuses non-loopback hosts by design.
 | `SyntaxError` on install/run | Python is < 3.11 — install 3.11+ or let `uv sync` fetch it |
 | SSL errors during `pip install` | corporate TLS inspection — set `SSL_CERT_FILE`/`REQUESTS_CA_BUNDLE` (step 2) |
 | `CERTIFICATE_VERIFY_FAILED` from `pheonix scrape` | run `pheonix doctor`, then drop the corporate root CA at `certs/phoenix-ca.pem` (walkthrough in the "HTTPS endpoint" section) |
+| `certificate verify failed: unable to get issuer certificate` | your bundle has only the **intermediate** CA — append the **root** (top entry in the browser cert hierarchy) to `certs/phoenix-ca.pem`; `pheonix doctor` must show a `[ROOT (self-signed)]` entry |
 | `Phoenix is not available` from `pheonix scrape` | endpoint unset/wrong (did you edit `.env.example` instead of `.env`?), or `arize-phoenix-client` not installed (`uv sync --extra live`, or `pip install -r requirements-live.txt`) |
 | `401` from Phoenix | key expired/revoked — issue a fresh System key in Phoenix Settings |
 | Scrape succeeds but 0 spans | wrong `PHEONIX_PROJECT` name, or the time window: the watermark starts from your first run — wait a cycle or check the project has recent traces |
