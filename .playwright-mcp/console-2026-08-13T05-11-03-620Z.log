@@ -1,2 +1,0 @@
-[    6569ms] [ERROR] Access to fetch at 'http://127.0.0.1:8199/demo/seed?n_sessions=120&seed=31337' from origin 'null' has been blocked by CORS policy: The request client is not a secure context and the resource is in more-private address space `loopback`. @ data:text/html,<h1>evil.example cross-origin page</h1>:0
-[    6569ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://127.0.0.1:8199/demo/seed?n_sessions=120&seed=31337:0

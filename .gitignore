@@ -22,3 +22,6 @@ certs/*.pem
 # os
 .DS_Store
 .gstack/
+
+# browser tooling artifacts
+.playwright-mcp/
