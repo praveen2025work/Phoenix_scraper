@@ -181,6 +181,28 @@ def annotation_to_evaluation(annotation: dict) -> SpanEvaluation | None
 def to_phoenix_annotation(evaluation: dict) -> dict     # /v1/span_annotations shape
 ```
 
+## skill_coverage.py  (what each skill FILE misses; run-over-run diffs)
+```python
+NEW / GROWING / STABLE / SHRINKING / GONE   # cluster status vs the previous run
+
+def coverage_score(representative: str, skill: SkillEntry) -> float
+    # 0-1 similarity to the skill's OWN example_prompts (then description) — the
+    # same reference set skills_mapper._fuzzy_ratio scores against, so "matched"
+    # and "covered" are measured on one scale.
+def source_file(skill: SkillEntry) -> str        # the artifact an owner edits
+def annotate_coverage(clusters_df, matches_df, skills, threshold=0.70) -> pd.DataFrame
+    # one row per matched cluster + covered flag. Carries `signature` so keyword
+    # suggestions never see unmasked desks/amounts/dates.
+def skill_coverage(annotated_df) -> pd.DataFrame       # coverage weighted by ASKS
+def uncovered_queries(annotated_df, deltas_df=None) -> pd.DataFrame
+def cluster_deltas(current_df, previous_df) -> pd.DataFrame
+    # EMPTY previous_df => empty result. "No earlier run" is not "an earlier run
+    # that saw nothing"; calling everything new on a first run would be a lie.
+def suggested_updates(uncovered_df, skills, max_prompts=8) -> pd.DataFrame
+    # per file: new_prompts, new_keywords, and a paste-ready yaml_block.
+def updates_markdown(updates_df) -> str
+```
+
 ## insights_quality.py  (rollups over Store.evaluations_frame)
 ```python
 def with_pass_flag(evals_df) -> pd.DataFrame       # unscored annotations count as PASSING
@@ -201,14 +223,20 @@ def run_analysis(store: Store, settings: Settings) -> AnalysisResult
 
 ## cli.py (typer app named `app`) + api.py (fastapi app factory `create_app(settings)`)
 CLI commands: demo (seed fixtures + analyze + report), seed, scrape, ingest, analyze,
-evaluate (+ --pull-annotations / --push / --push-all / --user), report,
-export (--what spans|clusters|matches|proposals|sessions|evaluations
---fmt csv|json|parquet + filter options), serve. API routes: GET /health,
-POST /demo/seed, POST /scrape/run, GET /prompts/frequent, GET /skills/matches,
-GET /skills/gaps, GET /sessions, GET /costs/summary, GET /spans,
+evaluate (+ --pull-annotations / --push / --push-all / --user), coverage (+ --write),
+report, export (--what spans|clusters|matches|proposals|sessions|evaluations|
+coverage|uncovered --fmt csv|json|parquet + filter options), serve.
+API routes: GET /health, POST /demo/seed, POST /scrape/run, POST /analyze/run,
+POST /report/run, GET /prompts/frequent, GET /skills/matches, GET /skills/gaps,
+GET /skills/{coverage,uncovered,updates,updates.md}, GET /runs, GET /runs/delta,
+GET /sessions, GET /costs/summary, GET /spans,
 GET /quality/{overview,checks,by,failures,by-prompt,evaluations,catalog},
 POST /annotations/{pull,push} — all list endpoints accept filter query params and
 `fmt=json|csv` where csv returns a downloadable file response.
+
+run_analysis snapshots its clusters into analysis_runs/cluster_snapshots before
+returning, reading previous_run_id FIRST (once recorded, a run would be its own
+predecessor). History is pruned to settings.run_history_limit.
 
 Limit semantics: `Store.evaluations_frame` bounds CHECK ROWS, not spans (one span
 yields a row per applicable check). The /quality/* routes therefore use

@@ -49,6 +49,17 @@ def run_analysis(
         store.replace_local_evaluations(evaluations)
 
     store.replace_analysis(clusters, matches, proposals, sessions)
+
+    # Snapshot BEFORE returning, and after replace_analysis, so the history
+    # records exactly the state the caller is about to see. previous_run_id is
+    # read first — once this run is recorded it would be its own predecessor.
+    generated_at = datetime.now(UTC)
+    run_id = generated_at.isoformat()
+    previous_run_id = store.previous_run_id()
+    store.record_run(
+        run_id, generated_at, clusters, matches, len(spans_df),
+        history_limit=settings.run_history_limit,
+    )
     return AnalysisResult(
         clusters=tuple(clusters),
         matches=tuple(matches),
@@ -56,5 +67,7 @@ def run_analysis(
         sessions=tuple(sessions),
         evaluations=tuple(evaluations),
         n_spans_analyzed=int(len(spans_df)),
-        generated_at=datetime.now(UTC),
+        generated_at=generated_at,
+        run_id=run_id,
+        previous_run_id=previous_run_id,
     )

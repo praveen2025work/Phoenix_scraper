@@ -1,4 +1,4 @@
-.PHONY: setup demo seed scrape analyze evaluate report api test lint clean
+.PHONY: setup demo seed scrape analyze evaluate coverage report api test lint clean
 
 setup:            ## install deps into .venv via uv
 	uv sync --all-extras
@@ -17,6 +17,9 @@ analyze:          ## cluster prompts, map skills, persist analysis
 
 evaluate:         ## validate stored LLM outputs and user prompts, print the scoreboard
 	uv run pheonix evaluate
+
+coverage:         ## show what each skill file is asked but doesn't demonstrate
+	uv run pheonix coverage --write
 
 report:           ## write markdown report + exports to data/exports
 	uv run pheonix report

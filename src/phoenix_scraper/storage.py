@@ -114,6 +114,29 @@ CREATE TABLE IF NOT EXISTS span_evaluations (
 CREATE INDEX IF NOT EXISTS idx_evals_name ON span_evaluations (name);
 CREATE INDEX IF NOT EXISTS idx_evals_span ON span_evaluations (span_id);
 
+-- Analysis output is replaced wholesale on each run, so without a snapshot
+-- there is no way to answer "what are users asking that they weren't last
+-- week". These two tables keep a bounded history of past runs purely for that
+-- comparison; they are never read by the current-state queries.
+CREATE TABLE IF NOT EXISTS analysis_runs (
+    run_id TEXT PRIMARY KEY,
+    generated_at TEXT NOT NULL,
+    n_spans INTEGER NOT NULL DEFAULT 0,
+    n_clusters INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS cluster_snapshots (
+    run_id TEXT NOT NULL,
+    cluster_id TEXT NOT NULL,
+    representative TEXT NOT NULL DEFAULT '',
+    count INTEGER NOT NULL DEFAULT 0,
+    n_users INTEGER NOT NULL DEFAULT 0,
+    skill_name TEXT,
+    first_seen TEXT,
+    last_seen TEXT,
+    PRIMARY KEY (run_id, cluster_id)
+);
+
 CREATE TABLE IF NOT EXISTS sessions (
     session_id TEXT PRIMARY KEY,
     project TEXT NOT NULL DEFAULT 'default',
@@ -259,6 +282,95 @@ class Store:
         )
         c.commit()
 
+    # ---- run history (for run-over-run diffing) ------------------------------
+    def record_run(
+        self,
+        run_id: str,
+        generated_at: datetime,
+        clusters: Iterable[PromptCluster],
+        matches: Iterable[SkillMatch],
+        n_spans: int,
+        history_limit: int = 20,
+    ) -> str:
+        """Snapshot this run's clusters so the next run can diff against it.
+
+        Older runs beyond ``history_limit`` are pruned — the history exists to
+        answer "what changed", not to be an archive, and an unbounded snapshot
+        table would dwarf the spans it describes.
+        """
+        skill_by_cluster = {m.cluster_id: m.skill_name for m in matches}
+        rows = [
+            (
+                run_id, c.cluster_id, c.representative, c.count, c.n_users,
+                skill_by_cluster.get(c.cluster_id), _iso(c.first_seen), _iso(c.last_seen),
+            )
+            for c in clusters
+        ]
+        self._conn.execute(
+            "INSERT OR REPLACE INTO analysis_runs VALUES (?,?,?,?)",
+            (run_id, _iso(generated_at), n_spans, len(rows)),
+        )
+        self._conn.execute("DELETE FROM cluster_snapshots WHERE run_id = ?", (run_id,))
+        self._conn.executemany(
+            "INSERT OR REPLACE INTO cluster_snapshots VALUES (?,?,?,?,?,?,?,?)", rows
+        )
+        self._prune_runs(history_limit)
+        self._conn.commit()
+        return run_id
+
+    def runs_frame(self, limit: int = 50) -> pd.DataFrame:
+        return pd.read_sql_query(
+            "SELECT * FROM analysis_runs ORDER BY generated_at DESC LIMIT ?",
+            self._conn,
+            params=[limit],
+        )
+
+    def previous_run_id(self, before: str | None = None) -> str | None:
+        """The run recorded immediately before ``before`` (or the latest run)."""
+        if before is None:
+            row = self._conn.execute(
+                "SELECT run_id FROM analysis_runs ORDER BY generated_at DESC LIMIT 1"
+            ).fetchone()
+        else:
+            row = self._conn.execute(
+                "SELECT run_id FROM analysis_runs WHERE generated_at < "
+                "(SELECT generated_at FROM analysis_runs WHERE run_id = ?) "
+                "ORDER BY generated_at DESC LIMIT 1",
+                (before,),
+            ).fetchone()
+        return row["run_id"] if row else None
+
+    def run_snapshot_frame(self, run_id: str | None) -> pd.DataFrame:
+        if run_id is None:
+            return pd.DataFrame(columns=_SNAPSHOT_COLUMNS)
+        return pd.read_sql_query(
+            "SELECT * FROM cluster_snapshots WHERE run_id = ? ORDER BY count DESC",
+            self._conn,
+            params=[run_id],
+        )
+
+    def _prune_runs(self, history_limit: int) -> None:
+        keep = max(1, history_limit)
+        stale = [
+            row["run_id"]
+            for row in self._conn.execute(
+                "SELECT run_id FROM analysis_runs ORDER BY generated_at DESC "
+                "LIMIT -1 OFFSET ?",
+                (keep,),
+            ).fetchall()
+        ]
+        if not stale:
+            return
+        placeholders = ",".join("?" * len(stale))
+        self._conn.execute(
+            f"DELETE FROM cluster_snapshots WHERE run_id IN ({placeholders})",  # noqa: S608
+            stale,
+        )
+        self._conn.execute(
+            f"DELETE FROM analysis_runs WHERE run_id IN ({placeholders})",  # noqa: S608
+            stale,
+        )
+
     # ---- span evaluations (validation) --------------------------------------
     def replace_local_evaluations(self, evaluations: Iterable[SpanEvaluation]) -> int:
         """Swap in a fresh set of locally computed checks.
@@ -372,6 +484,12 @@ class Store:
 
 def _iso(dt: datetime | None) -> str | None:
     return dt.isoformat() if dt is not None else None
+
+
+_SNAPSHOT_COLUMNS = [
+    "run_id", "cluster_id", "representative", "count", "n_users", "skill_name",
+    "first_seen", "last_seen",
+]
 
 
 def _evaluation_row(evaluation: SpanEvaluation) -> tuple:

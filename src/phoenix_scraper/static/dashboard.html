@@ -132,6 +132,9 @@
   <span class="sub">what users ask · where the agent works too hard · which skills to build or fix</span>
   <div class="controls">
     <input type="password" id="apikey" placeholder="X-API-Key (if required)" autocomplete="off">
+    <button id="run-scrape" class="ghost" title="Pull new spans from Phoenix (needs a live connection)">Scrape</button>
+    <button id="run-analyze" class="ghost" title="Re-cluster prompts, re-match skills, re-validate">Analyze</button>
+    <button id="run-report" class="ghost" title="Write report.md and skill_updates.md to the export dir">Report</button>
     <button id="refresh">Apply / Refresh</button>
   </div>
 </header>
@@ -191,6 +194,32 @@
     <div class="scroll-x" id="models"></div>
   </section>
 </div>
+
+<section>
+  <h2>Skill coverage — what each skill file is asked but doesn't show
+    <button class="csvbtn" data-csv="/skills/coverage">CSV</button></h2>
+  <div class="hint">A question can match a skill on keywords while none of that skill's
+    <code>example_prompts</code> demonstrates the phrasing users actually type. <b>Cover</b> is
+    the share of asks routed to the skill that its own examples already show; the gap is what
+    the file is missing.</div>
+  <div class="scroll-x" id="coverage"></div>
+</section>
+
+<section>
+  <h2>What to add to each skill <button class="csvbtn" data-csv="/skills/updates">CSV</button>
+    <button class="csvbtn" id="updates-md">Markdown</button></h2>
+  <div class="hint">The exact <code>example_prompts</code> and <code>keywords</code> to paste into
+    each file, ranked by how many asks they'd cover. <b>new</b> marks a gap that appeared since
+    the previous analysis run.</div>
+  <div id="updates"></div>
+</section>
+
+<section>
+  <h2>What changed since the last run <button class="csvbtn" data-csv="/runs/delta">CSV</button></h2>
+  <div class="hint">Prompt patterns compared against the previous <code>analyze</code>. Runs are
+    snapshotted automatically, so this fills in from your second run onward.</div>
+  <div class="scroll-x" id="rundelta"></div>
+</section>
 
 <section>
   <h2>Validation — are the answers any good? <button class="csvbtn" data-csv="/quality/checks">CSV</button></h2>
@@ -469,6 +498,77 @@ function failBadge(rate, count) {
   return `<span class="badge ${cls}">⚠ ${fmtPct(rate, 1)}</span>`;
 }
 
+function renderCoverage(rows) {
+  if (!rows.length) {
+    $("coverage").innerHTML = `<div class="empty">No skills matched yet. Point
+      <code>PHEONIX_SKILLS_CATALOG</code> / <code>PHEONIX_SKILLS_DIRS</code> at your skills and
+      run <code>pheonix analyze</code>.</div>`;
+    return;
+  }
+  // Skill AND file: a SKILL.md tree is one skill per file, but a shared catalog
+  // yaml holds many, and the file name alone would label them all the same.
+  $("coverage").innerHTML = table(
+    ["Skill", "File", "#Examples", "#Asks", "#Shown", "#Gap", "Cover", "Biggest gap"],
+    rows.map(r => `<tr>
+      <td>${esc(r.skill_name)}</td>
+      <td style="color:var(--muted)">${esc(clip(r.source_file, 28))}</td>
+      <td class="num">${fmtInt(r.n_declared_examples)}</td>
+      <td class="num">${fmtInt(r.n_asks)}</td>
+      <td class="num">${fmtInt(r.n_covered_asks)}</td>
+      <td class="num">${fmtInt(r.n_uncovered_asks)}</td>
+      <td>${r.n_uncovered_asks
+        ? `<span class="badge ${r.coverage < 0.5 ? "review" : "long"}">${fmtPct(r.coverage)}</span>`
+        : `<span class="badge effective">100%</span>`}</td>
+      <td class="prompt">${esc(clip(r.top_gap, 70))}</td></tr>`).join(""));
+}
+
+function renderUpdates(rows) {
+  if (!rows.length) {
+    $("updates").innerHTML = `<div class="empty">No gaps — every question routed to a skill is
+      already demonstrated by that skill's own examples.</div>`;
+    return;
+  }
+  $("updates").innerHTML = rows.map(r => `
+    <div style="border-top:1px solid var(--grid);padding:12px 0">
+      <div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">
+        <b>${esc(r.skill_name)}</b>
+        <span style="color:var(--muted);font-size:12px">${esc(r.source_file)}</span>
+        <span style="color:var(--ink-2);font-size:12px">
+          ${fmtInt(r.uncovered_asks)} asks · ${fmtInt(r.n_users)} users
+          ${r.n_new_since_last_run ? `· <span class="badge long">${fmtInt(r.n_new_since_last_run)} new</span>` : ""}
+        </span>
+      </div>
+      <div style="margin-top:6px">${(r.new_prompts || []).map(p =>
+        `<div class="prompt" style="font-size:13px">+ ${esc(p)}</div>`).join("")}</div>
+      ${(r.new_keywords || []).length
+        ? `<div style="margin-top:6px;font-size:12px;color:var(--ink-2)">keywords: ${esc((r.new_keywords || []).join(", "))}</div>`
+        : ""}
+    </div>`).join("");
+}
+
+function renderRunDelta(rows) {
+  if (!rows.length) {
+    $("rundelta").innerHTML = `<div class="empty">Only one analysis run recorded so far —
+      run <code>pheonix analyze</code> again (or press Analyze) to see what changed.</div>`;
+    return;
+  }
+  const badge = s => s === "new" ? '<span class="badge long">new</span>'
+    : s === "growing" ? '<span class="badge long">▲ growing</span>'
+    : s === "shrinking" ? '<span class="badge ok">▼ shrinking</span>'
+    : s === "gone" ? '<span class="badge ok">gone</span>'
+    : '<span class="badge ok">stable</span>';
+  const moved = rows.filter(r => r.status !== "stable");
+  $("rundelta").innerHTML = table(
+    ["Prompt pattern", "Skill", "#Was", "#Now", "#Change", "Status"],
+    (moved.length ? moved : rows).slice(0, 20).map(r => `<tr>
+      <td class="prompt">${esc(clip(r.representative))}</td>
+      <td>${esc(clip(r.skill_name ?? "—", 24))}</td>
+      <td class="num">${fmtInt(r.count_prev)}</td>
+      <td class="num">${fmtInt(r.count)}</td>
+      <td class="num">${r.count_change > 0 ? "+" : ""}${fmtInt(r.count_change)}</td>
+      <td>${badge(r.status)}</td></tr>`).join(""));
+}
+
 function renderQualityChecks(rows) {
   if (!rows.length) {
     $("qualitychecks").innerHTML = `<div class="empty">No validation results yet — run
@@ -658,7 +758,7 @@ async function load() {
     const [options, overview, questions, activity, users, flows, tools, models,
            breakdown, efficiency, prompts, friction, health, gaps, spans,
            quality, qualityChecks, qualityUsers, qualityModels, qualityPrompts,
-           qualityFailures] = await Promise.all([
+           qualityFailures, coverage, updates, runDelta] = await Promise.all([
       api("/filters/options"),
       api("/overview"),
       api("/insights/questions"),
@@ -680,6 +780,9 @@ async function load() {
       api("/quality/by", { dimension: "model_name" }),
       api("/quality/by-prompt"),
       api("/quality/failures", { top: 50 }),
+      api("/skills/coverage"),
+      api("/skills/updates"),
+      api("/runs/delta"),
     ]);
     fillFilterOptions(options);
     renderKpis(overview, quality);
@@ -703,6 +806,9 @@ async function load() {
       "No model names on evaluated spans.");
     renderQualityPrompts(qualityPrompts);
     renderQualityFailures(qualityFailures);
+    renderCoverage(coverage);
+    renderUpdates(updates);
+    renderRunDelta(runDelta);
     status.textContent = overview.n_spans
       ? `${fmtInt(overview.n_spans)} spans · ${overview.first_span ?? ""} → ${overview.last_span ?? ""}`
       : "No spans yet — run `pheonix scrape` (or `pheonix demo` for sample data), then `pheonix analyze`.";
@@ -713,6 +819,57 @@ async function load() {
       : "Failed to load: " + err.message + " — is the analysis run? Try `pheonix analyze`.";
   }
 }
+
+// Pipeline triggers. Each one runs synchronously on the server and can take a
+// while on a large store, so the button reports progress rather than looking
+// dead, and every trigger is disabled until the run returns.
+const TRIGGERS = [
+  { id: "run-scrape",  path: "/scrape/run",  label: "Scrape",  busy: "Scraping…",
+    done: r => `scraped: pulled ${fmtInt(r.pulled)}, inserted ${fmtInt(r.inserted)}` },
+  { id: "run-analyze", path: "/analyze/run", label: "Analyze", busy: "Analyzing…",
+    done: r => `analyzed ${fmtInt(r.n_spans_analyzed)} spans → ${fmtInt(r.clusters)} patterns, ${fmtInt(r.evaluations)} checks` },
+  { id: "run-report",  path: "/report/run",  label: "Report",  busy: "Writing…",
+    done: r => `wrote ${r.report} and ${r.skill_updates} (${fmtInt(r.skills_with_gaps)} skills with gaps)` },
+];
+
+function setTriggersDisabled(disabled) {
+  for (const t of TRIGGERS) $(t.id).disabled = disabled;
+}
+
+async function runTrigger(trigger) {
+  const status = $("status");
+  const button = $(trigger.id);
+  setTriggersDisabled(true);
+  button.textContent = trigger.busy;
+  status.className = ""; status.textContent = trigger.busy;
+  try {
+    const response = await fetch(trigger.path, { method: "POST", headers: authHeaders() });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.detail || ("HTTP " + response.status));
+    status.textContent = trigger.done(body);
+    await load();              // repaint every panel from the new state
+    status.textContent = trigger.done(body);   // load() overwrites it; restore
+  } catch (err) {
+    status.className = "error";
+    status.textContent = trigger.label + " failed: " + err.message;
+  } finally {
+    button.textContent = trigger.label;
+    setTriggersDisabled(false);
+  }
+}
+
+for (const trigger of TRIGGERS)
+  $(trigger.id).addEventListener("click", () => runTrigger(trigger));
+
+$("updates-md").addEventListener("click", async () => {
+  const response = await fetch("/skills/updates.md", { headers: authHeaders() });
+  if (!response.ok) { alert("Export failed: HTTP " + response.status); return; }
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(await response.blob());
+  link.download = "skill_updates.md";
+  link.click();
+  URL.revokeObjectURL(link.href);
+});
 
 $("refresh").addEventListener("click", load);
 keyInput.addEventListener("keydown", e => { if (e.key === "Enter") load(); });

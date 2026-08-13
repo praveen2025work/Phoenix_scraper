@@ -68,13 +68,22 @@ def export_frame(df: pd.DataFrame, out_dir: Path, name: str, fmt: str) -> Path:
     return path
 
 
-def write_markdown_report(result: AnalysisResult, out_path: Path) -> Path:
-    """Render an AnalysisResult as a markdown report and return the written path."""
+def write_markdown_report(
+    result: AnalysisResult,
+    out_path: Path,
+    updates_df: pd.DataFrame | None = None,
+) -> Path:
+    """Render an AnalysisResult as a markdown report and return the written path.
+
+    ``updates_df`` is the output of skill_coverage.suggested_updates; when given,
+    the report carries the concrete edits each skill file needs.
+    """
     out_path.parent.mkdir(parents=True, exist_ok=True)
     sections = [
         _header(result),
         _top_prompts_section(result.clusters),
         _validation_section(result.evaluations),
+        _coverage_section(updates_df),
         _matches_section(result.matches, result.clusters),
         _proposals_section(result.proposals),
         _sessions_section(result.sessions),
@@ -176,6 +185,40 @@ def _validation_section(evaluations: tuple[SpanEvaluation, ...]) -> str:
         ["Check", "Judges", "Failed", "Evaluated", "Rate", "Example"], rows
     )
     return f"{title}\n\n{summary}\n\n{table}"
+
+
+def _coverage_section(updates_df: pd.DataFrame | None) -> str:
+    """Per skill file, the questions it is asked but does not demonstrate."""
+    title = "## Skill coverage gaps — what to add to each file"
+    if updates_df is None:
+        return f"{title}\n\nNot computed for this report."
+    if updates_df.empty:
+        return (
+            f"{title}\n\nNo gaps: every question routed to a skill is already "
+            "demonstrated by that skill's own examples."
+        )
+    parts = [title, ""]
+    for row in updates_df.to_dict("records"):
+        evidence = (
+            f"{row['uncovered_asks']} asks · {row['n_users']} users · "
+            f"{_date_only(row['first_seen'])} to {_date_only(row['last_seen'])}"
+        )
+        if row["n_new_since_last_run"]:
+            evidence += f" · {row['n_new_since_last_run']} new since the last run"
+        prompts = "\n".join(f"- {_escape(p)}" for p in row["new_prompts"])
+        keywords = ", ".join(row["new_keywords"]) or "-"
+        parts.append(
+            f"### {_escape(str(row['source_file']))} — {_escape(str(row['skill_name']))}\n\n"
+            f"{evidence}\n\n"
+            f"Add these `example_prompts`:\n\n{prompts}\n\n"
+            f"Add these `keywords`: {keywords}\n"
+        )
+    return "\n".join(parts)
+
+
+def _date_only(value: object) -> str:
+    text = str(value or "")
+    return text[:10] if text else "?"
 
 
 def _matches_section(

@@ -37,6 +37,14 @@ class Settings(BaseSettings):
     cluster_fuzz_threshold: int = 90  # rapidfuzz token_set_ratio 0-100
     skill_match_threshold: float = 0.55  # 0-1 combined match score
 
+    # Skill coverage: a cluster matched to a skill counts as ALREADY COVERED when
+    # it resembles one of that skill's own example_prompts (or its description)
+    # this closely. Below it, the skill owns the question by keyword but shows no
+    # example of it — the gap `pheonix coverage` reports.
+    skill_coverage_threshold: float = 0.70  # 0-1 fuzzy similarity
+    max_suggested_prompts: int = 8  # example_prompts proposed per skill per run
+    run_history_limit: int = 20  # analysis runs kept for run-over-run diffing
+
     # validation knobs (see evaluations.py). Defaults are deliberately lenient:
     # a code check that cries wolf gets ignored, and then nothing gets validated.
     evaluate_on_analyze: bool = True  # run the CODE checks as part of `analyze`

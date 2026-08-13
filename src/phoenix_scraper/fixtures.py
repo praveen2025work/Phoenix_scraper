@@ -53,6 +53,49 @@ _TEMPLATE_STAGES: dict[str, str] = {
     HOT_TEMPLATES[9]: "commentary_signoff",
 }
 
+# Drift: questions that belong to a catalog skill (they match it on keywords)
+# but are phrased differently from any of that skill's example_prompts. This is
+# what real usage does to a skills catalog over time — people find new ways to
+# ask the same thing, the skill keeps getting selected, and its examples quietly
+# stop describing what it is actually used for. `pheonix coverage` exists to
+# surface exactly these, so the demo has to contain some.
+DRIFT_TEMPLATES: tuple[str, ...] = (
+    "Post the correction to amend the {desk} book adjustment",
+    "Are there recon breaks still unmatched on the {desk} book?",
+    "Compare the flash number against the formal close for {desk}",
+    "Write the narrative summary for {desk} sign-off",
+    "What drove the rates carry and curve PLEX move on {desk}?",
+    "Download the {desk} adjustments report in excel format",
+)
+
+_DRIFT_STAGES: dict[str, str] = {
+    DRIFT_TEMPLATES[0]: "adjustments",
+    DRIFT_TEMPLATES[1]: "fobo_recon",
+    DRIFT_TEMPLATES[2]: "flash_vs_formal",
+    DRIFT_TEMPLATES[3]: "commentary_signoff",
+    DRIFT_TEMPLATES[4]: "plex",
+    DRIFT_TEMPLATES[5]: "adjustments",
+}
+
+_DRIFT_OUTPUTS: dict[str, str] = {
+    DRIFT_TEMPLATES[0]: "Correction posted to amend the book adjustment and routed "
+                        "for approval.",
+    DRIFT_TEMPLATES[1]: "Two recon breaks remain unmatched on that book; both await "
+                        "confirmation.",
+    DRIFT_TEMPLATES[2]: "The flash number sits below the formal close, driven by late "
+                        "marks after the cut.",
+    DRIFT_TEMPLATES[3]: "Narrative summary written for sign-off; the figures reconcile "
+                        "to the formal ledger.",
+    DRIFT_TEMPLATES[4]: "Carry and curve dominate the PLEX move, with roll-down a "
+                        "distant third.",
+    DRIFT_TEMPLATES[5]: "Adjustments report exported in excel format and ready to "
+                        "download.",
+}
+
+# Each drift template repeats this often — enough to read as a real pattern
+# rather than a one-off, which is what makes it worth adding to a skill.
+_DRIFT_REPEATS = 6
+
 # Zipf-ish frequency skew across the hot templates (aligned by index).
 _HOT_WEIGHTS: tuple[int, ...] = (10, 8, 7, 6, 5, 4, 4, 3, 3, 2)
 _HOT_FLOOR = 8  # every hot template repeats at least this often (when volume allows)
@@ -249,7 +292,14 @@ def _build_prompt_plan(
     # prompt-side check (injection, PII, vagueness) has something to find.
     n_risky = min(len(_RISKY_PROMPTS), total_turns // 15)
     n_tail = min(len(LONG_TAIL_PROMPTS), total_turns // 8)
-    hot_counts = _allocate_hot(total_turns - n_tail - n_risky, rng)
+    drift = [
+        (template, _DRIFT_STAGES[template])
+        for template in DRIFT_TEMPLATES
+        for _ in range(_DRIFT_REPEATS)
+    ][: max(0, total_turns // 6)]
+    hot_counts = _allocate_hot(
+        max(0, total_turns - n_tail - n_risky - len(drift)), rng
+    )
     plan: list[tuple[str | None, str]] = [
         (template, _TEMPLATE_STAGES[template])
         for template, count in zip(HOT_TEMPLATES, hot_counts, strict=True)
@@ -257,6 +307,7 @@ def _build_prompt_plan(
     ]
     plan.extend((None, rng.choice(STAGES)) for _ in range(n_tail))
     plan.extend((text, stage) for text, stage in _RISKY_PROMPTS[:n_risky])
+    plan.extend(drift)
     rng.shuffle(plan)
     return plan
 
@@ -280,7 +331,7 @@ def _healthy_output(template: str | None, text: str) -> str:
     would pair unrelated questions and answers and the off-topic check would
     fire for reasons that say nothing about a real agent.
     """
-    canned = _TEMPLATE_OUTPUTS.get(template or "")
+    canned = _TEMPLATE_OUTPUTS.get(template or "") or _DRIFT_OUTPUTS.get(template or "")
     if canned:
         return canned
     subject = " ".join(_SUBJECT_WORD.findall(text)[-4:]).lower() or "your request"

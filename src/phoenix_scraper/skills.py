@@ -77,10 +77,23 @@ def _parse_skill_md(path: Path) -> SkillEntry | None:
         return None
     name = str(meta["name"])
     description = str(meta.get("description", ""))
+    # example_prompts is optional in SKILL.md, but when present it is what the
+    # coverage report measures real questions against — the file's own record of
+    # what it knows how to answer.
+    examples = meta.get("example_prompts") or meta.get("examples") or []
+    if isinstance(examples, str):
+        examples = [examples]
+    declared = tuple(str(p) for p in examples if str(p).strip()) \
+        if isinstance(examples, (list, tuple)) else ()
+    keywords = meta.get("keywords") or []
+    explicit_keywords = tuple(str(k) for k in keywords) \
+        if isinstance(keywords, (list, tuple)) else ()
     return SkillEntry(
         name=name,
         description=description,
-        keywords=distinctive_words(f"{name.replace('-', ' ')} {description}"),
+        keywords=explicit_keywords
+        or distinctive_words(f"{name.replace('-', ' ')} {description}"),
+        example_prompts=declared,
         source="skill_md",
         path=str(path),
     )

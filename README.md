@@ -375,6 +375,72 @@ Phoenix for everyone, upsert on repeat runs, and can never overwrite a human's
 annotation of the same name. Push is opt-in — it writes to a shared system. Add
 `--push-all` to mirror passing checks too.
 
+## Skill coverage — what your skill files miss
+
+Matching answers *which skill owns this question*. Coverage answers the follow-up
+an owner has to act on: **the skill owns it — does the skill file actually show
+it?**
+
+A prompt cluster can match a skill on keywords alone while none of that skill's
+`example_prompts` demonstrates the phrasing users really type. That is what
+happens to every catalog over time: people find new ways to ask the same thing,
+the skill keeps getting selected, and its examples quietly stop describing what
+it is used for. Those clusters are the file's blind spots.
+
+Coverage is measured **per skill file**, because that is the artifact someone
+edits — a `SKILL.md` tree gives one skill per file, a shared catalog YAML gives
+many, so both the skill and its file are always shown.
+
+```bash
+pheonix coverage           # per-file coverage + the lines to add
+pheonix coverage --write   # ... and write them to <export-dir>/skill_updates.md
+```
+
+```
+skill                      file                    asks  shown  gap  cover  top gap
+signoff-commentary-draft   skills_catalog.yaml       34     28    6   82%  Write the narrative summary for credit sign-off
+flash-formal-variance      skills_catalog.yaml       30     24    6   80%  Compare the flash number against the formal close for FX
+fobo-break-triage          skills_catalog.yaml        6      0    6    0%  Are there recon breaks still unmatched on the credit book?
+```
+
+`cover` is the share of **asks** (not clusters) routed to that skill which its own
+examples already demonstrate — a blind spot asked 40 times matters more than one
+asked twice.
+
+Each gap comes with the exact edit, in `skill_updates.md` and on the dashboard:
+
+```yaml
+example_prompts:
+  # keep the existing 2, add:
+  - "Are there recon breaks still unmatched on the credit book?"
+keywords:
+  # add: unmatched
+```
+
+Suggested keywords are extracted from the **normalized signature**, so masked
+volatile tokens never leak in: the desk, book, amount or date a question happened
+to mention is the instance, not the topic. Words already in the skill's name,
+description or keywords are skipped, as are plurals of existing ones — a keyword
+the matcher cannot discriminate with is worse than none.
+
+### What changed since the last run
+
+Every `analyze` snapshots its clusters, so consecutive runs can be diffed:
+
+```
+prompt pattern                              was   now  change  status
+Why is there a credit recon break of ...      0    49     +49  new
+Draft sign-off commentary for the rates...   11    34     +23  growing
+Post an adjustment of 620k to EQ_VOL_LDN      2     0      -2  gone
+```
+
+Statuses are `new`, `growing`, `stable`, `shrinking`, `gone`; a count must move
+more than 20% to count as movement rather than noise. Gaps that are new since the
+previous run are flagged in the update blocks, so you can tell "users just started
+asking this" from "we have never covered this". The first run has nothing to
+compare against and correctly reports nothing as new. History is bounded by
+`PHEONIX_RUN_HISTORY_LIMIT` (default 20 runs).
+
 ## Skills catalog inputs
 
 Two sources, merged (catalog wins on name collisions):
@@ -382,13 +448,19 @@ Two sources, merged (catalog wins on name collisions):
 1. `config/skills_catalog.yaml` — explicit entries with level/asset_class/capability/keywords/example_prompts.
 2. `PHEONIX_SKILLS_DIRS` — comma-separated directories scanned recursively for
    `SKILL.md` files with YAML frontmatter (`name:` / `description:`), i.e. the format
-   Claude-style skills already use.
+   Claude-style skills already use. Optional `example_prompts:` and `keywords:`
+   in the frontmatter are read too — `example_prompts` is what the coverage
+   report measures real questions against, so a file that declares none will
+   show 0% coverage until you add some (which is the honest answer).
 
 ## Dashboard UI
 
 `pheonix serve` and open **http://127.0.0.1:8000/** — a self-contained dashboard
 (no CDN, works offline) over the analytics below.
 
+- **Scrape / Analyze / Report buttons** — run the pipeline from the page. Each
+  runs synchronously, reports what it did in the status line, and repaints every
+  panel. Scrape needs a live Phoenix connection; the other two work offline.
 - **Filter bar** — project, user, stage, asset class, model, date range, and
   prompt-text search; every panel refetches with the active filters (options are
   populated from your actual data via `/filters/options`).
@@ -402,6 +474,9 @@ Two sources, merged (catalog wins on name collisions):
 | Panel | What it answers |
 | --- | --- |
 | KPI row | volume, sessions, users, tokens, cost, error rate, **% of spans passing validation** |
+| **Skill coverage** | per skill file: asks routed to it vs asks its examples demonstrate |
+| **What to add to each skill** | the exact `example_prompts` / `keywords` to paste, with evidence |
+| **What changed since the last run** | patterns that are new, growing, shrinking, or gone |
 | **Validation** | every check, how often it applied and failed, with a failing example |
 | **Answer quality by user / model** | who is getting bad answers; whether one model refuses or truncates more |
 | **Prompt patterns answered badly** | frequency × failure — the strongest case for a new skill |
@@ -424,10 +499,11 @@ and downloadable with `fmt=csv`.
 ## CLI
 
 ```bash
-uv run pheonix demo|seed|scrape|ingest|analyze|evaluate|report|serve|doctor
+uv run pheonix demo|seed|scrape|ingest|analyze|evaluate|coverage|report|serve|doctor
 uv run pheonix evaluate [--user U] [--stage S] [--asset-class A] [--start ...] [--end ...] \
                         [--pull-annotations] [--push [--push-all]]
-uv run pheonix export --what spans|clusters|matches|proposals|sessions|evaluations \
+uv run pheonix coverage [--write]          # skill gaps + paste-ready blocks
+uv run pheonix export --what spans|clusters|matches|proposals|sessions|evaluations|coverage|uncovered \
                       --fmt csv|json|parquet \
                       [--project X] [--start ...] [--end ...] [--stage ...] \
                       [--asset-class ...] [--min-count N] [--search TEXT] [--limit N]
@@ -446,6 +522,12 @@ uv run pheonix export --what spans|clusters|matches|proposals|sessions|evaluatio
 | `GET /quality/catalog` | the registered checks and what each judges |
 | `POST /annotations/pull` | fetch HUMAN/LLM span annotations from Phoenix |
 | `POST /annotations/push` | write failing CODE checks back to Phoenix (`only_failures=`) |
+| `GET /skills/coverage` | per skill file: asks routed to it vs asks it demonstrates |
+| `GET /skills/uncovered` | the blind spots themselves, with evidence and run status |
+| `GET /skills/updates` | paste-ready `example_prompts`/`keywords` per file |
+| `GET /skills/updates.md` | the same as one markdown document |
+| `GET /runs`, `GET /runs/delta` | run history, and what changed since the previous run |
+| `POST /scrape/run`, `POST /analyze/run`, `POST /report/run` | trigger the pipeline |
 | `GET /prompts/frequent` | prompt clusters by frequency (`min_count`, `fmt=json\|csv`) |
 | `GET /skills/matches` | clusters matched to existing skills |
 | `GET /skills/gaps` | proposed new skills with level + evidence |
@@ -468,11 +550,12 @@ src/phoenix_scraper/
   skills/taxonomy/skills_mapper   catalog loading, level inference, matching + proposals
   evaluations     the CODE annotator: offline output and prompt validators
   annotations     pull HUMAN/LLM annotations from Phoenix, push CODE ones back
+  skill_coverage  what each skill FILE is asked but doesn't show; run-over-run diffs
   insights*       analytics: traces, users, LLM behaviour, quality rollups
   costs/sessions  token->cost from pricing.yaml, session derivation
-  storage         SQLite store (spans, state, analysis results, span_evaluations)
+  storage         SQLite store (spans, state, analysis, evaluations, run history)
   pipeline/cli/api        orchestration, Typer CLI, FastAPI service
-tests/            450 tests, ~93% coverage (`make test`)
+tests/            538 tests, ~94% coverage (`make test`)
 ```
 
 ## POC limitations (deliberate)

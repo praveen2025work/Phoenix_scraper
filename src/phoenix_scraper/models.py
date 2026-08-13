@@ -183,3 +183,5 @@ class AnalysisResult(_Frozen):
     evaluations: tuple[SpanEvaluation, ...] = ()
     n_spans_analyzed: int = 0
     generated_at: datetime | None = None
+    run_id: str | None = None  # this run's snapshot key
+    previous_run_id: str | None = None  # the run this one can be diffed against

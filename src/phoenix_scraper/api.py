@@ -19,6 +19,7 @@ from . import (
     insights_llm,
     insights_quality,
     insights_users,
+    skill_coverage,
 )
 from . import (
     annotations as annotations_mod,
@@ -26,12 +27,13 @@ from . import (
 from .config import Settings, load_settings
 from .costs import cost_summary
 from .evaluations import check_names
-from .export import frame_to_csv_text
+from .export import frame_to_csv_text, write_markdown_report
 from .fixtures import seed_demo
 from .models import QueryFilters
 from .phoenix_client import PhoenixClientWrapper
 from .pipeline import ANALYSIS_SPAN_LIMIT, run_analysis
 from .scraper import scrape_once
+from .skills import load_all_skills
 from .storage import Store
 
 _DASHBOARD_PATH = Path(__file__).parent / "static" / "dashboard.html"
@@ -390,6 +392,129 @@ def create_app(settings: Settings) -> FastAPI:
                 ),
             )
         return client
+
+    def _coverage_inputs(store: Store) -> tuple[pd.DataFrame, pd.DataFrame]:
+        """(annotated clusters, deltas vs the previous run) — the coverage basis."""
+        skills = load_all_skills(settings)
+        annotated = skill_coverage.annotate_coverage(
+            store.clusters_frame(limit=100_000),
+            store.matches_frame(),
+            skills,
+            threshold=settings.skill_coverage_threshold,
+        )
+        latest = store.previous_run_id()
+        deltas = skill_coverage.cluster_deltas(
+            store.run_snapshot_frame(latest),
+            store.run_snapshot_frame(store.previous_run_id(latest)),
+        )
+        return annotated, deltas
+
+    @protected.get("/skills/coverage")
+    def skills_coverage(fmt: Fmt = "json") -> Response:
+        """Per skill file: how much of what it is asked does it demonstrate?"""
+        with open_store() as store:
+            annotated, _ = _coverage_inputs(store)
+            df = skill_coverage.skill_coverage(annotated)
+        return _frame_response(df, fmt, "skill_coverage")
+
+    @protected.get("/skills/uncovered")
+    def skills_uncovered(fmt: Fmt = "json") -> Response:
+        """The blind spots: real questions the matched skill file does not show."""
+        with open_store() as store:
+            annotated, deltas = _coverage_inputs(store)
+            df = skill_coverage.uncovered_queries(annotated, deltas)
+        return _frame_response(df, fmt, "skill_uncovered")
+
+    @protected.get("/skills/updates")
+    def skills_updates(fmt: Fmt = "json") -> Response:
+        """Paste-ready example_prompts/keywords additions, per skill file."""
+        with open_store() as store:
+            annotated, deltas = _coverage_inputs(store)
+            df = skill_coverage.suggested_updates(
+                skill_coverage.uncovered_queries(annotated, deltas),
+                load_all_skills(settings),
+                max_prompts=settings.max_suggested_prompts,
+            )
+        if fmt == "csv":
+            # Lists don't survive a CSV cell; join them for the spreadsheet view.
+            df = df.assign(
+                new_prompts=df["new_prompts"].map(lambda v: " | ".join(v)),
+                new_keywords=df["new_keywords"].map(lambda v: ", ".join(v)),
+            ) if not df.empty else df
+        return _frame_response(df, fmt, "skill_updates")
+
+    @protected.get("/skills/updates.md", response_class=Response)
+    def skills_updates_markdown() -> Response:
+        """The same suggestions as one paste-ready markdown document."""
+        with open_store() as store:
+            annotated, deltas = _coverage_inputs(store)
+            df = skill_coverage.suggested_updates(
+                skill_coverage.uncovered_queries(annotated, deltas),
+                load_all_skills(settings),
+                max_prompts=settings.max_suggested_prompts,
+            )
+        return Response(
+            content=skill_coverage.updates_markdown(df), media_type="text/markdown"
+        )
+
+    @protected.get("/runs")
+    def runs_list(fmt: Fmt = "json") -> Response:
+        """Recorded analysis runs, newest first — the basis for run-over-run diffs."""
+        with open_store() as store:
+            df = store.runs_frame()
+        return _frame_response(df, fmt, "runs")
+
+    @protected.get("/runs/delta")
+    def runs_delta(fmt: Fmt = "json") -> Response:
+        """What users started (and stopped) asking since the previous run."""
+        with open_store() as store:
+            latest = store.previous_run_id()
+            df = skill_coverage.cluster_deltas(
+                store.run_snapshot_frame(latest),
+                store.run_snapshot_frame(store.previous_run_id(latest)),
+            )
+        return _frame_response(df, fmt, "run_delta")
+
+    @protected.post("/analyze/run")
+    def analyze_run() -> dict[str, Any]:
+        """Re-run the mining pipeline over the stored spans."""
+        with open_store() as store:
+            result = run_analysis(store, settings)
+        return {
+            "run_id": result.run_id,
+            "previous_run_id": result.previous_run_id,
+            "n_spans_analyzed": result.n_spans_analyzed,
+            "clusters": len(result.clusters),
+            "matches": len(result.matches),
+            "proposals": len(result.proposals),
+            "sessions": len(result.sessions),
+            "evaluations": len(result.evaluations),
+        }
+
+    @protected.post("/report/run")
+    def report_run() -> dict[str, Any]:
+        """Re-run the analysis and write the markdown report to the export dir."""
+        with open_store() as store:
+            result = run_analysis(store, settings)
+            annotated, deltas = _coverage_inputs(store)
+        updates = skill_coverage.suggested_updates(
+            skill_coverage.uncovered_queries(annotated, deltas),
+            load_all_skills(settings),
+            max_prompts=settings.max_suggested_prompts,
+        )
+        report_path = write_markdown_report(
+            result, settings.export_dir / "report.md", updates
+        )
+        updates_path = settings.export_dir / "skill_updates.md"
+        updates_path.write_text(
+            skill_coverage.updates_markdown(updates), encoding="utf-8"
+        )
+        return {
+            "report": str(report_path),
+            "skill_updates": str(updates_path),
+            "n_spans_analyzed": result.n_spans_analyzed,
+            "skills_with_gaps": int(len(updates)),
+        }
 
     @protected.post("/demo/seed")
     def demo_seed(n_sessions: int = 60, seed: int = 42) -> dict[str, Any]:

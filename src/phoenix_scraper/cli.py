@@ -12,7 +12,8 @@ import typer
 from . import annotations as annotations_mod
 from . import evaluations as evaluations_mod
 from . import export as export_mod
-from . import fixtures, insights_quality, pipeline, scraper
+from . import fixtures, insights_quality, pipeline, scraper, skill_coverage
+from . import skills as skills_mod
 from .config import Settings, load_settings
 from .models import (
     AnalysisResult,
@@ -53,6 +54,8 @@ class ExportWhat(StrEnum):
     proposals = "proposals"
     sessions = "sessions"
     evaluations = "evaluations"
+    coverage = "coverage"
+    uncovered = "uncovered"
 
 
 class ExportFmt(StrEnum):
@@ -107,6 +110,11 @@ PushAllOpt = typer.Option(
     help="With --push, send passing checks too instead of failures only.",
 )
 UserOpt = typer.Option(None, "--user", help="Filter by user id.")
+WriteUpdatesOpt = typer.Option(
+    False,
+    "--write",
+    help="Also write the paste-ready blocks to <export-dir>/skill_updates.md.",
+)
 
 
 @app.command()
@@ -122,8 +130,9 @@ def demo(
     with _open_store(settings) as store:
         scrape_report = fixtures.seed_demo(store, n_sessions=sessions, seed=seed)
         result = pipeline.run_analysis(store, settings)
+        _, _, updates = _coverage_tables(store, settings)
     out_path = report_path or settings.export_dir / "report.md"
-    export_mod.write_markdown_report(result, out_path)
+    export_mod.write_markdown_report(result, out_path, updates)
 
     _echo_scrape(scrape_report)
     _echo_summary(result)
@@ -131,6 +140,11 @@ def demo(
     typer.echo("")
     typer.echo(f"Database: {settings.db_path}")
     typer.echo(f"Report:   {out_path}")
+    if len(updates):
+        typer.echo(
+            f"Skill gaps: {len(updates)} skill files are asked questions they "
+            f"don't demonstrate — `pheonix coverage` for the lines to add."
+        )
 
 
 @app.command()
@@ -246,6 +260,33 @@ def evaluate(
 
 
 @app.command()
+def coverage(
+    db: Path | None = DbOpt,
+    export_dir: Path | None = ExportDirOpt,
+    write: bool = WriteUpdatesOpt,
+) -> None:
+    """Show what each skill FILE is asked but does not demonstrate.
+
+    A prompt cluster can match a skill on keywords alone while none of that
+    skill's example_prompts shows the phrasing users actually type. Those are
+    the file's blind spots — printed here with the concrete lines to add.
+    """
+    settings = _settings(db=db, export_dir=export_dir)
+    with _open_store(settings) as store:
+        annotated, deltas, updates = _coverage_tables(store, settings)
+        coverage_df = skill_coverage.skill_coverage(annotated)
+    _echo_coverage(coverage_df, updates)
+    if write:
+        out_path = settings.export_dir / "skill_updates.md"
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(
+            skill_coverage.updates_markdown(updates), encoding="utf-8"
+        )
+        typer.echo("")
+        typer.echo(f"Paste-ready updates written to {out_path}")
+
+
+@app.command()
 def report(
     out: Path | None = OutOpt,
     db: Path | None = DbOpt,
@@ -255,9 +296,14 @@ def report(
     settings = _settings(db=db, export_dir=export_dir)
     with _open_store(settings) as store:
         result = pipeline.run_analysis(store, settings)
+        _, _, updates = _coverage_tables(store, settings)
     out_path = out or settings.export_dir / "report.md"
-    export_mod.write_markdown_report(result, out_path)
+    export_mod.write_markdown_report(result, out_path, updates)
+    updates_path = settings.export_dir / "skill_updates.md"
+    updates_path.parent.mkdir(parents=True, exist_ok=True)
+    updates_path.write_text(skill_coverage.updates_markdown(updates), encoding="utf-8")
     typer.echo(f"Report written to {out_path}")
+    typer.echo(f"Skill updates written to {updates_path}")
 
 
 @app.command()
@@ -290,6 +336,13 @@ def export(
         elif what is ExportWhat.evaluations:
             filters = _filters(project, start, end, stage, asset_class, limit, search)
             df = store.evaluations_frame(filters)
+        elif what in (ExportWhat.coverage, ExportWhat.uncovered):
+            annotated, deltas, _ = _coverage_tables(store, settings)
+            df = (
+                skill_coverage.skill_coverage(annotated)
+                if what is ExportWhat.coverage
+                else skill_coverage.uncovered_queries(annotated, deltas)
+            )
         else:
             df = store.sessions_frame()
     path = export_mod.export_frame(df, settings.export_dir, what.value, fmt.value)
@@ -387,6 +440,81 @@ def _filters(
         user_id=user_id,
         limit=limit,
     )
+
+
+def _coverage_tables(store: Store, settings: Settings):
+    """(annotated clusters, run deltas, suggested updates) from the stored analysis."""
+    skills = skills_mod.load_all_skills(settings)
+    annotated = skill_coverage.annotate_coverage(
+        store.clusters_frame(limit=100_000),
+        store.matches_frame(),
+        skills,
+        threshold=settings.skill_coverage_threshold,
+    )
+    latest = store.previous_run_id()
+    deltas = skill_coverage.cluster_deltas(
+        store.run_snapshot_frame(latest),
+        store.run_snapshot_frame(store.previous_run_id(latest)),
+    )
+    updates = skill_coverage.suggested_updates(
+        skill_coverage.uncovered_queries(annotated, deltas),
+        skills,
+        max_prompts=settings.max_suggested_prompts,
+    )
+    return annotated, deltas, updates
+
+
+def _echo_coverage(coverage_df, updates_df) -> None:
+    """Coverage per skill file, then the concrete lines to add to each."""
+    if not len(coverage_df):
+        typer.echo(
+            "No matched skills yet — run `pheonix analyze` first, and point "
+            "PHEONIX_SKILLS_CATALOG / PHEONIX_SKILLS_DIRS at your real skills."
+        )
+        return
+    typer.echo("Skill coverage — of the asks routed to each skill, how many does it show?")
+    typer.echo("")
+    # Skill AND file: a SKILL.md tree gives one skill per file, but a shared
+    # catalog yaml gives many, and the file alone would name them all the same.
+    header = (
+        f"{'skill':<26} {'file':<22} {'asks':>5} {'shown':>6} {'gap':>4} "
+        f"{'cover':>6}  top gap"
+    )
+    typer.echo(header)
+    typer.echo("-" * (len(header) + 30))
+    for row in coverage_df.to_dict("records"):
+        gap = row["top_gap"].replace("\n", " ")
+        if len(gap) > _PROMPT_PREVIEW_CHARS:
+            gap = gap[: _PROMPT_PREVIEW_CHARS - 1] + "…"
+        typer.echo(
+            f"{str(row['skill_name'])[:26]:<26} {str(row['source_file'])[:22]:<22} "
+            f"{row['n_asks']:>5} {row['n_covered_asks']:>6} "
+            f"{row['n_uncovered_asks']:>4} {row['coverage']:>5.0%}  {gap}"
+        )
+    if not len(updates_df):
+        typer.echo("")
+        typer.echo("Every question routed to a skill is already demonstrated by it.")
+        return
+    typer.echo("")
+    typer.echo("Add to each file:")
+    for row in updates_df.to_dict("records"):
+        new_note = (
+            f", {row['n_new_since_last_run']} new since last run"
+            if row["n_new_since_last_run"]
+            else ""
+        )
+        typer.echo("")
+        typer.echo(
+            f"  {row['source_file']} — {row['skill_name']} "
+            f"({row['uncovered_asks']} asks, {row['n_users']} users{new_note})"
+        )
+        for prompt in row["new_prompts"]:
+            preview = prompt.replace("\n", " ")
+            if len(preview) > _PROMPT_PREVIEW_CHARS:
+                preview = preview[: _PROMPT_PREVIEW_CHARS - 1] + "…"
+            typer.echo(f"    + {preview}")
+        if row["new_keywords"]:
+            typer.echo(f"    keywords: {', '.join(row['new_keywords'])}")
 
 
 def _live_client(settings: Settings) -> PhoenixClientWrapper:
