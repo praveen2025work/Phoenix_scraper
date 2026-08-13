@@ -76,6 +76,12 @@ WhatOpt = typer.Option(..., "--what", help="Which table to export.")
 FmtOpt = typer.Option(ExportFmt.csv, "--fmt", help="Export file format.")
 HostOpt = typer.Option("127.0.0.1", "--host")
 PortOpt = typer.Option(8000, "--port")
+SinceOpt = typer.Option(
+    None,
+    "--since",
+    help="First scrape only: pull spans starting at/after this time (UTC) instead of "
+    "the full project history. Ignored once a watermark exists.",
+)
 
 
 @app.command()
@@ -118,6 +124,7 @@ def seed(
 @app.command()
 def scrape(
     project: str | None = ProjectOpt,
+    since: datetime | None = SinceOpt,
     db: Path | None = DbOpt,
 ) -> None:
     """Incrementally pull spans from a live Phoenix server (watermarked)."""
@@ -132,7 +139,7 @@ def scrape(
         )
         raise typer.Exit(code=1)
     with _open_store(settings) as store:
-        report = scraper.scrape_once(store, client, settings)
+        report = scraper.scrape_once(store, client, settings, since=_utc(since))
     _echo_scrape(report)
 
 

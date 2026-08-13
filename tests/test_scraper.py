@@ -288,6 +288,24 @@ class TestPhoenixClientWrapper:
         assert FakeClient.last_instance is not None
         assert FakeClient.last_instance.kwargs.get("http_client") is None
 
+    def test_fetch_spans_uses_custom_http_client_for_timeout_override(
+        self, tmp_path: Path, fake_phoenix, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import httpx
+
+        monkeypatch.chdir(tmp_path)  # no CA bundle in play — timeout alone triggers it
+        FakeClient.spans_api = FakeSpansAPI([pd.DataFrame()])
+        settings = make_settings(
+            tmp_path, PHOENIX_COLLECTOR_ENDPOINT="https://phx:6006", http_timeout=120.0
+        )
+
+        PhoenixClientWrapper(settings).fetch_spans(PROJECT, None, None, 10)
+
+        assert FakeClient.last_instance is not None
+        http_client = FakeClient.last_instance.kwargs["http_client"]
+        assert isinstance(http_client, httpx.Client)
+        assert http_client.timeout.read == 120.0
+
     def test_fetch_spans_uses_custom_http_client_with_ca_bundle(
         self, tmp_path: Path, fake_phoenix
     ) -> None:
@@ -499,6 +517,26 @@ class TestScrapeOnce:
         assert report.watermark_before is None
         assert report.watermark_after is None
         assert tmp_store.get_watermark(f"phoenix:{PROJECT}") is None
+
+    def test_since_bounds_first_run(self, tmp_store: Store, tmp_path: Path) -> None:
+        settings = make_settings(tmp_path, project=PROJECT)
+        client = FakeWrapper([pd.DataFrame([flat_row(0)])])
+        since = BASE_TS - timedelta(days=7)
+
+        scrape_once(tmp_store, client, settings, since=since)
+
+        assert client.calls[0]["start"] == since
+
+    def test_watermark_wins_over_since(self, tmp_store: Store, tmp_path: Path) -> None:
+        settings = make_settings(tmp_path, project=PROJECT)
+        client = FakeWrapper([pd.DataFrame([flat_row(i) for i in range(3)]), pd.DataFrame()])
+
+        scrape_once(tmp_store, client, settings)
+        scrape_once(tmp_store, client, settings, since=BASE_TS - timedelta(days=30))
+
+        watermark = BASE_TS + timedelta(minutes=2)
+        expected_start = watermark - timedelta(minutes=settings.scrape_overlap_minutes)
+        assert client.calls[1]["start"] == expected_start
 
     def test_rows_missing_span_id_are_skipped(self, tmp_store: Store, tmp_path: Path) -> None:
         settings = make_settings(tmp_path, project=PROJECT)

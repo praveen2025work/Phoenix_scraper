@@ -273,6 +273,7 @@ Without `PHEONIX_API_KEY`, `serve` refuses non-loopback hosts by design.
 | `Phoenix is not available` from `pheonix scrape` | endpoint unset/wrong (did you edit `.env.example` instead of `.env`?), or `arize-phoenix-client` not installed (`uv sync --extra live`, or `pip install -r requirements-live.txt`) |
 | `401` from Phoenix | key expired/revoked — issue a fresh System key in Phoenix Settings |
 | Scrape succeeds but 0 spans | wrong `PHEONIX_PROJECT` name, or the time window: the watermark starts from your first run — wait a cycle or check the project has recent traces |
+| `pheonix scrape` retries 3× then fails with **read timeout** | TLS/network are fine — the server is slow answering a full-history first scan. Raise `PHEONIX_HTTP_TIMEOUT` (e.g. 180) and/or lower `PHEONIX_SCRAPE_LIMIT` (e.g. 1000) in `.env`, or bound the first pull: `pheonix scrape --since 2026-08-01T00:00:00`. Later runs are incremental and fast |
 | Prompts cluster poorly on real data | tune `PHEONIX_` cluster/match thresholds in `.env` (see `src/phoenix_scraper/config.py` defaults) |
 
 ## How live scraping behaves

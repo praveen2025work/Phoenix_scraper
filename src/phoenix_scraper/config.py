@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     skill_match_threshold: float = 0.55  # 0-1 combined match score
     scrape_overlap_minutes: int = 15  # watermark lookback to catch late-arriving spans
     scrape_limit: int = 5000
+    # Read timeout (seconds) for Phoenix API calls. The first scrape scans the
+    # project's full history and can exceed the 30s default on large projects.
+    http_timeout: float = 30.0
 
     @field_validator("phoenix_endpoint", "phoenix_api_key", "api_key", mode="before")
     @classmethod

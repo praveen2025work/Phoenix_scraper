@@ -14,9 +14,10 @@ logger = logging.getLogger(__name__)
 
 _MAX_ATTEMPTS = 3
 _BACKOFF_BASE_SECONDS = 1.0
-# Mirrors arize-phoenix-client's default timeout, which does not apply when we
-# supply our own http_client.
-_HTTP_TIMEOUT = {"connect": 10.0, "read": 30.0, "write": 10.0, "pool": 10.0}
+# Mirrors arize-phoenix-client's defaults, which do not apply when we supply
+# our own http_client. The read timeout is overridable via PHEONIX_HTTP_TIMEOUT.
+_DEFAULT_READ_TIMEOUT = 30.0
+_CONNECT_TIMEOUT = 10.0
 
 
 def build_tls_verify(settings: Settings) -> ssl.SSLContext | bool | None:
@@ -87,7 +88,7 @@ class PhoenixClientWrapper:
         # so the custom client must carry the base URL and auth header itself.
         http_client = None
         verify = build_tls_verify(self._settings)
-        if verify is not None:
+        if verify is not None or self._settings.http_timeout != _DEFAULT_READ_TIMEOUT:
             from phoenix.client.utils.config import get_env_client_headers
 
             # Mirror the stock client's header discovery (PHOENIX_CLIENT_HEADERS
@@ -96,12 +97,19 @@ class PhoenixClientWrapper:
             if self._settings.phoenix_api_key:
                 headers = {k: v for k, v in headers.items() if k.lower() != "authorization"}
                 headers["Authorization"] = f"Bearer {self._settings.phoenix_api_key}"
-            http_client = httpx.Client(
-                base_url=endpoint,
-                headers=headers,
-                verify=verify,
-                timeout=httpx.Timeout(**_HTTP_TIMEOUT),
-            )
+            client_kwargs: dict = {
+                "base_url": endpoint,
+                "headers": headers,
+                "timeout": httpx.Timeout(
+                    connect=_CONNECT_TIMEOUT,
+                    read=self._settings.http_timeout,
+                    write=_CONNECT_TIMEOUT,
+                    pool=_CONNECT_TIMEOUT,
+                ),
+            }
+            if verify is not None:
+                client_kwargs["verify"] = verify
+            http_client = httpx.Client(**client_kwargs)
             client = Client(http_client=http_client)
         else:
             client = Client(base_url=endpoint, api_key=self._settings.phoenix_api_key)

@@ -63,14 +63,23 @@ def flatten_phoenix_row(row: dict, project: str) -> SpanRecord | None:
     )
 
 
-def scrape_once(store: Store, client: PhoenixClientWrapper, settings: Settings) -> ScrapeReport:
-    """One incremental pull from Phoenix with watermark + overlap dedup semantics."""
+def scrape_once(
+    store: Store,
+    client: PhoenixClientWrapper,
+    settings: Settings,
+    since: datetime | None = None,
+) -> ScrapeReport:
+    """One incremental pull from Phoenix with watermark + overlap dedup semantics.
+
+    `since` bounds the FIRST pull only (no watermark yet) so huge projects don't
+    require a full-history scan; once a watermark exists it takes precedence.
+    """
     source_key = f"phoenix:{settings.project}"
     watermark_before = _ensure_utc(store.get_watermark(source_key))
     start = (
         watermark_before - timedelta(minutes=settings.scrape_overlap_minutes)
         if watermark_before is not None
-        else None
+        else _ensure_utc(since)
     )
     frame = client.fetch_spans(
         project=settings.project, start=start, end=None, limit=settings.scrape_limit
