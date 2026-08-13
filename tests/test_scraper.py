@@ -10,7 +10,7 @@ import pytest
 
 import phoenix_scraper.phoenix_client as phoenix_client_module
 from phoenix_scraper.config import Settings
-from phoenix_scraper.phoenix_client import PhoenixClientWrapper
+from phoenix_scraper.phoenix_client import PhoenixClientWrapper, build_tls_verify
 from phoenix_scraper.scraper import flatten_phoenix_row, ingest_jsonl, scrape_once
 from phoenix_scraper.storage import Store
 
@@ -195,6 +195,7 @@ class FakeClient:
     def __init__(self, *, base_url=None, api_key=None, **kwargs) -> None:
         self.base_url = base_url
         self.api_key = api_key
+        self.kwargs = kwargs
         self.spans = type(self).spans_api
         type(self).last_instance = self
 
@@ -273,6 +274,112 @@ class TestPhoenixClientWrapper:
         with pytest.raises(RuntimeError, match="3"):
             wrapper.fetch_spans(PROJECT, None, None, 10)
         assert len(FakeClient.spans_api.calls) == 3
+
+    def test_fetch_spans_no_custom_http_client_by_default(
+        self, tmp_path: Path, fake_phoenix, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)  # ensure no certs/phoenix-ca.pem is picked up
+        FakeClient.spans_api = FakeSpansAPI([pd.DataFrame()])
+        settings = make_settings(tmp_path, PHOENIX_COLLECTOR_ENDPOINT="http://phx:6006")
+
+        PhoenixClientWrapper(settings).fetch_spans(PROJECT, None, None, 10)
+
+        assert FakeClient.last_instance is not None
+        assert FakeClient.last_instance.kwargs.get("http_client") is None
+
+    def test_fetch_spans_uses_custom_http_client_with_ca_bundle(
+        self, tmp_path: Path, fake_phoenix
+    ) -> None:
+        import certifi
+        import httpx
+
+        FakeClient.spans_api = FakeSpansAPI([pd.DataFrame()])
+        settings = make_settings(
+            tmp_path,
+            PHOENIX_COLLECTOR_ENDPOINT="https://phx:6006",
+            PHOENIX_API_KEY="sekret",
+            ca_bundle=certifi.where(),  # any real PEM stands in for the corp CA
+        )
+
+        PhoenixClientWrapper(settings).fetch_spans(PROJECT, None, None, 10)
+
+        assert FakeClient.last_instance is not None
+        http_client = FakeClient.last_instance.kwargs["http_client"]
+        assert isinstance(http_client, httpx.Client)
+        assert str(http_client.base_url).rstrip("/") == "https://phx:6006"
+        assert http_client.headers["authorization"] == "Bearer sekret"
+
+
+class TestBlankEnvValues:
+    def test_blank_strings_treated_as_unset(self, tmp_path: Path) -> None:
+        # A shipped .env carries `PHOENIX_API_KEY=` etc. as empty strings; those
+        # must behave exactly like the variable being absent.
+        settings = make_settings(
+            tmp_path,
+            PHOENIX_COLLECTOR_ENDPOINT="",
+            PHOENIX_API_KEY=" ",
+            api_key="",
+        )
+        assert settings.phoenix_endpoint is None
+        assert settings.phoenix_api_key is None
+        assert settings.api_key is None
+
+
+# ---------------------------------------------------------------------------
+# TLS / corporate CA configuration
+# ---------------------------------------------------------------------------
+class TestResolvedCaBundle:
+    def test_none_when_nothing_configured(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        assert make_settings(tmp_path).resolved_ca_bundle() is None
+
+    def test_blank_value_treated_as_unset(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        assert make_settings(tmp_path, ca_bundle="  ").resolved_ca_bundle() is None
+
+    def test_explicit_path_wins(self, tmp_path: Path) -> None:
+        bundle = tmp_path / "corp-ca.pem"
+        bundle.write_text("dummy pem", encoding="utf-8")
+        settings = make_settings(tmp_path, ca_bundle=str(bundle))
+        assert settings.resolved_ca_bundle() == bundle
+
+    def test_explicit_missing_path_fails_fast(self, tmp_path: Path) -> None:
+        settings = make_settings(tmp_path, ca_bundle=str(tmp_path / "nope.pem"))
+        with pytest.raises(FileNotFoundError, match="PHEONIX_CA_BUNDLE"):
+            settings.resolved_ca_bundle()
+
+    def test_certs_dir_autodetected(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "certs").mkdir()
+        (tmp_path / "certs" / "phoenix-ca.pem").write_text("dummy pem", encoding="utf-8")
+        assert make_settings(tmp_path).resolved_ca_bundle() == Path("certs/phoenix-ca.pem")
+
+
+class TestBuildTlsVerify:
+    def test_defaults_to_none_meaning_stock_httpx(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        assert build_tls_verify(make_settings(tmp_path)) is None
+
+    def test_verify_disabled_returns_false(self, tmp_path: Path) -> None:
+        assert build_tls_verify(make_settings(tmp_path, tls_verify=False)) is False
+
+    def test_ca_bundle_returns_ssl_context(self, tmp_path: Path) -> None:
+        import ssl
+
+        import certifi
+
+        settings = make_settings(tmp_path, ca_bundle=certifi.where())
+        context = build_tls_verify(settings)
+        assert isinstance(context, ssl.SSLContext)
+        assert len(context.get_ca_certs()) > 0
 
 
 # ---------------------------------------------------------------------------

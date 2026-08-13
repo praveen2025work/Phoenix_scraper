@@ -16,5 +16,8 @@ htmlcov/
 # env — .env IS tracked (placeholders only); protect real values with:
 #   git update-index --skip-worktree .env
 
+# corporate CA certs stay local by default (force-add if you want yours versioned)
+certs/*.pem
+
 # os
 .DS_Store

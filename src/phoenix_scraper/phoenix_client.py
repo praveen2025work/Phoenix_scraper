@@ -2,6 +2,7 @@
 
 import importlib.util
 import logging
+import ssl
 import time
 from datetime import datetime
 
@@ -13,6 +14,34 @@ logger = logging.getLogger(__name__)
 
 _MAX_ATTEMPTS = 3
 _BACKOFF_BASE_SECONDS = 1.0
+# Mirrors arize-phoenix-client's default timeout, which does not apply when we
+# supply our own http_client.
+_HTTP_TIMEOUT = {"connect": 10.0, "read": 30.0, "write": 10.0, "pool": 10.0}
+
+
+def build_tls_verify(settings: Settings) -> ssl.SSLContext | bool | None:
+    """TLS verification override for internal/corporate Phoenix endpoints.
+
+    Returns None when stock httpx verification applies, False when verification
+    is explicitly disabled (PHEONIX_TLS_VERIFY=false), or an SSLContext trusting
+    both the standard bundle and the configured corporate CA.
+    """
+    if not settings.tls_verify:
+        logger.warning(
+            "TLS certificate verification is DISABLED (PHEONIX_TLS_VERIFY=false); "
+            "only use this on a trusted internal network"
+        )
+        return False
+    ca_bundle = settings.resolved_ca_bundle()
+    if ca_bundle is None:
+        return None
+
+    import certifi
+
+    context = ssl.create_default_context(cafile=certifi.where())
+    context.load_verify_locations(cafile=str(ca_bundle))
+    logger.info("Phoenix TLS verification trusts extra CA bundle %s", ca_bundle)
+    return context
 
 
 class PhoenixClientWrapper:
@@ -54,7 +83,25 @@ class PhoenixClientWrapper:
                 "e.g. `uv sync --extra phoenix` or `pip install arize-phoenix-client`."
             ) from exc
 
-        client = Client(base_url=endpoint, api_key=self._settings.phoenix_api_key)
+        # The phoenix Client ignores base_url/api_key when http_client is given,
+        # so the custom client must carry the base URL and auth header itself.
+        http_client = None
+        verify = build_tls_verify(self._settings)
+        if verify is not None:
+            headers = {}
+            if self._settings.phoenix_api_key:
+                headers["Authorization"] = f"Bearer {self._settings.phoenix_api_key}"
+            http_client = httpx.Client(
+                base_url=endpoint,
+                headers=headers,
+                verify=verify,
+                timeout=httpx.Timeout(**_HTTP_TIMEOUT),
+            )
+        client = Client(
+            base_url=endpoint,
+            api_key=self._settings.phoenix_api_key,
+            http_client=http_client,
+        )
         retryable = (ConnectionError, TimeoutError, httpx.TransportError)
         last_error: Exception | None = None
         for attempt in range(1, _MAX_ATTEMPTS + 1):

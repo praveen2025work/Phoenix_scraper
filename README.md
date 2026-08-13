@@ -170,29 +170,24 @@ into one file — a bundle works too.
 
      (hostname and port from your Phoenix URL — no `https://` prefix here)
 
-2. Export it in your **shell**, then run:
+2. Drop the file into the project as `certs/phoenix-ca.pem` — done. The scraper
+   picks it up automatically on the next run; no environment variables, no extra
+   installs. (Different location? Set `PHEONIX_CA_BUNDLE=/path/to/ca.pem` in
+   `.env`. The file stays local — `certs/*.pem` is gitignored.)
 
    ```bash
-   export SSL_CERT_FILE=/full/path/to/phoenix-ca.pem
-   pheonix scrape
+   pheonix scrape      # should now connect cleanly
    ```
 
-   Windows cmd: `set SSL_CERT_FILE=C:\path\phoenix-ca.pem` — PowerShell:
-   `$env:SSL_CERT_FILE="C:\path\phoenix-ca.pem"`
-
-   Putting `SSL_CERT_FILE` in `.env` does **not** work: the app loads `.env` into
-   its own settings only; httpx reads this variable from the process environment.
-   Add the `export` to your shell profile to make it permanent.
-
-   Quick check that the cert is accepted (should print a status code, not an
-   SSL error):
-
-   ```bash
-   python -c "import httpx; print(httpx.get('https://phoenix.<internal-host>').status_code)"
-   ```
+   Alternative without touching the project: export `SSL_CERT_FILE` in your
+   shell (`export SSL_CERT_FILE=/full/path/ca.pem`, Windows
+   `set SSL_CERT_FILE=C:\path\ca.pem`). Note this one must be a **shell**
+   variable — in `.env` only `PHEONIX_CA_BUNDLE` works.
 
 3. Still failing? Servers often don't send the root certificate, so the extracted
-   chain may be incomplete — ask IT for the actual root CA PEM.
+   chain may be incomplete — ask IT for the actual root CA PEM. As a last resort
+   **on a trusted internal network only**, set `PHEONIX_TLS_VERIFY=false` in
+   `.env` to disable certificate verification for the Phoenix connection.
 
 No network path to Phoenix? Export spans from the Phoenix UI/API as JSONL on a
 machine that has access, transfer the file, and run `pheonix ingest spans.jsonl`.
@@ -224,7 +219,7 @@ Without `PHEONIX_API_KEY`, `serve` refuses non-loopback hosts by design.
 | --- | --- |
 | `SyntaxError` on install/run | Python is < 3.11 — install 3.11+ or let `uv sync` fetch it |
 | SSL errors during `pip install` | corporate TLS inspection — set `SSL_CERT_FILE`/`REQUESTS_CA_BUNDLE` (step 2) |
-| `CERTIFICATE_VERIFY_FAILED` from `pheonix scrape` | Python doesn't trust the internal Phoenix cert — export `SSL_CERT_FILE` pointing at the corporate CA (see the SSL note in step 5) |
+| `CERTIFICATE_VERIFY_FAILED` from `pheonix scrape` | Python doesn't trust the internal Phoenix cert — drop the corporate root CA at `certs/phoenix-ca.pem` (see the SSL note in step 5) |
 | `Phoenix is not available` from `pheonix scrape` | endpoint unset/wrong (did you edit `.env.example` instead of `.env`?), or `arize-phoenix-client` not installed (`uv sync --extra live`, or `pip install -r requirements-live.txt`) |
 | `401` from Phoenix | key expired/revoked — issue a fresh System key in Phoenix Settings |
 | Scrape succeeds but 0 spans | wrong `PHEONIX_PROJECT` name, or the time window: the watermark starts from your first run — wait a cycle or check the project has recent traces |
