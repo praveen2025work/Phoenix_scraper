@@ -9,6 +9,8 @@ from pathlib import Path
 import pandas as pd
 
 from .models import (
+    Capability,
+    CapabilityFilter,
     PromptCluster,
     QueryFilters,
     SessionRecord,
@@ -150,6 +152,22 @@ CREATE TABLE IF NOT EXISTS sessions (
     total_cost_usd REAL NOT NULL DEFAULT 0,
     models TEXT NOT NULL DEFAULT '[]',
     first_prompt TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS capabilities (
+    capability_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL DEFAULT '',
+    description TEXT NOT NULL DEFAULT '',
+    filter_project TEXT,
+    filter_workflow_stage TEXT,
+    filter_asset_class TEXT,
+    filter_model_name TEXT,
+    filter_search TEXT,
+    window_days INTEGER NOT NULL DEFAULT 30,
+    thresholds_json TEXT NOT NULL DEFAULT '{}',
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
 );
 """
 
@@ -477,6 +495,54 @@ class Store:
             "SELECT * FROM sessions ORDER BY start_time DESC", self._conn
         )
 
+    # ---- capabilities -----------------------------------------------------
+    def upsert_capability(self, capability: Capability) -> None:
+        """Mirror a Capability into the table. created_at is preserved on update."""
+        now = _iso(datetime.now(UTC))
+        f = capability.filter
+        self._conn.execute(
+            "INSERT INTO capabilities (capability_id, name, description, "
+            "filter_project, filter_workflow_stage, filter_asset_class, "
+            "filter_model_name, filter_search, window_days, thresholds_json, "
+            "status, created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) "
+            "ON CONFLICT(capability_id) DO UPDATE SET "
+            "name=excluded.name, description=excluded.description, "
+            "filter_project=excluded.filter_project, "
+            "filter_workflow_stage=excluded.filter_workflow_stage, "
+            "filter_asset_class=excluded.filter_asset_class, "
+            "filter_model_name=excluded.filter_model_name, "
+            "filter_search=excluded.filter_search, "
+            "window_days=excluded.window_days, "
+            "thresholds_json=excluded.thresholds_json, "
+            "status=excluded.status, updated_at=excluded.updated_at",
+            (
+                capability.id, capability.name, capability.description,
+                f.project, f.workflow_stage, f.asset_class, f.model_name, f.search,
+                capability.window_days, json.dumps(capability.thresholds),
+                capability.status, now, now,
+            ),
+        )
+        self._conn.commit()
+
+    def get_capability(self, capability_id: str) -> Capability | None:
+        row = self._conn.execute(
+            "SELECT * FROM capabilities WHERE capability_id = ?", (capability_id,)
+        ).fetchone()
+        return _capability_from_row(row) if row is not None else None
+
+    def capabilities_frame(self) -> pd.DataFrame:
+        return pd.read_sql_query(
+            "SELECT * FROM capabilities ORDER BY capability_id", self._conn
+        )
+
+    def delete_capability(self, capability_id: str) -> bool:
+        cur = self._conn.execute(
+            "DELETE FROM capabilities WHERE capability_id = ?", (capability_id,)
+        )
+        self._conn.commit()
+        return cur.rowcount > 0
+
     # ---- internals -----------------------------------------------------------
     def _count(self, table: str) -> int:
         return self._conn.execute(f"SELECT COUNT(*) AS n FROM {table}").fetchone()["n"]
@@ -497,6 +563,24 @@ def _evaluation_row(evaluation: SpanEvaluation) -> tuple:
         evaluation.span_id, evaluation.name, evaluation.source, evaluation.label,
         evaluation.score, evaluation.explanation, evaluation.annotator_kind,
         evaluation.target, _iso(evaluation.created_at),
+    )
+
+
+def _capability_from_row(row: sqlite3.Row) -> Capability:
+    return Capability(
+        id=row["capability_id"],
+        name=row["name"],
+        description=row["description"],
+        filter=CapabilityFilter(
+            project=row["filter_project"],
+            workflow_stage=row["filter_workflow_stage"],
+            asset_class=row["filter_asset_class"],
+            model_name=row["filter_model_name"],
+            search=row["filter_search"],
+        ),
+        window_days=row["window_days"],
+        thresholds=json.loads(row["thresholds_json"]),
+        status=row["status"],
     )
 
 
