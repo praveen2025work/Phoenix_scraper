@@ -117,7 +117,7 @@ class Capability(_Frozen):
     name: str
     description: str = ""
     filter: CapabilityFilter = Field(default_factory=CapabilityFilter)
-    window_days: int = 30
+    window_days: int = Field(default=30, gt=0)
     thresholds: dict[str, float] = Field(default_factory=dict)
     status: Literal["active", "paused"] = "active"
 

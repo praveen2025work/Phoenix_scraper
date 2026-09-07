@@ -19,7 +19,7 @@ class TestSettings:
     def test_capabilities_dir_defaults_to_capabilities(self) -> None:
         assert Settings(**_S).capabilities_dir == Path("capabilities")
 
-    def test_capabilities_dir_from_env(self, monkeypatch) -> None:
+    def test_capabilities_dir_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("PHEONIX_CAPABILITIES_DIR", "/tmp/caps")
         # _env_file=None disables the dotenv file, NOT os.environ — the var is read.
         assert Settings(**_S).capabilities_dir == Path("/tmp/caps")
@@ -46,6 +46,14 @@ class TestCapabilityModels:
         a = Capability(id="a", name="a")
         b = Capability(id="b", name="b")
         assert a.thresholds is not b.thresholds
+
+    def test_window_days_must_be_positive(self) -> None:
+        with pytest.raises(ValidationError):
+            Capability(id="a", name="a", window_days=0)
+
+    def test_status_literal_rejected(self) -> None:
+        with pytest.raises(ValidationError):
+            Capability(id="a", name="a", status="wobbly")
 
 
 class TestValidateId:
@@ -140,6 +148,15 @@ class TestLoadDump:
         with pytest.raises(ValueError):
             cap_mod.load_capability(tmp_path, "../x")
 
+    def test_load_rejects_yaml_id_disagreeing_with_dir(self, tmp_path: Path) -> None:
+        self._write(tmp_path, "fobo", "id: other\nname: X\n")
+        with pytest.raises(ValueError):
+            cap_mod.load_capability(tmp_path, "fobo")
+
+    def test_load_accepts_yaml_id_matching_dir(self, tmp_path: Path) -> None:
+        self._write(tmp_path, "fobo", "id: fobo\nname: X\n")
+        assert cap_mod.load_capability(tmp_path, "fobo").id == "fobo"
+
     def test_load_null_numeric_values_fall_back(self, tmp_path: Path) -> None:
         d = tmp_path / "x"
         d.mkdir()
@@ -174,6 +191,13 @@ class TestScaffold:
     def test_rejects_bad_id(self, tmp_path: Path) -> None:
         with pytest.raises(ValueError):
             cap_mod.scaffold_capability(tmp_path, "Bad_Id", name="x")
+
+    def test_returns_value_reread_from_disk(self, tmp_path: Path) -> None:
+        cap = cap_mod.scaffold_capability(
+            tmp_path, "fx", name="FX", cap_filter=CapabilityFilter(project="  ")
+        )
+        assert cap.filter.project is None
+        assert cap == cap_mod.load_capability(tmp_path, "fx")
 
 
 class TestListing:
@@ -220,6 +244,18 @@ class TestSkillDirs:
 
     def test_empty_when_absent(self, tmp_path: Path) -> None:
         assert cap_mod.capability_skill_dirs(tmp_path, "ghost") == []
+
+    def test_rejects_traversal_id(self, tmp_path: Path) -> None:
+        with pytest.raises(ValueError):
+            cap_mod.capability_skill_dirs(tmp_path, "../x")
+
+
+class TestWriteBoundaryValidation:
+    """write_capability trusts Capability.id — validate it at the write boundary."""
+
+    def test_write_capability_rejects_traversal_id(self, tmp_path: Path) -> None:
+        with pytest.raises(ValueError):
+            cap_mod.write_capability(tmp_path, Capability(id="../x", name="x"))
 
 
 class TestQueryFilters:

@@ -77,9 +77,14 @@ def load_capability(root: Path, cap_id: str) -> Capability:
     thresholds_raw = raw.get("thresholds") or {}
     if not isinstance(thresholds_raw, dict):
         raise ValueError(f"{path}: 'thresholds' must be a mapping")
+    raw_id = raw.get("id")
+    if raw_id is not None and str(raw_id).strip() and str(raw_id).strip() != cap_id:
+        raise ValueError(
+            f"{path}: 'id: {raw['id']}' does not match its directory name {cap_id!r}"
+        )
     status = raw.get("status")
     return Capability(
-        id=validate_id(str(raw.get("id") or cap_id)),
+        id=validate_id(cap_id),
         name=str(raw.get("name") or cap_id),
         description=str(raw.get("description") or ""),
         filter=CapabilityFilter(**{k: _clean(filter_raw.get(k)) for k in _FILTER_KEYS}),
@@ -105,6 +110,7 @@ def dump_capability(capability: Capability) -> str:
 
 def write_capability(root: Path, capability: Capability) -> Path:
     """Create the capability's directory tree and write its capability.yaml."""
+    validate_id(capability.id)
     cap_dir = capability_dir(root, capability.id)
     (cap_dir / "skills").mkdir(parents=True, exist_ok=True)
     (cap_dir / "deterministic").mkdir(parents=True, exist_ok=True)
@@ -137,7 +143,7 @@ def scaffold_capability(
         window_days=window_days,
     )
     write_capability(root, capability)
-    return capability
+    return load_capability(root, cap_id)
 
 
 def list_capability_ids(root: Path) -> list[str]:
@@ -158,6 +164,7 @@ def load_all_capabilities(root: Path) -> list[Capability]:
     for cap_id in list_capability_ids(root):
         try:
             out.append(load_capability(root, cap_id))
+        # yaml.YAMLError: defence in depth — load_capability already converts it to ValueError
         except (ValueError, FileNotFoundError, yaml.YAMLError) as exc:
             logger.warning("Skipping capability %s: %s", cap_id, exc)
     return out
@@ -165,6 +172,7 @@ def load_all_capabilities(root: Path) -> list[Capability]:
 
 def capability_skill_dirs(root: Path, cap_id: str) -> list[Path]:
     """The skill directories to fold into this capability's skill scan."""
+    validate_id(cap_id)
     skills = capability_dir(root, cap_id) / "skills"
     return [skills] if skills.is_dir() else []
 

@@ -495,7 +495,7 @@ class Store:
             "SELECT * FROM sessions ORDER BY start_time DESC", self._conn
         )
 
-    # ---- capabilities -----------------------------------------------------
+    # ---- capabilities --------------------------------------------------------
     def upsert_capability(self, capability: Capability) -> None:
         """Mirror a Capability into the table. created_at is preserved on update."""
         now = _iso(datetime.now(UTC))

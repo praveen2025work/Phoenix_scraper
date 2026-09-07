@@ -497,7 +497,7 @@ def capability_list(
             for row in store.capabilities_frame().to_dict("records")
         }
     typer.echo(f"{'id':<24} {'status':<10} synced")
-    typer.echo("-" * 44)
+    typer.echo("-" * 46)
     for cap_id in ids:
         status = synced.get(cap_id, "-")
         mark = "yes" if cap_id in synced else "not synced"

@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from typer.testing import CliRunner
+from typer.testing import CliRunner, Result
 
 from phoenix_scraper.cli import app as cli_app
 from phoenix_scraper.storage import Store
@@ -10,7 +10,7 @@ from phoenix_scraper.storage import Store
 runner = CliRunner()
 
 
-def _invoke(*args: str) -> object:
+def _invoke(*args: str) -> Result:
     return runner.invoke(cli_app, list(args))
 
 
@@ -52,6 +52,13 @@ class TestCapabilityNew:
         )
         assert result.exit_code == 1
         assert "Invalid capability id" in result.output
+
+    def test_zero_window_days_exits_1(self, tmp_path: Path) -> None:
+        result = _invoke(
+            "capability", "new", "x", "--window-days", "0",
+            "--capabilities-dir", str(tmp_path / "caps"), "--db", str(tmp_path / "c.db"),
+        )
+        assert result.exit_code == 1
 
 
 class TestCapabilitySync:

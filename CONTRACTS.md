@@ -248,7 +248,7 @@ def run_analysis(store: Store, settings: Settings) -> AnalysisResult
 CLI commands: demo (seed fixtures + analyze + report), seed, scrape, ingest, analyze,
 evaluate (+ --pull-annotations / --push / --push-all / --user), coverage (+ --write),
 report, export (--what spans|clusters|matches|proposals|sessions|evaluations|
-coverage|uncovered --fmt csv|json|parquet + filter options), serve.
+coverage|uncovered --fmt csv|json|parquet + filter options), serve, capability (new | list | show | sync).
 API routes: GET /health, POST /demo/seed, POST /scrape/run, POST /analyze/run,
 POST /report/run, GET /prompts/frequent, GET /skills/matches, GET /skills/gaps,
 GET /skills/{coverage,uncovered,updates,updates.md}, GET /runs, GET /runs/delta,

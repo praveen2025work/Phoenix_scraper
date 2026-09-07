@@ -18,6 +18,9 @@ def _cap(cap_id: str = "fobo", **over) -> Capability:
 
 
 class TestCapabilityCrud:
+    def test_frame_empty(self, tmp_store) -> None:
+        assert len(tmp_store.capabilities_frame()) == 0
+
     def test_upsert_then_get_round_trips(self, tmp_store) -> None:
         cap = _cap()
         tmp_store.upsert_capability(cap)
