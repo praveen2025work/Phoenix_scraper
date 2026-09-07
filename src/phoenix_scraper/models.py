@@ -98,6 +98,30 @@ class SkillEntry(_Frozen):
     path: str | None = None
 
 
+class CapabilityFilter(_Frozen):
+    """The span selector for a capability — a subset of QueryFilters' dimensions."""
+
+    project: str | None = None
+    workflow_stage: str | None = None
+    asset_class: str | None = None
+    model_name: str | None = None
+    search: str | None = None  # substring match on input_text
+
+
+class Capability(_Frozen):
+    """A named analysis scope: a saved span filter plus an owned directory of
+    skill files. Defined on disk in capabilities/<id>/capability.yaml; mirrored
+    into the `capabilities` table."""
+
+    id: str
+    name: str
+    description: str = ""
+    filter: CapabilityFilter = Field(default_factory=CapabilityFilter)
+    window_days: int = 30
+    thresholds: dict[str, float] = Field(default_factory=dict)
+    status: Literal["active", "paused"] = "active"
+
+
 class SkillMatch(_Frozen):
     cluster_id: str
     skill_name: str

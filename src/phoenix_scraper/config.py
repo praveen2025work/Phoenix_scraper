@@ -33,6 +33,13 @@ class Settings(BaseSettings):
     skills_dirs: str = ""  # comma-separated directories containing SKILL.md files
     pricing_path: Path = Path("config/pricing.yaml")
 
+    # Capabilities: each is a directory under this root with a capability.yaml
+    # (source of truth) mirrored into the `capabilities` table by `pheonix
+    # capability sync`.
+    capabilities_dir: Path = Path("capabilities")
+    # Default actor recorded on ladder decisions when the request omits one.
+    operator_name: str = ""
+
     # analysis knobs
     cluster_fuzz_threshold: int = 90  # rapidfuzz token_set_ratio 0-100
     skill_match_threshold: float = 0.55  # 0-1 combined match score
