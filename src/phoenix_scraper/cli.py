@@ -10,6 +10,7 @@ from pathlib import Path
 import typer
 
 from . import annotations as annotations_mod
+from . import capability as capability_mod
 from . import evaluations as evaluations_mod
 from . import export as export_mod
 from . import fixtures, insights_quality, pipeline, scraper, skill_coverage
@@ -18,6 +19,7 @@ from .config import Settings, load_settings
 from .models import (
     AnalysisResult,
     AnnotationSyncReport,
+    CapabilityFilter,
     PromptCluster,
     QueryFilters,
     ScrapeReport,
@@ -41,6 +43,14 @@ def _init_logging() -> None:
         handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
         pkg_logger.addHandler(handler)
         pkg_logger.setLevel(logging.INFO)
+
+
+capability_app = typer.Typer(
+    name="capability",
+    help="Create, inspect, and sync capability workspaces.",
+    no_args_is_help=True,
+)
+app.add_typer(capability_app, name="capability")
 
 _TOP_N = 10
 _PROMPT_PREVIEW_CHARS = 70
@@ -115,6 +125,16 @@ WriteUpdatesOpt = typer.Option(
     "--write",
     help="Also write the paste-ready blocks to <export-dir>/skill_updates.md.",
 )
+CapabilitiesDirOpt = typer.Option(
+    None, "--capabilities-dir", help="Override the capabilities root directory."
+)
+CapIdArg = typer.Argument(..., help="Capability id (kebab-case, e.g. fobo).")
+CapIdOptionalArg = typer.Argument(
+    None, help="One capability id; omit to act on all of them."
+)
+CapNameOpt = typer.Option("", "--name", help="Display name.")
+CapDescriptionOpt = typer.Option("", "--description", help="One-line description.")
+CapWindowDaysOpt = typer.Option(30, "--window-days", help="Default from/to span in days.")
 
 
 @app.command()
@@ -394,6 +414,72 @@ def serve(
     uvicorn.run(create_app(settings), host=host, port=port)
 
 
+@capability_app.command("new")
+def capability_new(
+    cap_id: str = CapIdArg,
+    name: str = CapNameOpt,
+    description: str = CapDescriptionOpt,
+    project: str | None = ProjectOpt,
+    stage: str | None = StageOpt,
+    asset_class: str | None = AssetClassOpt,
+    search: str | None = SearchOpt,
+    window_days: int = CapWindowDaysOpt,
+    db: Path | None = DbOpt,
+    capabilities_dir: Path | None = CapabilitiesDirOpt,
+) -> None:
+    """Scaffold capabilities/<id>/ and mirror it into the database."""
+    settings = _settings(db=db, capabilities_dir=capabilities_dir)
+    try:
+        cap = capability_mod.scaffold_capability(
+            settings.capabilities_dir,
+            cap_id,
+            name=name,
+            description=description,
+            cap_filter=CapabilityFilter(
+                project=project,
+                workflow_stage=stage,
+                asset_class=asset_class,
+                search=search,
+            ),
+            window_days=window_days,
+        )
+    except (ValueError, FileExistsError) as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1) from exc
+    with _open_store(settings) as store:
+        store.upsert_capability(cap)
+    typer.echo(
+        f"Created capability '{cap.id}' -> "
+        f"{capability_mod.config_path(settings.capabilities_dir, cap.id)}"
+    )
+
+
+@capability_app.command("sync")
+def capability_sync(
+    cap_id: str | None = CapIdOptionalArg,
+    db: Path | None = DbOpt,
+    capabilities_dir: Path | None = CapabilitiesDirOpt,
+) -> None:
+    """Re-read capability.yaml from disk into the capabilities table."""
+    settings = _settings(db=db, capabilities_dir=capabilities_dir)
+    root = settings.capabilities_dir
+    if cap_id is not None:
+        try:
+            caps = [capability_mod.load_capability(root, cap_id)]
+        except (ValueError, FileNotFoundError) as exc:
+            typer.secho(str(exc), fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=1) from exc
+    else:
+        caps = capability_mod.load_all_capabilities(root)
+    if not caps:
+        typer.echo("No capabilities found.")
+        return
+    with _open_store(settings) as store:
+        for cap in caps:
+            store.upsert_capability(cap)
+            typer.echo(f"synced {cap.id} (status={cap.status})")
+
+
 # ---- helpers -------------------------------------------------------------------
 
 
@@ -401,11 +487,17 @@ def _settings(
     db: Path | None = None,
     export_dir: Path | None = None,
     project: str | None = None,
+    capabilities_dir: Path | None = None,
 ) -> Settings:
     base = load_settings()
     updates: dict[str, object] = {
         key: value
-        for key, value in (("db_path", db), ("export_dir", export_dir), ("project", project))
+        for key, value in (
+            ("db_path", db),
+            ("export_dir", export_dir),
+            ("project", project),
+            ("capabilities_dir", capabilities_dir),
+        )
         if value is not None
     }
     return base.model_copy(update=updates) if updates else base
