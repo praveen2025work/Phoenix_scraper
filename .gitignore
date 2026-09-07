@@ -19,6 +19,9 @@ htmlcov/
 # corporate CA certs stay local by default (force-add if you want yours versioned)
 certs/*.pem
 
+# subagent-driven-development scratch (ledger, briefs, reports)
+.superpowers/
+
 # os
 .DS_Store
 .gstack/
