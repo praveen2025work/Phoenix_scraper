@@ -61,6 +61,29 @@ def scan_skill_dirs(dirs: list[Path]) -> list[SkillEntry]
 def load_all_skills(settings: Settings) -> list[SkillEntry]        # catalog + dirs, de-dup by name
 ```
 
+## capability.py  (the capabilities/<id>/ disk layer — capability.yaml is source of truth)
+```python
+CONFIG_NAME = "capability.yaml"
+
+def validate_id(cap_id: str) -> str
+    # 1-64 chars, ^[a-z][a-z0-9-]{0,63}$; returns it or raises ValueError.
+def config_path(root: Path, cap_id: str) -> Path        # <root>/<id>/capability.yaml
+def load_capability(root: Path, cap_id: str) -> Capability
+    # FileNotFoundError if absent; ValueError if not a mapping / bad section.
+    # Unknown status -> "active". Blank filter values -> None.
+def dump_capability(capability: Capability) -> str      # yaml text; load round-trips
+def write_capability(root: Path, capability: Capability) -> Path
+    # mkdir <id>/skills, <id>/deterministic; write capability.yaml; return its path
+def scaffold_capability(root, cap_id, *, name="", description="",
+                        cap_filter=None, window_days=30) -> Capability
+    # FileExistsError if capability.yaml already there; ValueError on bad id
+def list_capability_ids(root: Path) -> list[str]        # sorted; only dirs with a yaml
+def load_all_capabilities(root: Path) -> list[Capability]   # skips malformed (warns)
+def capability_skill_dirs(root: Path, cap_id: str) -> list[Path]   # [<id>/skills] or []
+def capability_query_filters(capability, *, start=None, end=None,
+                             limit=100_000) -> QueryFilters
+```
+
 ## taxonomy.py
 ```python
 ASSET_CLASS_KEYWORDS: dict[str, tuple[str, ...]]   # fx, rates, equities, credit, commodities
