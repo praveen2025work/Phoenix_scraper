@@ -453,6 +453,25 @@ Two sources, merged (catalog wins on name collisions):
    report measures real questions against, so a file that declares none will
    show 0% coverage until you add some (which is the honest answer).
 
+## Capabilities
+
+A **capability** is a named analysis scope — a saved span filter plus an owned
+directory of skill files — for one workflow (FOBO recon, PLEX,
+flash-vs-formal, …). `capability.yaml` on disk is the source of truth; the
+`capabilities` table mirrors it.
+
+```bash
+pheonix capability new fobo --name "FOBO reconciliation" \
+    --project pnl-agent --stage fobo_recon --window-days 30
+pheonix capability list
+pheonix capability show fobo
+pheonix capability sync            # re-read every capability.yaml into the DB
+```
+
+`new` scaffolds `capabilities/fobo/` with `capability.yaml`, `skills/`, and
+`deterministic/`. Edit the yaml directly and run `sync` to apply changes. Set
+`PHEONIX_CAPABILITIES_DIR` to relocate the root.
+
 ## Dashboard UI
 
 `pheonix serve` and open **http://127.0.0.1:8000/** — a self-contained dashboard

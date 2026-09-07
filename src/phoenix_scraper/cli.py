@@ -480,6 +480,73 @@ def capability_sync(
             typer.echo(f"synced {cap.id} (status={cap.status})")
 
 
+@capability_app.command("list")
+def capability_list(
+    db: Path | None = DbOpt,
+    capabilities_dir: Path | None = CapabilitiesDirOpt,
+) -> None:
+    """List capability workspaces on disk and whether each is synced to the DB."""
+    settings = _settings(db=db, capabilities_dir=capabilities_dir)
+    ids = capability_mod.list_capability_ids(settings.capabilities_dir)
+    if not ids:
+        typer.echo("No capabilities found.")
+        return
+    with _open_store(settings) as store:
+        synced = {
+            row["capability_id"]: row["status"]
+            for row in store.capabilities_frame().to_dict("records")
+        }
+    typer.echo(f"{'id':<24} {'status':<10} synced")
+    typer.echo("-" * 44)
+    for cap_id in ids:
+        status = synced.get(cap_id, "-")
+        mark = "yes" if cap_id in synced else "not synced"
+        typer.echo(f"{cap_id:<24} {status:<10} {mark}")
+
+
+def _format_filter(f: CapabilityFilter) -> str:
+    parts = [
+        f"{label}={value}"
+        for label, value in (
+            ("project", f.project),
+            ("stage", f.workflow_stage),
+            ("asset_class", f.asset_class),
+            ("model", f.model_name),
+            ("search", f.search),
+        )
+        if value
+    ]
+    return ", ".join(parts) if parts else "(none — all spans)"
+
+
+@capability_app.command("show")
+def capability_show(
+    cap_id: str = CapIdArg,
+    capabilities_dir: Path | None = CapabilitiesDirOpt,
+) -> None:
+    """Print a capability's parsed fields and its file counts."""
+    settings = _settings(capabilities_dir=capabilities_dir)
+    root = settings.capabilities_dir
+    try:
+        cap = capability_mod.load_capability(root, cap_id)
+    except (ValueError, FileNotFoundError) as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1) from exc
+    cap_dir = capability_mod.capability_dir(root, cap_id)
+    skills_dir, det_dir = cap_dir / "skills", cap_dir / "deterministic"
+    n_skills = len(list(skills_dir.glob("*.md"))) if skills_dir.is_dir() else 0
+    n_det = len(list(det_dir.glob("*.py"))) if det_dir.is_dir() else 0
+    typer.echo(f"id:          {cap.id}")
+    typer.echo(f"name:        {cap.name}")
+    typer.echo(f"description: {cap.description or '-'}")
+    typer.echo(f"status:      {cap.status}")
+    typer.echo(f"window_days: {cap.window_days}")
+    typer.echo(f"filter:      {_format_filter(cap.filter)}")
+    if cap.thresholds:
+        typer.echo(f"thresholds:  {cap.thresholds}")
+    typer.echo(f"files:       skills: {n_skills}, deterministic: {n_det}")
+
+
 # ---- helpers -------------------------------------------------------------------
 
 
