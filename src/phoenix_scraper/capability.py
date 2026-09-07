@@ -56,15 +56,19 @@ def _clean(value: object) -> str | None:
 def load_capability(root: Path, cap_id: str) -> Capability:
     """Parse ``capabilities/<cap_id>/capability.yaml`` into a Capability.
 
-    Raises FileNotFoundError when the file is absent, ValueError when it is not a
-    mapping or a nested section has the wrong shape. An unrecognised ``status``
-    falls back to ``active`` rather than failing the load.
+    Raises FileNotFoundError when the file is absent, ValueError when the id is
+    invalid, the YAML is unparseable, it is not a mapping, or a nested section has
+    the wrong shape. An unrecognised ``status`` falls back to ``active`` rather
+    than failing the load.
     """
     validate_id(cap_id)
     path = config_path(root, cap_id)
     if not path.is_file():
         raise FileNotFoundError(f"No {CONFIG_NAME} for capability {cap_id!r} at {path}")
-    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    try:
+        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as exc:
+        raise ValueError(f"{path}: invalid YAML: {exc}") from exc
     if not isinstance(raw, dict):
         raise ValueError(f"{path} is not a YAML mapping")
     filter_raw = raw.get("filter") or {}
@@ -154,7 +158,7 @@ def load_all_capabilities(root: Path) -> list[Capability]:
     for cap_id in list_capability_ids(root):
         try:
             out.append(load_capability(root, cap_id))
-        except (ValueError, FileNotFoundError) as exc:
+        except (ValueError, FileNotFoundError, yaml.YAMLError) as exc:
             logger.warning("Skipping capability %s: %s", cap_id, exc)
     return out
 

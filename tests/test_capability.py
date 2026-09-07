@@ -1,5 +1,6 @@
 """Tests for Capability settings, models, and the capabilities/<id>/ disk layer."""
 
+import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -185,12 +186,29 @@ class TestListing:
     def test_list_missing_root_is_empty(self, tmp_path: Path) -> None:
         assert cap_mod.list_capability_ids(tmp_path / "nope") == []
 
-    def test_load_all_skips_malformed(self, tmp_path: Path, caplog) -> None:
+    def test_load_all_skips_malformed(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
         cap_mod.scaffold_capability(tmp_path, "good", name="Good")
         (tmp_path / "bad").mkdir()
         (tmp_path / "bad" / "capability.yaml").write_text("- nope\n", encoding="utf-8")
-        caps = cap_mod.load_all_capabilities(tmp_path)
+        with caplog.at_level(logging.WARNING):
+            caps = cap_mod.load_all_capabilities(tmp_path)
         assert [c.id for c in caps] == ["good"]
+        assert "Skipping capability" in caplog.text
+
+    def test_load_all_skips_syntactically_corrupt_yaml(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        cap_mod.scaffold_capability(tmp_path, "good", name="Good")
+        (tmp_path / "broken").mkdir()
+        (tmp_path / "broken" / "capability.yaml").write_text(
+            "id: broken\nname: [unclosed\n\tbad: tab\n", encoding="utf-8"
+        )
+        with caplog.at_level(logging.WARNING):
+            caps = cap_mod.load_all_capabilities(tmp_path)
+        assert [c.id for c in caps] == ["good"]
+        assert "Skipping capability" in caplog.text
 
 
 class TestSkillDirs:

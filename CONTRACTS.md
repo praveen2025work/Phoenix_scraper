@@ -69,7 +69,7 @@ def validate_id(cap_id: str) -> str
     # 1-64 chars, ^[a-z][a-z0-9-]{0,63}$; returns it or raises ValueError.
 def config_path(root: Path, cap_id: str) -> Path        # <root>/<id>/capability.yaml
 def load_capability(root: Path, cap_id: str) -> Capability
-    # FileNotFoundError if absent; ValueError if not a mapping / bad section.
+    # FileNotFoundError if absent; ValueError if not a mapping / bad YAML / bad section / bad id.
     # Unknown status -> "active". Blank filter values -> None.
 def dump_capability(capability: Capability) -> str      # yaml text; load round-trips
 def write_capability(root: Path, capability: Capability) -> Path
