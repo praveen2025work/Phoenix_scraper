@@ -111,3 +111,128 @@ class TestDetectRung1:
         t = ladder.resolve_thresholds(_capability(), _settings())
         signals = ladder.detect_rung1(clusters, [], annotated, efficiency, thresholds=t)
         assert len(signals) == 1 and signals[0].met_evidence_bar is False
+
+
+from datetime import UTC, datetime  # noqa: E402
+
+from phoenix_scraper.models import Candidate, CandidateObservation  # noqa: E402
+
+_TS = datetime(2026, 9, 7, tzinfo=UTC)
+
+
+def _cand2(status: str = "new", **over) -> Candidate:
+    base = dict(
+        candidate_id="fobo:s:aaa", capability_id="fobo", rung="skill",
+        subtype="new_skill", cluster_id="aaa", title="t", signature="s",
+        first_seen_run_id="r1", first_seen_at=_TS, last_seen_run_id="r1",
+        last_seen_at=_TS, status=status,
+    )
+    base.update(over)
+    return Candidate(**base)
+
+
+def _o(met: bool, run_id: str = "r", **over) -> CandidateObservation:
+    base = dict(candidate_id="fobo:s:aaa", run_id=run_id, observed_at=_TS,
+               count=20, n_users=5, met_evidence_bar=met)
+    base.update(over)
+    return CandidateObservation(**base)
+
+
+class TestReadiness:
+    def test_needs_full_sustained_streak(self) -> None:
+        recent = [_o(True), _o(True), _o(True)]
+        assert ladder.readiness_met(recent, sustained_runs=3, capability_run_count=5) is True
+
+    def test_a_miss_in_the_window_blocks(self) -> None:
+        recent = [_o(True), _o(False), _o(True)]
+        assert ladder.readiness_met(recent, sustained_runs=3, capability_run_count=5) is False
+
+    def test_not_enough_runs_yet(self) -> None:
+        recent = [_o(True), _o(True)]
+        assert ladder.readiness_met(recent, sustained_runs=3, capability_run_count=2) is False
+
+
+class TestNextStatus:
+    def _t(self):
+        return ladder.resolve_thresholds(_capability(), _settings())
+
+    def test_new_first_observation_stays_new(self) -> None:
+        tr = ladder.next_status(_cand2("new"), _o(False), [_o(False)],
+                                run_ordinal=1, capability_run_count=1, thresholds=self._t())
+        assert tr.status == "new"
+
+    def test_new_second_observation_becomes_accumulating(self) -> None:
+        tr = ladder.next_status(_cand2("new"), _o(False), [_o(False), _o(False)],
+                                run_ordinal=2, capability_run_count=2, thresholds=self._t())
+        assert tr.status == "accumulating"
+
+    def test_accumulating_to_ready_on_streak(self) -> None:
+        recent = [_o(True)] * 5
+        tr = ladder.next_status(_cand2("accumulating"), _o(True), recent,
+                                run_ordinal=6, capability_run_count=6, thresholds=self._t())
+        assert tr.status == "ready" and tr.set_ready_at is True
+
+    def test_ready_falls_back_when_evidence_fades(self) -> None:
+        recent = [_o(False), _o(True), _o(True), _o(True), _o(True)]
+        tr = ladder.next_status(_cand2("ready"), _o(False), recent,
+                                run_ordinal=7, capability_run_count=7, thresholds=self._t())
+        assert tr.status == "accumulating" and tr.note
+
+    def test_accepted_and_promoted_are_stable(self) -> None:
+        for st in ("accepted", "promoted"):
+            tr = ladder.next_status(_cand2(st), _o(True), [_o(True)] * 5,
+                                    run_ordinal=9, capability_run_count=9, thresholds=self._t())
+            assert tr.status == st
+
+    def test_snoozed_unsnoozes_when_ordinal_passes(self) -> None:
+        c = _cand2("snoozed", snooze_until_run=5)
+        tr = ladder.next_status(c, _o(True), [_o(True)],
+                                run_ordinal=5, capability_run_count=5, thresholds=self._t())
+        assert tr.status == "accumulating"
+
+    def test_snoozed_stays_when_ordinal_not_reached(self) -> None:
+        c = _cand2("snoozed", snooze_until_run=9)
+        tr = ladder.next_status(c, _o(True), [_o(True)],
+                                run_ordinal=5, capability_run_count=5, thresholds=self._t())
+        assert tr.status == "snoozed"
+
+    def test_stale_reactivates_on_observation(self) -> None:
+        tr = ladder.next_status(_cand2("stale"), _o(False), [_o(False), _o(False)],
+                                run_ordinal=8, capability_run_count=8, thresholds=self._t())
+        assert tr.status == "accumulating"
+
+    def test_rejected_reopens_on_material_change(self) -> None:
+        c = _cand2("rejected",
+                   current_evidence={"count_at_rejection": 20, "n_users_at_rejection": 4})
+        tr = ladder.next_status(c, _o(True, count=40, n_users=5), [_o(True)],
+                                run_ordinal=8, capability_run_count=8, thresholds=self._t())
+        assert tr.status == "accumulating" and tr.decision_action == "reopen"
+
+    def test_rejected_stays_without_material_change(self) -> None:
+        c = _cand2("rejected",
+                   current_evidence={"count_at_rejection": 20, "n_users_at_rejection": 4})
+        tr = ladder.next_status(c, _o(True, count=22, n_users=4), [_o(True)],
+                                run_ordinal=8, capability_run_count=8, thresholds=self._t())
+        assert tr.status == "rejected"
+
+
+class TestAdvanceUnobserved:
+    def test_stale_after_history_limit_runs(self) -> None:
+        tr = ladder.advance_unobserved(_cand2("accumulating"),
+                                       run_ordinal=25, last_seen_ordinal=4, history_limit=20)
+        assert tr is not None and tr.status == "stale"
+
+    def test_not_yet_stale(self) -> None:
+        assert ladder.advance_unobserved(_cand2("accumulating"),
+                                         run_ordinal=10, last_seen_ordinal=4,
+                                         history_limit=20) is None
+
+    def test_unsnooze_even_when_unobserved(self) -> None:
+        tr = ladder.advance_unobserved(_cand2("snoozed", snooze_until_run=8),
+                                       run_ordinal=8, last_seen_ordinal=3, history_limit=20)
+        assert tr is not None and tr.status == "accumulating"
+
+    def test_terminal_states_untouched(self) -> None:
+        for st in ("promoted", "rejected", "accepted"):
+            assert ladder.advance_unobserved(_cand2(st), run_ordinal=99,
+                                             last_seen_ordinal=1, history_limit=20) is None

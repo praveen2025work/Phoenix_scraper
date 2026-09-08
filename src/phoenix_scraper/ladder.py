@@ -12,7 +12,15 @@ from typing import Literal
 import pandas as pd
 
 from .config import Settings
-from .models import Capability, PromptCluster, SkillMatch, _Frozen
+from .models import (
+    Candidate,
+    CandidateObservation,
+    CandidateStatus,
+    Capability,
+    PromptCluster,
+    SkillMatch,
+    _Frozen,
+)
 
 
 class LadderThresholds(_Frozen):
@@ -138,3 +146,130 @@ def detect_rung1(
             )
         )
     return signals
+
+
+# --- §10.1 lifecycle state machine -------------------------------------------
+
+_STALE_ELIGIBLE = frozenset({"new", "accumulating", "ready"})
+_HUMAN_TERMINAL = frozenset({"accepted", "promoted"})
+
+
+class LadderTransition(_Frozen):
+    status: CandidateStatus
+    note: str | None = None
+    set_ready_at: bool = False
+    decision_action: str | None = None  # "reopen" for an auto-reopen
+
+
+def readiness_met(
+    recent_observations: list[CandidateObservation],
+    *,
+    sustained_runs: int,
+    capability_run_count: int,
+) -> bool:
+    if capability_run_count < sustained_runs:
+        return False
+    window = recent_observations[:sustained_runs]
+    return len(window) >= sustained_runs and all(o.met_evidence_bar for o in window)
+
+
+def is_material_change(
+    candidate: Candidate,
+    observation: CandidateObservation,
+    *,
+    thresholds: LadderThresholds,
+) -> bool:
+    ev = candidate.current_evidence
+    count_at = ev.get("count_at_rejection")
+    users_at = ev.get("n_users_at_rejection")
+    if count_at is None or users_at is None:
+        return False
+    return (
+        observation.count >= thresholds.material_change_count_factor * float(count_at)
+        or observation.n_users >= int(users_at) + thresholds.material_change_users_delta
+    )
+
+
+def _unsnoozed(candidate: Candidate, run_ordinal: int) -> bool:
+    return (
+        candidate.status == "snoozed"
+        and candidate.snooze_until_run is not None
+        and run_ordinal >= candidate.snooze_until_run
+    )
+
+
+def next_status(
+    candidate: Candidate,
+    observation: CandidateObservation,
+    recent_observations: list[CandidateObservation],
+    *,
+    run_ordinal: int,
+    capability_run_count: int,
+    thresholds: LadderThresholds,
+) -> LadderTransition:
+    """The transition when the candidate WAS observed this run.
+
+    ``recent_observations`` is newest-first and INCLUDES this run's observation.
+    """
+    status = candidate.status
+
+    if status == "snoozed":
+        if _unsnoozed(candidate, run_ordinal):
+            status = "accumulating"
+        else:
+            return LadderTransition(status="snoozed")
+
+    if status == "rejected":
+        if is_material_change(candidate, observation, thresholds=thresholds):
+            return LadderTransition(
+                status="accumulating",
+                note=(
+                    f"reopened: material change "
+                    f"({observation.count} asks, {observation.n_users} users)"
+                ),
+                decision_action="reopen",
+            )
+        return LadderTransition(status="rejected")
+
+    if status in _HUMAN_TERMINAL:
+        return LadderTransition(status=status)
+
+    if status == "stale":
+        status = "accumulating"
+
+    if status == "new":
+        status = "accumulating" if len(recent_observations) >= 2 else "new"
+
+    ready = readiness_met(
+        recent_observations,
+        sustained_runs=thresholds.rung1_sustained_runs,
+        capability_run_count=capability_run_count,
+    )
+    if status == "accumulating" and ready:
+        return LadderTransition(status="ready", set_ready_at=True)
+    if status == "ready" and not ready:
+        return LadderTransition(
+            status="accumulating", note="evidence fell below the bar this run"
+        )
+    return LadderTransition(status=status)
+
+
+def advance_unobserved(
+    candidate: Candidate,
+    *,
+    run_ordinal: int,
+    last_seen_ordinal: int,
+    history_limit: int,
+) -> LadderTransition | None:
+    """The transition when the candidate was NOT observed this run (auto-unsnooze,
+    ``stale``). ``None`` = no change."""
+    if _unsnoozed(candidate, run_ordinal):
+        return LadderTransition(status="accumulating", note="snooze expired")
+    if (
+        candidate.status in _STALE_ELIGIBLE
+        and run_ordinal - last_seen_ordinal >= history_limit
+    ):
+        return LadderTransition(
+            status="stale", note=f"not seen for {history_limit} runs"
+        )
+    return None
