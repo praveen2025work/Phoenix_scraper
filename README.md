@@ -472,6 +472,26 @@ pheonix capability sync            # re-read every capability.yaml into the DB
 `deterministic/`. Edit the yaml directly and run `sync` to apply changes. Set
 `PHEONIX_CAPABILITIES_DIR` to relocate the root.
 
+## Daily runs
+
+Once a capability exists, `pheonix run` scrapes its Phoenix project (once, even
+for `--all`), restricts to the capability's filter and a `[from, to]` window
+(default: the last `window_days`), runs the mining pipeline over just those
+spans, and records the run so consecutive runs can be diffed.
+
+```bash
+pheonix run --capability fobo                 # last window_days
+pheonix run --capability fobo --from 2026-08-01 --to 2026-09-01
+pheonix run --all                             # every active capability
+pheonix run --all --replace-today             # re-run without adding a history point
+pheonix capability runs fobo                  # recorded runs, newest first
+```
+
+Runs are kept per capability up to `PHEONIX_RUN_HISTORY_LIMIT` (default 20).
+Schedule `pheonix run --all` with cron or your scheduler — there is no built-in
+daemon. Offline or with Phoenix unreachable, the run still executes against the
+stored spans and is marked `partial`.
+
 ## Dashboard UI
 
 `pheonix serve` and open **http://127.0.0.1:8000/** — a self-contained dashboard

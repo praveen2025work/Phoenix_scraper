@@ -58,6 +58,9 @@ def scan_skill_dirs(dirs: list[Path]) -> list[SkillEntry]
     # find **/SKILL.md, parse YAML frontmatter (--- ... ---) name/description;
     # keywords = distinctive words from name+description; source="skill_md", path set.
     # Tolerate malformed files (skip with warning via logging).
+def scan_skill_files(paths: list[Path]) -> list[SkillEntry]
+    # parse an explicit list of loose markdown skill files (one skill per file) —
+    # a capability's skills/<name>.md. Same parse as scan_skill_dirs; skip missing/malformed.
 def load_all_skills(settings: Settings) -> list[SkillEntry]        # catalog + dirs, de-dup by name
 ```
 
@@ -83,6 +86,33 @@ def capability_skill_dirs(root: Path, cap_id: str) -> list[Path]   # [<id>/skill
 def capability_query_filters(capability, *, start=None, end=None,
                              limit=100_000) -> QueryFilters
 ```
+
+## capability_run.py  (scoped pipeline run + orchestration; does NOT touch the global run_analysis)
+```python
+def load_capability_skills(settings, capability) -> list[SkillEntry]
+    # load_all_skills(settings) + scan of loose <capabilities_dir>/<id>/skills/*.md,
+    # de-duped by name (earlier source wins).
+def run_capability_analysis(store, settings, capability, *, window_start=None,
+        window_end=None, replace_today=False, notes=None, now=None) -> CapabilityRunResult
+    # NO scrape. window defaults to [now - capability.window_days, now].
+    # in-scope = capability_query_filters(...); costs -> build_clusters ->
+    # load_capability_skills -> match_clusters -> annotate_coverage ->
+    # cluster_efficiency. Records capability_runs + capability_cluster_snapshots
+    # + capability_cluster_members; prunes to settings.run_history_limit per
+    # capability. `notes` (e.g. a scrape failure) force status='partial'.
+    # n_rung1_candidates / n_rung2_candidates are written 0 (Phases C / D).
+def run_capabilities(store, settings, *, capability_ids=None, all_active=False,
+        client=None, window_start=None, window_end=None, replace_today=False,
+        now=None) -> list[CapabilityRunResult]
+    # sync each capability.yaml -> DB; scrape each distinct project once
+    # (client is None / unavailable -> note "offline", status partial);
+    # loop run_capability_analysis; a capability that raises is recorded as a
+    # status='failed' run and never aborts the others.
+```
+
+New tables (Phase B): `capability_runs`, `capability_cluster_snapshots` (column
+`skill_name`, not `matched_skill`, for `cluster_deltas` compatibility),
+`capability_cluster_members`. Pruned per capability to `run_history_limit`.
 
 ## taxonomy.py
 ```python
@@ -248,7 +278,9 @@ def run_analysis(store: Store, settings: Settings) -> AnalysisResult
 CLI commands: demo (seed fixtures + analyze + report), seed, scrape, ingest, analyze,
 evaluate (+ --pull-annotations / --push / --push-all / --user), coverage (+ --write),
 report, export (--what spans|clusters|matches|proposals|sessions|evaluations|
-coverage|uncovered --fmt csv|json|parquet + filter options), serve, capability (new | list | show | sync).
+coverage|uncovered --fmt csv|json|parquet + filter options), serve,
+run (--capability | --all, --from, --to, --replace-today),
+capability (new | list | show | sync | runs).
 API routes: GET /health, POST /demo/seed, POST /scrape/run, POST /analyze/run,
 POST /report/run, GET /prompts/frequent, GET /skills/matches, GET /skills/gaps,
 GET /skills/{coverage,uncovered,updates,updates.md}, GET /runs, GET /runs/delta,
