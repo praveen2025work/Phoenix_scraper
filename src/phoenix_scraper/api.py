@@ -200,8 +200,19 @@ def create_app(settings: Settings) -> FastAPI:
         return {"status": "ok", "version": __version__}
 
     @app.get("/", include_in_schema=False)
-    def dashboard() -> HTMLResponse:
-        # Static shell only — every piece of data it shows comes from the
+    def root() -> dict[str, str]:
+        return {
+            "service": "pheonix",
+            "docs": "/docs",
+            "health": "/health",
+            "frontend": "the React SPA in frontend/ — `make ui` (dev) or `pheonix serve-ui`",
+            "legacy_dashboard": "/legacy",
+        }
+
+    @app.get("/legacy", include_in_schema=False)
+    def legacy_dashboard() -> HTMLResponse:
+        # The pre-SPA bundled dashboard. Kept until the SPA's Analytics tab
+        # reaches panel parity; every value it shows still comes from the
         # protected endpoints below, so auth still applies.
         return HTMLResponse(_DASHBOARD_PATH.read_text(encoding="utf-8"))
 

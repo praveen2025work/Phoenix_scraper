@@ -165,3 +165,18 @@ def test_cross_origin_post_from_unknown_origin_is_csrf_blocked(api_settings: Set
     with TestClient(create_app(api_settings)) as c:
         r = c.post("/analyze/run", headers={"Origin": "http://evil.example"})
         assert r.status_code == 403
+
+
+def test_root_is_a_json_notice_not_html(client: TestClient) -> None:
+    r = client.get("/")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["service"] == "pheonix"
+    assert body["legacy_dashboard"] == "/legacy"
+    assert "json" in r.headers["content-type"]
+
+
+def test_legacy_dashboard_still_serves_html(client: TestClient) -> None:
+    r = client.get("/legacy")
+    assert r.status_code == 200
+    assert r.text.lstrip().lower().startswith("<!doctype html")
