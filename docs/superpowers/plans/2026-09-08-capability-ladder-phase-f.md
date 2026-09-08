@@ -99,7 +99,7 @@ Backend: `src/phoenix_scraper/cli.py` (`serve-ui` command),
 
 **Files:** `frontend/*` skeleton, `.gitignore`, `Makefile`.
 
-- [ ] **Step 1: Create the package**
+- [x] **Step 1: Create the package**
 
 `frontend/package.json`:
 ```json
@@ -306,7 +306,7 @@ export default tseslint.config(
 );
 ```
 
-- [ ] **Step 2: Install + a passing smoke test**
+- [x] **Step 2: Install + a passing smoke test**
 
 ```bash
 cd frontend && npm install
@@ -323,14 +323,14 @@ test("renders the app shell", () => {
 });
 ```
 
-- [ ] **Step 3: Verify the toolchain**
+- [x] **Step 3: Verify the toolchain**
 
 ```bash
 cd frontend && npm run typecheck && npm test && npm run build
 ```
 Expected: `tsc` clean, 1 test passes, `vite build` emits `dist/`.
 
-- [ ] **Step 4: gitignore + Makefile targets**
+- [x] **Step 4: gitignore + Makefile targets**
 
 Append to `.gitignore`:
 ```
@@ -361,7 +361,7 @@ ui-e2e:           ## frontend Playwright smoke (needs `npx playwright install ch
 	cd frontend && npm run e2e
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add frontend .gitignore Makefile
@@ -377,7 +377,7 @@ git commit -m "feat(frontend): scaffold Vite + React + TS + Tailwind v4 + Vitest
 `frontend/src/api/{schema.ts,client.ts,hooks.ts}`,
 `frontend/src/components/ApiKeyGate.tsx`, tests.
 
-- [ ] **Step 1: `scripts/gen_openapi.py`**
+- [x] **Step 1: `scripts/gen_openapi.py`**
 
 ```python
 """Write the FastAPI OpenAPI schema to a file (for openapi-typescript)."""
@@ -394,7 +394,7 @@ out.write_text(json.dumps(create_app(load_settings()).openapi(), indent=2), enco
 print(f"wrote {out}")
 ```
 
-- [ ] **Step 2: Generate the schema**
+- [x] **Step 2: Generate the schema**
 
 ```bash
 uv run python scripts/gen_openapi.py frontend/openapi.json
@@ -402,7 +402,7 @@ cd frontend && npx openapi-typescript openapi.json -o src/api/schema.ts
 ```
 Expected: `frontend/src/api/schema.ts` written with `paths` / `components`.
 
-- [ ] **Step 3: Write the failing client test**
+- [x] **Step 3: Write the failing client test**
 
 `frontend/src/api/client.test.ts`:
 ```ts
@@ -430,7 +430,7 @@ test("throws ApiError with status on non-2xx", async () => {
 });
 ```
 
-- [ ] **Step 4: `frontend/src/api/client.ts`**
+- [x] **Step 4: `frontend/src/api/client.ts`**
 
 ```ts
 const BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
@@ -472,7 +472,7 @@ export const api = {
 };
 ```
 
-- [ ] **Step 5: `frontend/src/api/hooks.ts`**
+- [x] **Step 5: `frontend/src/api/hooks.ts`**
 
 ```ts
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -551,7 +551,7 @@ export const useCreateCapability = () => {
 };
 ```
 
-- [ ] **Step 6: `ApiKeyGate.tsx` + test**
+- [x] **Step 6: `ApiKeyGate.tsx` + test**
 
 `frontend/src/components/ApiKeyGate.tsx`:
 ```tsx
@@ -602,14 +602,14 @@ test("blocks until a key is entered, then reveals children", async () => {
 });
 ```
 
-- [ ] **Step 7: Verify**
+- [x] **Step 7: Verify**
 
 ```bash
 cd frontend && npm run typecheck && npm test
 ```
 Expected: green.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add scripts/gen_openapi.py frontend/openapi.json frontend/src/api frontend/src/components/ApiKeyGate.tsx frontend/src/components/ApiKeyGate.test.tsx Makefile
@@ -623,7 +623,7 @@ git commit -m "feat(frontend): typed API client, query hooks, X-API-Key gate"
 **Files:** `frontend/components.json`, `frontend/src/components/ui/*`,
 `ThemeToggle.tsx`, `Sparkline.tsx`, tests.
 
-- [ ] **Step 1: `components.json` + the `ui/` primitives**
+- [x] **Step 1: `components.json` + the `ui/` primitives**
 
 `frontend/components.json`:
 ```json
@@ -680,7 +680,7 @@ Button.displayName = "Button";
 export { buttonVariants };
 ```
 
-- [ ] **Step 2: `ThemeToggle.tsx` + `Sparkline.tsx` + tests**
+- [x] **Step 2: `ThemeToggle.tsx` + `Sparkline.tsx` + tests**
 
 `frontend/src/components/Sparkline.tsx`:
 ```tsx
@@ -722,13 +722,13 @@ test("renders a dash for <2 points", () => {
 between `"dark"` / unset and mirrors it to `localStorage` (`try/catch`). One
 Vitest test: click toggles `data-theme`.
 
-- [ ] **Step 3: Verify**
+- [x] **Step 3: Verify**
 
 ```bash
 cd frontend && npm run typecheck && npm test
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add frontend/components.json frontend/src/components
@@ -742,7 +742,7 @@ git commit -m "feat(frontend): shadcn/ui primitives, ThemeToggle, Sparkline"
 **Files:** `App.tsx`, `routes/CapabilitiesIndex.tsx`, tests. A test helper
 `src/test/renderWithProviders.tsx` (QueryClient + MemoryRouter + a `fetch` mock).
 
-- [ ] **Step 1: `renderWithProviders` helper + failing test**
+- [x] **Step 1: `renderWithProviders` helper + failing test**
 
 `src/test/renderWithProviders.tsx`:
 ```tsx
@@ -796,7 +796,7 @@ test("lists capability cards with last-run + candidate badges", async () => {
 });
 ```
 
-- [ ] **Step 2: `routes/CapabilitiesIndex.tsx`**
+- [x] **Step 2: `routes/CapabilitiesIndex.tsx`**
 
 A grid of `Card`s (one per capability): name, filter summary, last-run status +
 time, a badge line `Rung 1: N ready · Rung 2: M ready`, and a "Open" link to
@@ -804,7 +804,7 @@ time, a badge line `Rung 1: N ready · Rung 2: M ready`, and a "Open" link to
 `window_days` fields calling `useCreateCapability`. ~180 lines; split the card
 into `CapabilityCard.tsx` if it grows.
 
-- [ ] **Step 3: `App.tsx` — router + shell**
+- [x] **Step 3: `App.tsx` — router + shell**
 
 ```tsx
 import { Link, Route, Routes } from "react-router-dom";
@@ -843,7 +843,7 @@ export default function App() {
 placeholders returning `<div>` — filled in Tasks 5–7 (so `App.tsx` typechecks
 now).
 
-- [ ] **Step 4: Verify + commit**
+- [x] **Step 4: Verify + commit**
 
 ```bash
 cd frontend && npm run typecheck && npm test && npm run build
@@ -857,7 +857,7 @@ git add frontend/src && git commit -m "feat(frontend): capabilities index, route
 **Files:** `routes/CapabilityDetail.tsx`, `components/LaneBoard.tsx`,
 `components/CandidateCard.tsx`, `components/RunSummary.tsx`, tests.
 
-- [ ] **Step 1: Failing test for `LaneBoard`**
+- [x] **Step 1: Failing test for `LaneBoard`**
 
 `components/LaneBoard.test.tsx`:
 ```tsx
@@ -890,7 +890,7 @@ test("hides rejected/snoozed/stale behind a toggle", async () => {
 });
 ```
 
-- [ ] **Step 2: `LaneBoard.tsx` + `CandidateCard.tsx`**
+- [x] **Step 2: `LaneBoard.tsx` + `CandidateCard.tsx`**
 
 `LaneBoard`: takes `{ candidates, capabilityId }`. Columns = the ordered active
 statuses (`accumulating`, `insufficient_data`, `ready`, `accepted`, `promoted`);
@@ -900,7 +900,7 @@ statuses (`accumulating`, `insufficient_data`, `ready`, `accepted`, `promoted`);
 `determinism N%` + `k → templates` (Rung 2), a `Sparkline` placeholder (filled
 from the detail route), links to `/c/:capId/candidate/:cid`.
 
-- [ ] **Step 3: `RunSummary.tsx` + `CapabilityDetail.tsx`**
+- [x] **Step 3: `RunSummary.tsx` + `CapabilityDetail.tsx`**
 
 `RunSummary`: `{ run }` → `window · N spans, M in scope → K clusters · status`
 and the notes list (from Task 3's summary shape).
@@ -916,7 +916,7 @@ filter summary, status). A "Run now" `Button` (optional from/to via a small
 assert the header renders, the two tab triggers exist, "Run now" calls
 `POST /capabilities/fobo/runs` (spy on fetch).
 
-- [ ] **Step 4: Verify + commit**
+- [x] **Step 4: Verify + commit**
 
 ```bash
 cd frontend && npm run typecheck && npm test && npm run build
@@ -930,7 +930,7 @@ git commit -m "feat(frontend): capability detail + Rung 1 / Rung 2 lane boards"
 
 **Files:** `routes/CandidateDetail.tsx`, tests.
 
-- [ ] **Step 1: Failing test — the decision flow**
+- [x] **Step 1: Failing test — the decision flow**
 
 `routes/CandidateDetail.test.tsx`:
 ```tsx
@@ -971,7 +971,7 @@ Route params come from `App.tsx`'s `/c/:id/candidate/:cid`; the test wraps in
 `<Routes>` inside `renderWithProviders` or `CandidateDetail` reads
 `useParams()` — add a `<Route>` wrapper in the test render.
 
-- [ ] **Step 2: `CandidateDetail.tsx`**
+- [x] **Step 2: `CandidateDetail.tsx`**
 
 `useParams()` → `useCandidate(cid)`. Layout:
 - header: title, rung/subtype/status badges, `matched_skill`;
@@ -988,7 +988,7 @@ Route params come from `App.tsx`'s `/c/:id/candidate/:cid`; the test wraps in
   + navigate back.
 ~230 lines; extract `DecisionDialog.tsx` if needed.
 
-- [ ] **Step 3: Verify + commit**
+- [x] **Step 3: Verify + commit**
 
 ```bash
 cd frontend && npm run typecheck && npm test && npm run build
@@ -1003,7 +1003,7 @@ git commit -m "feat(frontend): candidate detail — trend, signals, decide, prom
 **Files:** `routes/Analytics.tsx`, `api/hooks.ts` (add `useScopedAnalytics`),
 tests.
 
-- [ ] **Step 1: hooks + failing test**
+- [x] **Step 1: hooks + failing test**
 
 Add to `hooks.ts`:
 ```ts
@@ -1022,7 +1022,7 @@ export const useRunDeltas = (capabilityId: string) =>
 `/skills/coverage?capability=fobo`, `/capabilities/fobo/runs/delta`; assert the
 KPI numbers render and the coverage table has rows.
 
-- [ ] **Step 2: `Analytics.tsx`**
+- [x] **Step 2: `Analytics.tsx`**
 
 `useParams()` → the three hooks. A KPI row (`Card` per metric from `/overview`),
 a coverage `Table` (skill · asked · demonstrated · covered), and a "what changed
@@ -1031,7 +1031,7 @@ representative). A "Back to board" link. ~160 lines. Charts: use a plain
 `<Table>` for v1; the shadcn chart component can be added later without changing
 this route's shape.
 
-- [ ] **Step 3: Verify + commit**
+- [x] **Step 3: Verify + commit**
 
 ```bash
 cd frontend && npm run typecheck && npm test && npm run build
@@ -1047,7 +1047,7 @@ git commit -m "feat(frontend): analytics tab — scoped KPI / coverage / run del
 `frontend/e2e/smoke.spec.ts`, `tests/test_cli.py` (or wherever CLI tests live —
 `test_capability_run_cli.py` style), `CONTRACTS.md`, `README.md`.
 
-- [ ] **Step 1: `pheonix serve-ui`**
+- [x] **Step 1: `pheonix serve-ui`**
 
 In `cli.py`, after `serve`:
 ```python
@@ -1106,7 +1106,7 @@ def test_serve_ui_without_a_build_exits_1(tmp_path: Path) -> None:
     assert "make ui-build" in r.output
 ```
 
-- [ ] **Step 2: Playwright smoke**
+- [x] **Step 2: Playwright smoke**
 
 `frontend/playwright.config.ts`:
 ```ts
@@ -1149,7 +1149,7 @@ test("create a capability, run it, see the board", async ({ page, request }) => 
 Add `"e2e": "playwright test"` is already in `package.json` (Task 1).
 `frontend/.e2e/` is gitignored (add it in this step).
 
-- [ ] **Step 3: Run the smoke once**
+- [x] **Step 3: Run the smoke once**
 
 ```bash
 cd frontend && npx playwright install chromium && npm run e2e
@@ -1158,7 +1158,7 @@ Expected: 1 passed. If the environment cannot launch Chromium, mark the e2e as
 `test.skip` with a comment and note it in the commit — the Vitest suite is the
 gate; the Playwright smoke is best-effort.
 
-- [ ] **Step 4: Docs**
+- [x] **Step 4: Docs**
 
 `CONTRACTS.md` — add a `## frontend/` section: the four routes, the client shape
 (`fetchJson` + `X-API-Key` from `sessionStorage`, `VITE_API_BASE`), `make ui` /
@@ -1176,7 +1176,7 @@ gate; the Playwright smoke is best-effort.
 > SPA covers the capability + ladder loop; the legacy bundled dashboard
 > (`pheonix serve`) stays until the Analytics tab reaches parity (Phase G).
 
-- [ ] **Step 5: Backend suite + commit**
+- [x] **Step 5: Backend suite + commit**
 
 ```bash
 uv run ruff check src tests && uv run pytest -q

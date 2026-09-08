@@ -1,4 +1,5 @@
-.PHONY: setup demo seed scrape analyze evaluate coverage report api test lint clean
+.PHONY: setup demo seed scrape analyze evaluate coverage report api test lint clean \
+	ui ui-build ui-types ui-test ui-e2e
 
 setup:            ## install deps into .venv via uv
 	uv sync --all-extras
@@ -35,3 +36,19 @@ lint:             ## ruff check
 
 clean:            ## remove local data store and exports
 	rm -rf data
+
+ui:               ## frontend dev server on :5173 (talks to :8000 via CORS)
+	cd frontend && npm run dev
+
+ui-build:         ## build the SPA to frontend/dist
+	cd frontend && npm run build
+
+ui-types:         ## regenerate the typed API client from the app's openapi.json
+	uv run python scripts/gen_openapi.py frontend/openapi.json
+	cd frontend && npx openapi-typescript openapi.json -o src/api/schema.ts
+
+ui-test:          ## frontend unit tests (vitest)
+	cd frontend && npm test
+
+ui-e2e:           ## frontend Playwright smoke (run `npx playwright install chromium` once)
+	cd frontend && npm run e2e

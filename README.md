@@ -575,6 +575,30 @@ Every panel's data is also an endpoint (`/overview`, `/users`, `/insights/...`),
 all filterable (`user_id`, `stage`, `asset_class`, `model_name`, `start`, `end`)
 and downloadable with `fmt=csv`.
 
+## Frontend (React SPA)
+
+A separate `frontend/` SPA (React 19 + Vite + TypeScript + Tailwind v4 +
+shadcn/ui) drives the capability + ladder loop against the headless API. Run the
+two processes independently:
+
+```bash
+cp frontend/.env.example frontend/.env          # VITE_API_BASE=http://localhost:8000
+PHEONIX_CORS_ORIGINS=http://localhost:5173 \
+  uv run uvicorn --factory phoenix_scraper.api:create_app_default --port 8000
+cd frontend && npm install && npm run dev        # http://localhost:5173
+```
+
+The SPA has four screens: **capabilities index** (`/`), **capability detail**
+(`/c/:id` — run now, Rung 1 / Rung 2 lane boards), **candidate detail**
+(`/c/:id/candidate/:cid` — evidence trend, determinism signals, decide, promote),
+and **analytics** (`/c/:id/analytics` — KPIs, coverage, run deltas scoped to the
+capability). The API key is entered once and kept in `sessionStorage`.
+
+`make ui` / `make ui-build` / `make ui-test` / `make ui-types`. `pheonix
+serve-ui` serves the built `frontend/dist` (SPA fallback for deep links). The
+legacy bundled dashboard (`pheonix serve`) stays until the Analytics tab reaches
+parity.
+
 ## CLI
 
 ```bash
