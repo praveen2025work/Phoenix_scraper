@@ -38,19 +38,6 @@ export interface Decision {
   note: string;
 }
 
-export interface RunSummaryDto {
-  run_id: string;
-  window_start: string;
-  window_end: string;
-  n_spans: number;
-  n_in_scope_spans: number;
-  n_clusters: number;
-  n_rung1_candidates: number;
-  n_rung2_candidates: number;
-  status: string;
-  notes: string[];
-}
-
 const enc = encodeURIComponent;
 
 export const useCapabilities = () =>
@@ -90,14 +77,30 @@ export const useCandidate = (cid: string) =>
       }>(`/candidates/${enc(cid)}`),
   });
 
-export function useRunCapability(id: string) {
-  const qc = useQueryClient();
+export interface JobDto {
+  state: "queued" | "running" | "done" | "error";
+  run_id: string | null;
+  error: string | null;
+}
+
+/** Enqueue a background capability run — returns a job_id to poll with useJob. */
+export function useEnqueueRun(id: string) {
   return useMutation({
     mutationFn: (body: { from?: string; to?: string; replace_today?: boolean }) =>
-      api.post<RunSummaryDto>(`/capabilities/${enc(id)}/runs`, body),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["capability", id] });
-      qc.invalidateQueries({ queryKey: ["candidates", id] });
+      api.post<{ job_id: string; state: string }>(`/capabilities/${enc(id)}/jobs`, body),
+  });
+}
+
+/** Poll one run job every `pollMs` until its state is `done` or `error`. */
+export function useJob(capabilityId: string, jobId: string | null, pollMs = 1500) {
+  return useQuery({
+    queryKey: ["job", capabilityId, jobId],
+    queryFn: () =>
+      api.get<JobDto>(`/capabilities/${enc(capabilityId)}/jobs/${enc(jobId ?? "")}`),
+    enabled: !!jobId,
+    refetchInterval: (query) => {
+      const s = query.state.data?.state;
+      return s === "done" || s === "error" ? false : pollMs;
     },
   });
 }

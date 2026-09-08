@@ -1,6 +1,8 @@
+import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import { toast } from "sonner";
-import { useCandidates, useCapability, useRunCapability } from "@/api/hooks";
+import { useCandidates, useCapability, useEnqueueRun, useJob } from "@/api/hooks";
 import { LaneBoard } from "@/components/LaneBoard";
 import { RunSummary } from "@/components/RunSummary";
 import { Badge } from "@/components/ui/badge";
@@ -9,9 +11,28 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export function CapabilityDetail() {
   const { id = "" } = useParams();
+  const qc = useQueryClient();
   const cap = useCapability(id);
   const candidates = useCandidates(id);
-  const run = useRunCapability(id);
+  const enqueue = useEnqueueRun(id);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const job = useJob(id, jobId);
+
+  useEffect(() => {
+    const data = job.data;
+    if (!data) return;
+    if (data.state === "done") {
+      toast.success(
+        data.run_id ? `Run ${data.run_id.slice(0, 16)} complete` : "Run complete",
+      );
+      qc.invalidateQueries({ queryKey: ["capability", id] });
+      qc.invalidateQueries({ queryKey: ["candidates", id] });
+      setJobId(null);
+    } else if (data.state === "error") {
+      toast.error(data.error ?? "Run failed");
+      setJobId(null);
+    }
+  }, [job.data, id, qc]);
 
   if (cap.isLoading) return <p className="text-sm text-muted-foreground">Loading…</p>;
   if (cap.error)
@@ -21,12 +42,13 @@ export function CapabilityDetail() {
   const all = candidates.data ?? [];
   const rung1 = all.filter((c) => c.rung === "skill");
   const rung2 = all.filter((c) => c.rung === "deterministic");
+  const running = enqueue.isPending || jobId !== null;
 
   function triggerRun() {
-    run.mutate(
+    enqueue.mutate(
       {},
       {
-        onSuccess: (r) => toast.success(`Run ${r.run_id.slice(0, 16)} · ${r.status}`),
+        onSuccess: (d) => setJobId(d.job_id),
         onError: (e) => toast.error((e as Error).message),
       },
     );
@@ -55,8 +77,8 @@ export function CapabilityDetail() {
             </p>
           )}
         </div>
-        <Button onClick={triggerRun} disabled={run.isPending}>
-          {run.isPending ? "Running…" : "Run now"}
+        <Button onClick={triggerRun} disabled={running}>
+          {running ? "Running…" : "Run now"}
         </Button>
       </div>
 
