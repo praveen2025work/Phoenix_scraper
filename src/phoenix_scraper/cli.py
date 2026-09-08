@@ -436,6 +436,48 @@ def serve(
     uvicorn.run(create_app(settings), host=host, port=port)
 
 
+UiDistOpt = typer.Option(None, "--dist", help="Path to the built SPA (default: frontend/dist).")
+UiPortOpt = typer.Option(5173, "--port")
+
+
+@app.command("serve-ui")
+def serve_ui(
+    host: str = HostOpt,
+    port: int = UiPortOpt,
+    dist: Path | None = UiDistOpt,
+) -> None:
+    """Serve the built frontend (frontend/dist) as static files with SPA fallback."""
+    import http.server
+    import socketserver
+
+    root = (dist or Path("frontend/dist")).resolve()
+    if not (root / "index.html").is_file():
+        typer.secho(
+            f"No built SPA at {root} — run `make ui-build` first.",
+            fg=typer.colors.RED, err=True,
+        )
+        raise typer.Exit(code=1)
+
+    class _Handler(http.server.SimpleHTTPRequestHandler):
+        def __init__(self, *a: object, **kw: object) -> None:
+            super().__init__(*a, directory=str(root), **kw)  # type: ignore[arg-type]
+
+        def end_headers(self) -> None:
+            self.send_header("Cache-Control", "no-cache")
+            super().end_headers()
+
+        def do_GET(self) -> None:
+            target = (root / self.path.lstrip("/").split("?")[0]).resolve()
+            in_root = str(target).startswith(str(root))
+            if self.path != "/" and not (in_root and target.is_file()):
+                self.path = "/index.html"
+            super().do_GET()
+
+    with socketserver.TCPServer((host, port), _Handler) as httpd:
+        typer.echo(f"Serving {root} on http://{host}:{port}")
+        httpd.serve_forever()
+
+
 @app.command()
 def run(
     capability: str | None = RunCapabilityOpt,

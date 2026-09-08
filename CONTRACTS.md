@@ -370,7 +370,7 @@ run (--capability | --all, --from, --to, --replace-today),
 capability (new | list | show | sync | runs),
 candidates (<id> --rung --status --all), candidate (<cid>),
 decide (<cid> --action accept|reject|snooze|reopen --actor --note --snooze-runs),
-promote (<cid> --accept --dry-run).
+promote (<cid> --accept --dry-run), serve-ui (--dist --port).
 API routes: GET /health, POST /demo/seed, POST /scrape/run, POST /analyze/run,
 POST /report/run, GET /prompts/frequent, GET /skills/matches, GET /skills/gaps,
 GET /skills/{coverage,uncovered,updates,updates.md}, GET /runs, GET /runs/delta,
@@ -398,6 +398,17 @@ def ladder_router(settings) -> APIRouter       # board / candidate / decision / 
 # both mounted under the protected (X-API-Key) router in create_app.
 # DECISION_TRANSITIONS lives in ladder.py, shared by the CLI and the API.
 ```
+
+## frontend/  (separate npm package — React 19 + Vite + TS + Tailwind v4 + shadcn/ui)
+- Runs on its own dev server (`:5173`); talks to the API by absolute URL
+  (`VITE_API_BASE`, default `http://localhost:8000`) + CORS (`PHEONIX_CORS_ORIGINS`).
+- `src/api/client.ts` — `fetchJson` attaches `X-API-Key` from `sessionStorage`;
+  `ApiError(status, detail)`. `src/api/hooks.ts` — TanStack Query hooks.
+  `src/api/schema.ts` — `openapi-typescript` output (regenerate with `make ui-types`).
+- Routes: `/` (capabilities index), `/c/:id` (detail + Rung 1/2 lane boards),
+  `/c/:id/candidate/:cid` (trend, signals, decide, promote), `/c/:id/analytics`.
+- `pheonix serve-ui [--dist] [--port]` serves the built `frontend/dist` (SPA
+  fallback). `make ui` / `ui-build` / `ui-test` / `ui-types` / `ui-e2e`.
 
 run_analysis snapshots its clusters into analysis_runs/cluster_snapshots before
 returning, reading previous_run_id FIRST (once recorded, a run would be its own
