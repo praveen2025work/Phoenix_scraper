@@ -88,7 +88,7 @@ def _job_from_row(row) -> dict
     #  enqueued_at, started_at, finished_at}
 ```
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/test_storage_jobs.py`:
 ```python
@@ -174,13 +174,13 @@ class TestJobStore:
             assert s2.get_job("j1")["state"] == "queued"
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `uv run pytest tests/test_storage_jobs.py -q`
 Expected: FAIL / ERROR — `Store` has no `enqueue_job` (AttributeError) and no
 `__enter__`.
 
-- [ ] **Step 3: Add the table to `_SCHEMA`**
+- [x] **Step 3: Add the table to `_SCHEMA`**
 
 In `src/phoenix_scraper/storage.py`, append to the `_SCHEMA` string (after the
 `capability_cluster_members` block, before the closing `"""`):
@@ -204,7 +204,7 @@ CREATE INDEX IF NOT EXISTS idx_capability_jobs_state
     ON capability_jobs (state, enqueued_at);
 ```
 
-- [ ] **Step 4: Concurrency PRAGMAs + context manager**
+- [x] **Step 4: Concurrency PRAGMAs + context manager**
 
 In `Store.__init__`, change:
 ```python
@@ -231,7 +231,7 @@ Add right after `close`:
         self.close()
 ```
 
-- [ ] **Step 5: Add the job methods**
+- [x] **Step 5: Add the job methods**
 
 In `src/phoenix_scraper/storage.py`, after `delete_capability` (end of the
 capability CRUD block, before `# ---- capability runs`):
@@ -316,19 +316,19 @@ def _job_from_row(row: sqlite3.Row) -> dict:
     }
 ```
 
-- [ ] **Step 6: Run the tests to verify they pass**
+- [x] **Step 6: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/test_storage_jobs.py -q`
 Expected: PASS (9 tests).
 
-- [ ] **Step 7: Lint + full suite**
+- [x] **Step 7: Lint + full suite**
 
 Run: `uv run ruff check src tests && uv run pytest -q`
 Expected: clean; green (770 → 779). If any test asserts on raw DB files and
 trips over a new `-wal` sidecar, fix that assertion to glob `*.db*` or ignore
 sidecars — none is expected.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add src/phoenix_scraper/storage.py tests/test_storage_jobs.py
@@ -360,7 +360,7 @@ git commit -m "feat: capability_jobs table + Store queue methods; WAL + busy_tim
   def _parse_dt(value: str | None) -> datetime | None
   ```
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/test_jobs_worker.py`:
 ```python
@@ -432,12 +432,12 @@ def test_start_stop_is_safe_and_idempotent(job_settings) -> None:
 Note: `jobs.py` must expose `run_capabilities` at module scope (import it at the
 top) so the monkeypatch target `phoenix_scraper.jobs.run_capabilities` exists.
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `uv run pytest tests/test_jobs_worker.py -q`
 Expected: FAIL — `ModuleNotFoundError: phoenix_scraper.jobs`.
 
-- [ ] **Step 3: Implement `jobs.py`**
+- [x] **Step 3: Implement `jobs.py`**
 
 Create `src/phoenix_scraper/jobs.py`:
 ```python
@@ -522,18 +522,18 @@ class JobWorker:
             )
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/test_jobs_worker.py -q`
 Expected: PASS (4 tests). `test_start_stop_is_safe_and_idempotent` spins a real
 thread for ~50ms and joins it.
 
-- [ ] **Step 5: Lint + full suite**
+- [x] **Step 5: Lint + full suite**
 
 Run: `uv run ruff check src tests && uv run pytest -q`
 Expected: clean; green (779 → 783).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/phoenix_scraper/jobs.py tests/test_jobs_worker.py
@@ -557,7 +557,7 @@ git commit -m "feat: JobWorker — background capability runs, one at a time"
   - `GET /capabilities/{cap_id}/jobs/{job_id}` → the `_job_from_row` dict (404 if
     absent or the `capability_id` doesn't match)
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/test_capability_jobs_api.py`:
 ```python
@@ -633,13 +633,13 @@ def test_sync_run_endpoint_still_synchronous(ctx) -> None:
     assert "run_id" in r.json() and "status" in r.json()
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `uv run pytest tests/test_capability_jobs_api.py -q`
 Expected: FAIL — `POST /capabilities/plex/jobs` 404s (route not defined), so the
 202 assertion fails.
 
-- [ ] **Step 3: Implement the routes**
+- [x] **Step 3: Implement the routes**
 
 In `src/phoenix_scraper/api_capabilities.py`:
 
@@ -690,18 +690,18 @@ In `_register_run_routes`, after the existing `/runs/{run_id}` route:
         return job
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/test_capability_jobs_api.py -q`
 Expected: PASS (5 tests).
 
-- [ ] **Step 5: Lint + full suite**
+- [x] **Step 5: Lint + full suite**
 
 Run: `uv run ruff check src tests && uv run pytest -q`
 Expected: clean; green (783 → 788). `tests/test_ladder_api.py` and
 `test_scoped_analytics_api.py` unchanged (no worker; new routes are additive).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/phoenix_scraper/api_capabilities.py tests/test_capability_jobs_api.py
@@ -723,7 +723,7 @@ git commit -m "feat: POST/GET /capabilities/{id}/jobs — enqueue + poll async r
   and stops it on shutdown; `app.state.job_worker` is the worker or `None`.
   `create_app_default()` passes `run_jobs=True`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/test_jobs_lifespan.py`:
 ```python
@@ -774,13 +774,13 @@ def test_default_create_app_has_no_worker(settings) -> None:
     assert app.state.job_worker is None
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `uv run pytest tests/test_jobs_lifespan.py -q`
 Expected: FAIL — `create_app()` has no `run_jobs` kw (TypeError) / no
 `app.state.job_worker`.
 
-- [ ] **Step 3: Implement the lifespan**
+- [x] **Step 3: Implement the lifespan**
 
 In `src/phoenix_scraper/api.py`:
 
@@ -838,18 +838,18 @@ def create_app_default() -> FastAPI:
     return create_app(load_settings(), run_jobs=True)
 ```
 
-- [ ] **Step 4: Run the test to verify it passes**
+- [x] **Step 4: Run the test to verify it passes**
 
 Run: `uv run pytest tests/test_jobs_lifespan.py -q`
 Expected: PASS (2 tests).
 
-- [ ] **Step 5: Lint + full suite**
+- [x] **Step 5: Lint + full suite**
 
 Run: `uv run ruff check src tests && uv run pytest -q`
 Expected: clean; green (788 → 790). Every other API test still constructs
 `create_app(settings)` → `worker is None` → lifespan is a no-op.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/phoenix_scraper/api.py tests/test_jobs_lifespan.py
@@ -868,7 +868,7 @@ git commit -m "feat: opt-in job worker lifespan; create_app_default runs it"
 - Consumes: `Store.capability_jobs_frame` (Task 1). Mirrors the existing
   `capability_runs` command (cli.py ~line 858).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `tests/test_capability_cli.py` (match its existing runner/fixtures —
 it uses `typer.testing.CliRunner` and a `settings`/`tmp_path` pattern; inspect
@@ -910,12 +910,12 @@ def test_capability_jobs_empty(tmp_path) -> None:
 ```
 (Use whatever `runner` / `app` names the file already imports.)
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `uv run pytest tests/test_capability_cli.py -q -k jobs`
 Expected: FAIL — no `jobs` subcommand (`exit_code != 0`, "No such command").
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `src/phoenix_scraper/cli.py`, after `capability_runs` (ends ~line 878):
 ```python
@@ -942,17 +942,17 @@ def capability_jobs(
         )
 ```
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: `uv run pytest tests/test_capability_cli.py -q`
 Expected: PASS.
 
-- [ ] **Step 5: Lint + full suite**
+- [x] **Step 5: Lint + full suite**
 
 Run: `uv run ruff check src tests && uv run pytest -q`
 Expected: clean; green (790 → 792).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/phoenix_scraper/cli.py tests/test_capability_cli.py
@@ -975,7 +975,7 @@ git commit -m "feat: pheonix capability jobs <id> — list background run jobs"
 - Produces: `useJob(capabilityId: string, jobId: string | null)` — a TanStack
   Query that polls every 1500ms until `state` is `done` or `error`.
 
-- [ ] **Step 1: Read the current files**
+- [x] **Step 1: Read the current files**
 
 Read `frontend/src/api/hooks.ts` (find the `fetchJson` import, the existing
 `useScoped` / mutation patterns), `frontend/src/routes/CapabilityDetail.tsx` (the
@@ -985,7 +985,7 @@ current "Run now" button — a `useMutation` on `POST .../runs` + `toast` +
 (the "run it" step). The steps below assume that shape; adapt names to what you
 find.
 
-- [ ] **Step 2: Write the failing tests**
+- [x] **Step 2: Write the failing tests**
 
 Create `frontend/src/api/hooks.test.tsx`:
 ```tsx
@@ -1039,13 +1039,13 @@ Extend `frontend/src/routes/CapabilityDetail.test.tsx` — replace/augment the
 that the board query refetches (a second `GET /capabilities/:id` or
 `/candidates`). Keep it consistent with the file's existing mock helper.
 
-- [ ] **Step 3: Run to verify they fail**
+- [x] **Step 3: Run to verify they fail**
 
 Run: `cd frontend && npm run test -- --run hooks CapabilityDetail`
 Expected: FAIL — `useJob` is not exported; the Run-now test's new endpoints
 aren't handled.
 
-- [ ] **Step 4: Add `useJob`**
+- [x] **Step 4: Add `useJob`**
 
 In `frontend/src/api/hooks.ts` (match the existing import of `fetchJson` and the
 `useQuery` usage in `useScoped`):
@@ -1068,7 +1068,7 @@ export function useJob(capabilityId: string, jobId: string | null) {
 }
 ```
 
-- [ ] **Step 5: Async "Run now" in `CapabilityDetail.tsx`**
+- [x] **Step 5: Async "Run now" in `CapabilityDetail.tsx`**
 
 Replace the current run mutation with the enqueue + poll flow:
 ```tsx
@@ -1107,17 +1107,17 @@ Match the real query keys the file uses for the capability + board queries (read
 them in Step 1) — the invalidate calls must use those exact keys. Keep the
 existing button component and styling.
 
-- [ ] **Step 6: Run to verify they pass**
+- [x] **Step 6: Run to verify they pass**
 
 Run: `cd frontend && npm run test -- --run hooks CapabilityDetail`
 Expected: PASS.
 
-- [ ] **Step 7: Full frontend gate**
+- [x] **Step 7: Full frontend gate**
 
 Run: `cd frontend && npm run test && npm run typecheck && npm run lint && npm run build`
 Expected: all clean; Vitest 29 → ~32.
 
-- [ ] **Step 8: Update the Playwright smoke**
+- [x] **Step 8: Update the Playwright smoke**
 
 In `frontend/e2e/smoke.spec.ts`, the run step: after clicking "Run now", wait for
 the button to leave the "running…" state and for the board / run summary to
@@ -1130,12 +1130,12 @@ await expect(page.getByRole("button", { name: /run now/i })).toBeEnabled({ timeo
 The smoke's API runs with `create_app_default` (`run_jobs=True`), Phoenix is
 offline so the run is fast, but it now goes through the queue + a poll cycle.
 
-- [ ] **Step 9: Run the smoke**
+- [x] **Step 9: Run the smoke**
 
 Run: `cd frontend && rm -rf .e2e && npm run e2e`
 Expected: PASS (1 test).
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add frontend/src/api/hooks.ts frontend/src/api/hooks.test.tsx \
@@ -1150,7 +1150,7 @@ git commit -m "feat: SPA Run now enqueues a background job and polls to completi
 
 **Files:** `CONTRACTS.md`, `README.md`
 
-- [ ] **Step 1: `CONTRACTS.md` — storage**
+- [x] **Step 1: `CONTRACTS.md` — storage**
 
 Under the `storage.py` section, near the capability methods, add:
 ```
@@ -1164,7 +1164,7 @@ def reset_orphaned_jobs() -> int             # startup: queued/running -> error
 # Store is a context manager; __init__ opens with WAL + busy_timeout=5000.
 ```
 
-- [ ] **Step 2: `CONTRACTS.md` — jobs.py + api**
+- [x] **Step 2: `CONTRACTS.md` — jobs.py + api**
 
 Add a section:
 ```
@@ -1185,7 +1185,7 @@ GET  /capabilities/{id}/jobs/{job_id}                   -> {state, run_id, error
 # create_app(settings, *, run_jobs=False); create_app_default() -> run_jobs=True.
 ```
 
-- [ ] **Step 3: `README.md` — background runs**
+- [x] **Step 3: `README.md` — background runs**
 
 In the "## Daily runs" section, after the sync `pheonix run` description, add:
 ```markdown
@@ -1200,12 +1200,12 @@ marks any interrupted job `error`. The `pheonix run` CLI stays synchronous;
 `pheonix capability jobs <id>` lists the job history.
 ```
 
-- [ ] **Step 4: Verify + full suite**
+- [x] **Step 4: Verify + full suite**
 
 Run: `uv run pytest -q` (docs don't affect it — sanity) and read both diffs.
 Expected: green.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add CONTRACTS.md README.md
