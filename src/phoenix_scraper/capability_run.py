@@ -30,8 +30,8 @@ from .cluster import build_clusters
 from .config import Settings
 from .costs import compute_span_costs, load_pricing
 from .insights import cluster_efficiency
-from .ladder import detect_rung1, resolve_thresholds
-from .ladder_run import update_rung1
+from .ladder import detect_rung1, detect_rung2, resolve_thresholds
+from .ladder_run import update_rung1, update_rung2
 from .models import (
     Capability,
     CapabilityRun,
@@ -219,6 +219,21 @@ def run_capability_analysis(
     )
     run_notes.extend(rung1.notes)
 
+    rung2_signals = detect_rung2(
+        list(clusters), list(matches), in_scope, thresholds=thresholds
+    )
+    rung2 = update_rung2(
+        store, capability,
+        run_id=run_id,
+        run_ordinal=this_ordinal,
+        capability_run_count=run_count,
+        observed_at=started_at,
+        signals=rung2_signals,
+        thresholds=thresholds,
+        history_limit=settings.run_history_limit,
+    )
+    run_notes.extend(rung2.notes)
+
     run = CapabilityRun(
         run_id=run_id,
         capability_id=capability.id,
@@ -230,6 +245,7 @@ def run_capability_analysis(
         n_in_scope_spans=int(len(in_scope)),
         n_clusters=len(clusters),
         n_rung1_candidates=rung1.n_candidates,
+        n_rung2_candidates=rung2.n_candidates,
         status="partial" if scrape_partial else "ok",
         notes=tuple(run_notes),
     )

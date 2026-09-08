@@ -253,12 +253,14 @@ def next_status(
     capability_run_count: int,
     thresholds: LadderThresholds,
     eligible: bool = True,
+    rung: str = "skill",
 ) -> LadderTransition:
     """The transition when the candidate WAS observed this run.
 
     ``recent_observations`` is newest-first and INCLUDES this run's observation.
     ``eligible`` is Rung-2's ``n_answer_spans >= rung2_min_answer_spans`` gate;
-    Rung 1 leaves it at the default True.
+    Rung 1 leaves it at the default True. ``rung`` selects the sustained-runs
+    threshold (Rung 1: 5, Rung 2: 3 by default).
     """
     status = candidate.status
 
@@ -297,9 +299,14 @@ def next_status(
     if status == "new":
         status = "accumulating" if len(recent_observations) >= 2 else "new"
 
+    sustained = (
+        thresholds.rung2_sustained_runs
+        if rung == "deterministic"
+        else thresholds.rung1_sustained_runs
+    )
     ready = readiness_met(
         recent_observations,
-        sustained_runs=thresholds.rung1_sustained_runs,
+        sustained_runs=sustained,
         capability_run_count=capability_run_count,
     )
     if status == "accumulating" and ready:
