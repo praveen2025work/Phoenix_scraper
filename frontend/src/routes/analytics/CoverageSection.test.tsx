@@ -24,6 +24,10 @@ test("renders a row from each panel and expands the paste block", async () => {
       return json([{ proposed_name: "list-breaks", level: "capability", capability: "fobo", evidence_count: 15, representative_prompt: "list unmatched trades" }]);
     if (p === "/insights/skill-health")
       return json([{ skill_name: "fobo-triage", n_asks: 35, avg_route_len: 1.4, error_rate: 0.03, status: "effective" }]);
+    if (p === "/insights/questions")
+      return json([
+        { question_type: "why", count: 42, n_users: 6, n_sessions: 12, total_cost_usd: 0.83 },
+      ]);
     return new Response("[]", { status: 200 });
   });
 
@@ -31,6 +35,8 @@ test("renders a row from each panel and expands the paste block", async () => {
   await waitFor(() => expect(screen.getByText("list-breaks")).toBeInTheDocument());
   expect(screen.getByText("Skill coverage")).toBeInTheDocument();
   expect(screen.getByText("effective")).toBeInTheDocument();
+  expect(screen.getByText("Question types")).toBeInTheDocument();
+  expect(screen.getByText("why")).toBeInTheDocument();
 
   await userEvent.click(screen.getByText(/show block/i));
   expect(screen.getByText(/example_prompts:/)).toBeInTheDocument();

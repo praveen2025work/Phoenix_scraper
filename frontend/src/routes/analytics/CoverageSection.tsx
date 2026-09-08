@@ -3,7 +3,7 @@ import { type Row, useScoped } from "@/api/hooks";
 import { DataTable } from "@/components/DataTable";
 import { Panel } from "@/components/Panel";
 import { Badge } from "@/components/ui/badge";
-import { num, truncate } from "./format";
+import { num, truncate, usd } from "./format";
 
 function YamlBlockCell({ row }: { row: Row }) {
   const [open, setOpen] = useState(false);
@@ -26,10 +26,30 @@ export function CoverageSection({ id }: { id: string }) {
   const updates = useScoped("updates", "/skills/updates", id);
   const gaps = useScoped("gaps", "/skills/gaps", id);
   const health = useScoped("health", "/insights/skill-health", id);
+  const qtypes = useScoped<Row[]>("qtypes", "/insights/questions", id);
 
   return (
     <section className="space-y-4">
       <h3 className="text-sm font-semibold text-muted-foreground">Coverage &amp; skills</h3>
+
+      <Panel
+        title="Question types"
+        subtitle="the shape of what users ask under this capability"
+        isLoading={qtypes.isLoading}
+        error={qtypes.error}
+      >
+        <DataTable
+          label="Question types by frequency"
+          rows={qtypes.data}
+          columns={[
+            { key: "question_type", header: "type" },
+            { key: "count", header: "asks", align: "right", format: (v) => num(v) },
+            { key: "n_users", header: "users", align: "right", format: (v) => num(v) },
+            { key: "n_sessions", header: "sessions", align: "right", format: (v) => num(v) },
+            { key: "total_cost_usd", header: "cost", align: "right", format: (v) => usd(v) },
+          ]}
+        />
+      </Panel>
 
       <Panel
         title="Skill coverage"

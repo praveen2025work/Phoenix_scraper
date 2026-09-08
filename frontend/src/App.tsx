@@ -2,6 +2,7 @@ import { Suspense, lazy } from "react";
 import { Link, Route, Routes } from "react-router-dom";
 import { Toaster } from "sonner";
 import { ApiKeyGate } from "./components/ApiKeyGate";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { CandidateDetail } from "./routes/CandidateDetail";
 import { CapabilitiesIndex } from "./routes/CapabilitiesIndex";
@@ -23,14 +24,16 @@ export default function App() {
           <ThemeToggle />
         </header>
         <main className="mx-auto max-w-6xl p-6">
-          <Suspense fallback={<p className="text-sm text-muted-foreground">Loading…</p>}>
-            <Routes>
-              <Route path="/" element={<CapabilitiesIndex />} />
-              <Route path="/c/:id" element={<CapabilityDetail />} />
-              <Route path="/c/:id/analytics" element={<Analytics />} />
-              <Route path="/c/:id/candidate/:cid" element={<CandidateDetail />} />
-            </Routes>
-          </Suspense>
+          <ErrorBoundary>
+            <Suspense fallback={<p className="text-sm text-muted-foreground">Loading…</p>}>
+              <Routes>
+                <Route path="/" element={<CapabilitiesIndex />} />
+                <Route path="/c/:id" element={<CapabilityDetail />} />
+                <Route path="/c/:id/analytics" element={<Analytics />} />
+                <Route path="/c/:id/candidate/:cid" element={<CandidateDetail />} />
+              </Routes>
+            </Suspense>
+          </ErrorBoundary>
         </main>
         <Toaster position="bottom-right" />
       </div>

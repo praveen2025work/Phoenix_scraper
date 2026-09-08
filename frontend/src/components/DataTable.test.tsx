@@ -25,3 +25,14 @@ test("empty state when no rows", () => {
   render(<DataTable columns={[{ key: "name", header: "Name" }]} rows={[]} />);
   expect(screen.getByText(/no rows/i)).toBeInTheDocument();
 });
+
+test("renders a screen-reader caption when label is given", () => {
+  render(
+    <DataTable
+      label="Question types by frequency"
+      columns={[{ key: "name", header: "Name" }]}
+      rows={[{ name: "why" }]}
+    />,
+  );
+  expect(screen.getByText("Question types by frequency")).toBeInTheDocument();
+});
