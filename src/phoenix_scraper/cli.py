@@ -11,6 +11,7 @@ import typer
 
 from . import annotations as annotations_mod
 from . import capability as capability_mod
+from . import capability_run as capability_run_mod
 from . import evaluations as evaluations_mod
 from . import export as export_mod
 from . import fixtures, insights_quality, pipeline, scraper, skill_coverage
@@ -20,6 +21,7 @@ from .models import (
     AnalysisResult,
     AnnotationSyncReport,
     CapabilityFilter,
+    CapabilityRunResult,
     PromptCluster,
     QueryFilters,
     ScrapeReport,
@@ -135,6 +137,13 @@ CapIdOptionalArg = typer.Argument(
 CapNameOpt = typer.Option("", "--name", help="Display name.")
 CapDescriptionOpt = typer.Option("", "--description", help="One-line description.")
 CapWindowDaysOpt = typer.Option(30, "--window-days", help="Default from/to span in days.")
+RunCapabilityOpt = typer.Option(None, "--capability", help="Run one capability by id.")
+RunAllOpt = typer.Option(False, "--all", help="Run every active capability.")
+RunFromOpt = typer.Option(None, "--from", help="Window start (UTC); default now - window_days.")
+RunToOpt = typer.Option(None, "--to", help="Window end (UTC); default now.")
+ReplaceTodayOpt = typer.Option(
+    False, "--replace-today", help="Reuse today's run_id instead of adding a new run."
+)
 
 
 @app.command()
@@ -414,6 +423,73 @@ def serve(
     uvicorn.run(create_app(settings), host=host, port=port)
 
 
+@app.command()
+def run(
+    capability: str | None = RunCapabilityOpt,
+    run_all: bool = RunAllOpt,
+    from_: datetime | None = RunFromOpt,
+    to: datetime | None = RunToOpt,
+    replace_today: bool = ReplaceTodayOpt,
+    db: Path | None = DbOpt,
+    capabilities_dir: Path | None = CapabilitiesDirOpt,
+) -> None:
+    """Scrape + scoped-analyse one capability (or --all) over a [from, to] window."""
+    if bool(capability) == bool(run_all):
+        typer.secho("Pass exactly one of --capability <id> or --all.",
+                    fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1)
+    settings = _settings(db=db, capabilities_dir=capabilities_dir)
+    client = PhoenixClientWrapper(settings)
+    with _open_store(settings) as store:
+        try:
+            results = capability_run_mod.run_capabilities(
+                store, settings,
+                capability_ids=[capability] if capability else None,
+                all_active=run_all,
+                client=client if client.available() else None,
+                window_start=_utc(from_),
+                window_end=_utc(to),
+                replace_today=replace_today,
+            )
+        except (ValueError, FileNotFoundError) as exc:
+            typer.secho(str(exc), fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=1) from exc
+        if not results:
+            typer.echo("No active capabilities to run.")
+            return
+        for result in results:
+            _echo_capability_run(store, result)
+
+
+def _echo_capability_run(store: Store, result: CapabilityRunResult) -> None:
+    r = result.run
+    typer.echo("")
+    typer.echo(
+        f"[{r.capability_id}] {r.run_id}  "
+        f"window {r.window_start:%Y-%m-%d}..{r.window_end:%Y-%m-%d}  ·  "
+        f"{r.n_spans} spans, {r.n_in_scope_spans} in scope -> "
+        f"{r.n_clusters} clusters  ·  {r.status}"
+    )
+    for note in r.notes:
+        typer.echo(f"  note: {note}")
+    deltas = skill_coverage.cluster_deltas(
+        store.capability_run_snapshot_frame(r.capability_id, r.run_id),
+        store.capability_run_snapshot_frame(r.capability_id, result.previous_run_id),
+    )
+    typer.echo("  what changed since the last run:")
+    if len(deltas):
+        for row in deltas.head(_TOP_N).to_dict("records"):
+            preview = str(row["representative"]).replace("\n", " ")[:_PROMPT_PREVIEW_CHARS]
+            typer.echo(
+                f"    {row['status']:<9} {row['count_prev']:>4} -> {row['count']:<4} "
+                f"({row['count_change']:+d})  {preview}"
+            )
+    elif result.previous_run_id:
+        typer.echo("    no movement")
+    else:
+        typer.echo("    (no earlier run to compare against)")
+
+
 @capability_app.command("new")
 def capability_new(
     cap_id: str = CapIdArg,
@@ -545,6 +621,29 @@ def capability_show(
     if cap.thresholds:
         typer.echo(f"thresholds:  {cap.thresholds}")
     typer.echo(f"files:       skills: {n_skills}, deterministic: {n_det}")
+
+
+@capability_app.command("runs")
+def capability_runs(
+    cap_id: str = CapIdArg,
+    db: Path | None = DbOpt,
+    capabilities_dir: Path | None = CapabilitiesDirOpt,
+) -> None:
+    """Recorded runs for a capability, newest first."""
+    settings = _settings(db=db, capabilities_dir=capabilities_dir)
+    with _open_store(settings) as store:
+        frame = store.capability_runs_frame(cap_id)
+    if not len(frame):
+        typer.echo(f"No runs recorded for '{cap_id}'. Run `pheonix run --capability {cap_id}`.")
+        return
+    typer.echo(f"{'run_id':<27} {'window':<25} {'in scope':>9} {'clusters':>9}  status")
+    typer.echo("-" * 90)
+    for row in frame.to_dict("records"):
+        window = f"{row['window_start'][:10]}..{row['window_end'][:10]}"
+        typer.echo(
+            f"{row['run_id']:<27} {window:<25} {row['n_in_scope_spans']:>9} "
+            f"{row['n_clusters']:>9}  {row['status']}"
+        )
 
 
 # ---- helpers -------------------------------------------------------------------
