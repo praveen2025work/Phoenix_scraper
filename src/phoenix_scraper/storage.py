@@ -167,9 +167,9 @@ CREATE TABLE IF NOT EXISTS capabilities (
     filter_asset_class TEXT,
     filter_model_name TEXT,
     filter_search TEXT,
-    window_days INTEGER NOT NULL DEFAULT 30,
+    window_days INTEGER NOT NULL DEFAULT 30 CHECK (window_days > 0),
     thresholds_json TEXT NOT NULL DEFAULT '{}',
-    status TEXT NOT NULL DEFAULT 'active',
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'paused')),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -947,6 +947,8 @@ def _evaluation_row(evaluation: SpanEvaluation) -> tuple:
 
 
 def _capability_from_row(row: sqlite3.Row) -> Capability:
+    window_days = int(row["window_days"])
+    status = row["status"]
     return Capability(
         id=row["capability_id"],
         name=row["name"],
@@ -958,9 +960,9 @@ def _capability_from_row(row: sqlite3.Row) -> Capability:
             model_name=row["filter_model_name"],
             search=row["filter_search"],
         ),
-        window_days=row["window_days"],
+        window_days=window_days if window_days > 0 else 30,
         thresholds=json.loads(row["thresholds_json"]),
-        status=row["status"],
+        status=status if status in ("active", "paused") else "active",
     )
 
 
