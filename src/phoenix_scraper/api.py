@@ -10,6 +10,7 @@ from typing import Annotated, Any, Literal
 
 import pandas as pd
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Security
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.security.api_key import APIKeyHeader
 
@@ -59,6 +60,16 @@ def create_app(settings: Settings) -> FastAPI:
     """Build the API around one Settings instance (dependency-injectable for tests)."""
     app = FastAPI(title="Pheonix prompt miner", version=__version__)
     app.state.settings = settings
+
+    _cors = settings.cors_origin_list()
+    if _cors:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=_cors,
+            allow_credentials=False,
+            allow_methods=["*"],
+            allow_headers=["X-API-Key", "Content-Type"],
+        )
 
     def require_api_key(provided: str | None = Security(_api_key_header)) -> None:
         # Open mode when no key is configured (loopback-only; cli.serve enforces that).
@@ -158,7 +169,9 @@ def create_app(settings: Settings) -> FastAPI:
             if origin is not None:
                 from urllib.parse import urlsplit
 
-                if urlsplit(origin).netloc != request.headers.get("host", ""):
+                allowed = set(settings.cors_origin_list())
+                same_host = urlsplit(origin).netloc == request.headers.get("host", "")
+                if not same_host and origin.rstrip("/") not in allowed:
                     return JSONResponse(
                         status_code=403,
                         content={"detail": "Cross-origin request rejected"},

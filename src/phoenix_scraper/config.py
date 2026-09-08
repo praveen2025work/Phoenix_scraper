@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     # when set, every route except /health requires it via the X-API-Key header.
     api_key: str | None = None
 
+    # Origins (comma-separated) allowed to call the API cross-site — the Vite dev
+    # server in development, the deployed SPA host in production. Empty =
+    # same-origin only (today's behaviour).
+    cors_origins: str = ""
+
     project: str = "default"
     db_path: Path = Path("data/pheonix.db")
     export_dir: Path = Path("data/exports")
@@ -92,6 +97,9 @@ class Settings(BaseSettings):
 
     def skills_dir_paths(self) -> list[Path]:
         return [Path(p.strip()) for p in self.skills_dirs.split(",") if p.strip()]
+
+    def cors_origin_list(self) -> list[str]:
+        return [o.strip().rstrip("/") for o in self.cors_origins.split(",") if o.strip()]
 
     def resolved_ca_bundle(self) -> Path | None:
         """CA bundle to trust for the Phoenix connection, or None for stock httpx."""
