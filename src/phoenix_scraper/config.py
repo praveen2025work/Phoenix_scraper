@@ -59,6 +59,11 @@ class Settings(BaseSettings):
     material_change_count_factor: float = 1.5  # reopen a rejected candidate
     material_change_users_delta: int = 2  # ... or this many more users
 
+    # ladder — Rung 2 (see the ladder design spec §9.2, §14)
+    rung2_min_answer_spans: int = 10  # LLM member spans with output text to score
+    rung2_determinism_score: float = 0.8  # evidence bar
+    rung2_sustained_runs: int = 3  # consecutive runs meeting the bar -> ready
+
     # validation knobs (see evaluations.py). Defaults are deliberately lenient:
     # a code check that cries wolf gets ignored, and then nothing gets validated.
     evaluate_on_analyze: bool = True  # run the CODE checks as part of `analyze`
