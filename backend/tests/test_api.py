@@ -167,6 +167,19 @@ def test_cross_origin_post_from_unknown_origin_is_csrf_blocked(api_settings: Set
         assert r.status_code == 403
 
 
+def test_dev_cors_allows_the_vite_dev_server_by_default(api_settings: Settings) -> None:
+    # `pheonix serve` / create_app_default pass dev_cors=True so the SPA works
+    # with zero PHEONIX_CORS_ORIGINS config.
+    with TestClient(create_app(api_settings, dev_cors=True)) as c:
+        r = c.get("/health", headers={"Origin": "http://localhost:5173"})
+        assert r.headers.get("access-control-allow-origin") == "http://localhost:5173"
+    # explicit config still wins — dev default is not merged in
+    explicit = api_settings.model_copy(update={"cors_origins": "http://example.com"})
+    with TestClient(create_app(explicit, dev_cors=True)) as c:
+        r = c.get("/health", headers={"Origin": "http://localhost:5173"})
+        assert r.headers.get("access-control-allow-origin") is None
+
+
 def test_root_is_a_json_notice_not_html(client: TestClient) -> None:
     r = client.get("/")
     assert r.status_code == 200

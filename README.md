@@ -59,36 +59,40 @@ Each half is self-contained and has its own README:
   `cd backend && uv run pheonix serve-ui --dist ../frontend/dist` — the backend
   serves the built SPA (with deep-link fallback) alongside the API.
 
-## Quick start (full stack, offline)
+## Run it
+
+Two independent apps, two terminals. Each is **two commands**.
+
+**Backend** — Python API + background job worker, `http://localhost:8000`:
 
 ```bash
-make setup     # backend: uv sync   ·   frontend: npm install
-make demo      # backend only: seed synthetic traffic → analyze → report
+cd backend
+pip install -e .          # deps + the `pheonix` command   (Python 3.11+)
+pheonix serve
+```
+(No editable install? `pip install -r requirements.txt && python run.py`.)
 
-# two terminals for the UI:
-make api       # terminal 1 — API + job worker on http://localhost:8000  (docs at /docs)
-make ui        # terminal 2 — SPA on http://localhost:5173
+**Frontend** — React SPA, `http://localhost:5173`:
+
+```bash
+cd frontend
+npm install
+npm run dev
 ```
 
-`make demo` writes `backend/data/exports/report.md`. For the capability + ladder
-loop, open the SPA or use the CLI (`cd backend && uv run pheonix capability new …`).
+Then open **http://localhost:5173**. `npm run dev` proxies nothing — it calls the
+API at `http://localhost:8000` directly, and `pheonix serve` already allows that
+origin.
 
-## Common commands (root Makefile)
+**Sample data:** the store starts empty — `cd backend && pheonix demo` seeds
+synthetic traffic. Or create a capability in the SPA and hit "Run now".
 
-| Command | What it does |
-| --- | --- |
-| `make setup` | install backend (uv) + frontend (npm) deps |
-| `make api` | backend API + job worker on :8000, CORS open to :5173, `--reload` |
-| `make ui` | frontend dev server on :5173 |
-| `make test` | backend test suite + coverage |
-| `make lint` | backend `ruff check` |
-| `make ui-test` / `make ui-e2e` | frontend Vitest / Playwright smoke |
-| `make ui-build` | build the SPA to `frontend/dist` |
-| `make ui-types` | regenerate the typed API client from the OpenAPI schema |
-| `make stack` | print how to run the whole thing |
+### Or use the Makefile (needs `uv`)
 
-Run backend or frontend commands directly from their own directory too — see the
-sub-READMEs.
+`make setup` · `make api` · `make ui` · `make test` · `make lint` ·
+`make ui-test` · `make ui-e2e` · `make ui-build` · `make ui-types` · `make stack`
+— thin wrappers over the commands above. See `backend/README.md` and
+`frontend/README.md` for everything else.
 
 ## POC limitations (deliberate)
 

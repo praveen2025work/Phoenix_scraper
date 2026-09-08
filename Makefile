@@ -28,9 +28,9 @@ coverage:         ## show what each skill file is asked but doesn't demonstrate
 report:           ## write markdown report + exports to backend/data/exports
 	cd backend && uv run pheonix report
 
-api:              ## start the API on :8000 with the job worker + CORS open to the SPA
-	cd backend && PHEONIX_CORS_ORIGINS=http://localhost:5173 \
-	  uv run uvicorn --factory phoenix_scraper.api:create_app_default --port 8000 --reload
+api:              ## start the API on :8000 with the job worker (allows the :5173 SPA)
+	cd backend && uv run uvicorn --factory phoenix_scraper.api:create_app_default \
+	  --port 8000 --reload
 
 test:             ## backend test suite with coverage
 	cd backend && uv run pytest --cov=phoenix_scraper --cov-report=term-missing
