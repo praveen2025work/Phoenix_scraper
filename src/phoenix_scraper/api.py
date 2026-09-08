@@ -10,6 +10,7 @@ from typing import Annotated, Any, Literal
 
 import pandas as pd
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Security
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.security.api_key import APIKeyHeader
 
@@ -24,6 +25,8 @@ from . import (
 from . import (
     annotations as annotations_mod,
 )
+from .api_capabilities import capability_router
+from .api_ladder import ladder_router
 from .config import Settings, load_settings
 from .costs import cost_summary
 from .evaluations import check_names
@@ -60,6 +63,16 @@ def create_app(settings: Settings) -> FastAPI:
     app = FastAPI(title="Pheonix prompt miner", version=__version__)
     app.state.settings = settings
 
+    _cors = settings.cors_origin_list()
+    if _cors:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=_cors,
+            allow_credentials=False,
+            allow_methods=["*"],
+            allow_headers=["X-API-Key", "Content-Type"],
+        )
+
     def require_api_key(provided: str | None = Security(_api_key_header)) -> None:
         # Open mode when no key is configured (loopback-only; cli.serve enforces that).
         if settings.api_key is None:
@@ -88,9 +101,10 @@ def create_app(settings: Settings) -> FastAPI:
         session_id: str | None = None,
         user_id: str | None = None,
         search: str | None = None,
+        capability: str | None = None,
         limit: int = Query(default=1000, ge=1, le=100_000),
     ) -> QueryFilters:
-        return QueryFilters(
+        qf = QueryFilters(
             project=project,
             start=_utc(start),
             end=_utc(end),
@@ -102,6 +116,10 @@ def create_app(settings: Settings) -> FastAPI:
             search=search,
             limit=limit,
         )
+        if capability:
+            with open_store() as store:
+                qf = _merge_capability(qf, capability, store)
+        return qf
 
     FiltersDep = Annotated[QueryFilters, Depends(span_filters)]
 
@@ -115,13 +133,14 @@ def create_app(settings: Settings) -> FastAPI:
         session_id: str | None = None,
         user_id: str | None = None,
         search: str | None = None,
+        capability: str | None = None,
         # Analytics must see the same corpus the analysis ran over — a 1000-span
         # default here silently skews every panel above 1000 spans.
         limit: int = Query(default=ANALYSIS_SPAN_LIMIT, ge=1, le=1_000_000),
     ) -> QueryFilters:
         return span_filters(
             project, start, end, stage, asset_class, model_name, session_id,
-            user_id, search, limit,
+            user_id, search, capability, limit,
         )
 
     AnalysisFiltersDep = Annotated[QueryFilters, Depends(analysis_filters)]
@@ -136,6 +155,7 @@ def create_app(settings: Settings) -> FastAPI:
         session_id: str | None = None,
         user_id: str | None = None,
         search: str | None = None,
+        capability: str | None = None,
         # evaluations_frame counts CHECK ROWS, and one span yields a row per
         # applicable check — so the span-sized analysis limit would truncate
         # every quality rollup above ~8k spans while still looking complete.
@@ -143,7 +163,7 @@ def create_app(settings: Settings) -> FastAPI:
     ) -> QueryFilters:
         return span_filters(
             project, start, end, stage, asset_class, model_name, session_id,
-            user_id, search, limit,
+            user_id, search, capability, limit,
         )
 
     QualityFiltersDep = Annotated[QueryFilters, Depends(quality_filters)]
@@ -158,7 +178,9 @@ def create_app(settings: Settings) -> FastAPI:
             if origin is not None:
                 from urllib.parse import urlsplit
 
-                if urlsplit(origin).netloc != request.headers.get("host", ""):
+                allowed = set(settings.cors_origin_list())
+                same_host = urlsplit(origin).netloc == request.headers.get("host", "")
+                if not same_host and origin.rstrip("/") not in allowed:
                     return JSONResponse(
                         status_code=403,
                         content={"detail": "Cross-origin request rejected"},
@@ -586,6 +608,8 @@ def create_app(settings: Settings) -> FastAPI:
             df = store.spans_frame(filters)
         return _frame_response(df, fmt, "spans")
 
+    protected.include_router(capability_router(settings))
+    protected.include_router(ladder_router(settings))
     app.include_router(protected)
     return app
 
@@ -602,6 +626,30 @@ def _utc(dt: datetime | None) -> datetime | None:
     if dt is None:
         return None
     return dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt.astimezone(UTC)
+
+
+def _merge_capability(
+    qf: QueryFilters, capability_id: str | None, store: Store
+) -> QueryFilters:
+    """Seed a QueryFilters from a stored capability; explicit fields still win."""
+    if not capability_id:
+        return qf
+    cap = store.get_capability(capability_id)
+    if cap is None:
+        return qf
+    from datetime import timedelta
+
+    now = datetime.now(UTC)
+    f = cap.filter
+    return qf.model_copy(update={
+        "project": qf.project or f.project,
+        "workflow_stage": qf.workflow_stage or f.workflow_stage,
+        "asset_class": qf.asset_class or f.asset_class,
+        "model_name": qf.model_name or f.model_name,
+        "search": qf.search or f.search,
+        "start": qf.start or (now - timedelta(days=cap.window_days)),
+        "end": qf.end or now,
+    })
 
 
 def _frame_response(df: pd.DataFrame, fmt: Fmt, name: str) -> Response:

@@ -199,6 +199,15 @@ def detect_rung2(
 _STALE_ELIGIBLE = frozenset({"new", "accumulating", "ready"})
 _HUMAN_TERMINAL = frozenset({"accepted", "promoted"})
 
+# §10.3 human-decision transitions: action -> (allowed-from statuses, new status).
+# Shared by the CLI (`pheonix decide`) and the API (`POST /candidates/{cid}/decision`).
+DECISION_TRANSITIONS: dict[str, tuple[frozenset[str], str]] = {
+    "accept": (frozenset({"ready"}), "accepted"),
+    "reject": (frozenset({"accumulating", "ready", "new"}), "rejected"),
+    "snooze": (frozenset({"accumulating", "ready", "new"}), "snoozed"),
+    "reopen": (frozenset({"rejected", "snoozed", "stale"}), "accumulating"),
+}
+
 
 class LadderTransition(_Frozen):
     status: CandidateStatus

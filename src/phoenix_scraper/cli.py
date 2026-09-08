@@ -17,6 +17,7 @@ from . import capability_run as capability_run_mod
 from . import evaluations as evaluations_mod
 from . import export as export_mod
 from . import fixtures, insights_quality, pipeline, scraper, skill_coverage
+from . import ladder as ladder_mod
 from . import skills as skills_mod
 from .config import Settings, load_settings
 from .models import (
@@ -503,12 +504,7 @@ def _echo_capability_run(store: Store, result: CapabilityRunResult) -> None:
 
 
 _HIDDEN_BY_DEFAULT = frozenset({"rejected", "snoozed", "stale"})
-_DECISION_TRANSITIONS: dict[str, tuple[frozenset[str], str]] = {
-    "accept": (frozenset({"ready"}), "accepted"),
-    "reject": (frozenset({"accumulating", "ready", "new"}), "rejected"),
-    "snooze": (frozenset({"accumulating", "ready", "new"}), "snoozed"),
-    "reopen": (frozenset({"rejected", "snoozed", "stale"}), "accumulating"),
-}
+_DECISION_TRANSITIONS = ladder_mod.DECISION_TRANSITIONS
 
 
 @app.command()

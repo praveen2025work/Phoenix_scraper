@@ -134,3 +134,34 @@ def test_create_app_default(
     app = create_app_default()
     with TestClient(app) as c:
         assert c.get("/health").status_code == 200
+
+
+def test_cors_headers_for_configured_origin(api_settings: Settings) -> None:
+    app = create_app(api_settings.model_copy(update={"cors_origins": "http://localhost:5173"}))
+    with TestClient(app) as c:
+        r = c.get("/health", headers={"Origin": "http://localhost:5173"})
+        assert r.headers.get("access-control-allow-origin") == "http://localhost:5173"
+        pre = c.options(
+            "/overview",
+            headers={
+                "Origin": "http://localhost:5173",
+                "Access-Control-Request-Method": "GET",
+            },
+        )
+        assert pre.status_code in (200, 204)
+
+
+def test_cross_origin_post_from_allowed_origin_is_not_csrf_blocked(
+    api_settings: Settings,
+) -> None:
+    app = create_app(api_settings.model_copy(update={"cors_origins": "http://localhost:5173"}))
+    with TestClient(app) as c:
+        c.post("/demo/seed")
+        r = c.post("/analyze/run", headers={"Origin": "http://localhost:5173"})
+        assert r.status_code == 200, r.text
+
+
+def test_cross_origin_post_from_unknown_origin_is_csrf_blocked(api_settings: Settings) -> None:
+    with TestClient(create_app(api_settings)) as c:
+        r = c.post("/analyze/run", headers={"Origin": "http://evil.example"})
+        assert r.status_code == 403

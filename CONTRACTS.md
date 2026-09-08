@@ -379,6 +379,26 @@ GET /quality/{overview,checks,by,failures,by-prompt,evaluations,catalog},
 POST /annotations/{pull,push} — all list endpoints accept filter query params and
 `fmt=json|csv` where csv returns a downloadable file response.
 
+Phase E — Capabilities: GET/POST /capabilities, GET/PATCH/DELETE
+/capabilities/{id} (?purge=), POST /capabilities/{id}/sync. Runs: POST
+/capabilities/{id}/runs {from?,to?,replace_today?}, GET /capabilities/{id}/runs,
+GET /capabilities/{id}/runs/{run_id}, GET /capabilities/{id}/runs/delta?from=&to=.
+Ladder: GET /capabilities/{id}/candidates?rung=&status=, GET /candidates/{cid},
+POST /candidates/{cid}/decision {action,actor?,note?,snooze_runs?} (409 on
+invalid transition), POST /candidates/{cid}/promote?accept=, GET
+/candidates/{cid}/artifact/preview. Every analytics route takes an optional
+`?capability=<id>` that seeds the filter + [now-window_days, now] window
+(explicit params win). `PHEONIX_CORS_ORIGINS` (comma-separated) adds
+`CORSMiddleware` + a CSRF-guard allowance for those origins.
+
+## api_capabilities.py / api_ladder.py
+```python
+def capability_router(settings) -> APIRouter   # capability CRUD + run routes
+def ladder_router(settings) -> APIRouter       # board / candidate / decision / promote
+# both mounted under the protected (X-API-Key) router in create_app.
+# DECISION_TRANSITIONS lives in ladder.py, shared by the CLI and the API.
+```
+
 run_analysis snapshots its clusters into analysis_runs/cluster_snapshots before
 returning, reading previous_run_id FIRST (once recorded, a run would be its own
 predecessor). History is pruned to settings.run_history_limit.

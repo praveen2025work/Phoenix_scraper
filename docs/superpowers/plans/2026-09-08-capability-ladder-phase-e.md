@@ -116,7 +116,7 @@ follow-up). Auth is unchanged (`X-API-Key`, `actor` in bodies).
   `security_guard` CSRF check treats a request whose `Origin` is in
   `cors_origin_list()` as same-site (does not 403 it).
 
-- [ ] **Step 1: Settings + test**
+- [x] **Step 1: Settings + test**
 
 In `src/phoenix_scraper/config.py`, after `api_key`:
 ```python
@@ -165,12 +165,12 @@ def test_cross_origin_post_from_unknown_origin_is_csrf_blocked(api_settings) -> 
         assert r.status_code == 403
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_api.py -q -k cors_headers or csrf`
 Expected: FAIL — no `access-control-allow-origin` header.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `src/phoenix_scraper/api.py`, add the import:
 ```python
@@ -205,17 +205,17 @@ origins:
                     )
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/test_api.py -q`
 Expected: PASS.
 
-- [ ] **Step 5: Lint + full suite**
+- [x] **Step 5: Lint + full suite**
 
 Run: `uv run ruff check src tests && uv run pytest -q`
 Expected: clean; green (735 → ~738).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/phoenix_scraper/config.py src/phoenix_scraper/api.py tests/test_api.py
@@ -242,7 +242,7 @@ git commit -m "feat: PHEONIX_CORS_ORIGINS — CORS middleware + CSRF origin allo
   - `CapabilityPatch` — all optional: `name`, `description`, `filter`,
     `window_days`, `thresholds`, `status`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/test_capability_api.py`:
 
@@ -335,12 +335,12 @@ class TestCapabilityCrud:
         assert client.get("/capabilities/fobo").json()["capability"]["window_days"] == 7
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_capability_api.py -q`
 Expected: FAIL — `404` on `POST /capabilities` (route not registered).
 
-- [ ] **Step 3: Create `api_capabilities.py`**
+- [x] **Step 3: Create `api_capabilities.py`**
 
 Create `src/phoenix_scraper/api_capabilities.py`:
 
@@ -497,7 +497,7 @@ def _register_run_routes(router, settings, _store):  # noqa: ANN001 — filled i
     pass
 ```
 
-- [ ] **Step 4: Mount the router**
+- [x] **Step 4: Mount the router**
 
 In `src/phoenix_scraper/api.py`, add near the top:
 ```python
@@ -508,17 +508,17 @@ In `create_app`, just before `app.include_router(protected)`:
     protected.include_router(capability_router(settings))
 ```
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [x] **Step 5: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/test_capability_api.py -q -k CapabilityCrud`
 Expected: PASS.
 
-- [ ] **Step 6: File length + lint + full suite**
+- [x] **Step 6: File length + lint + full suite**
 
 Run: `wc -l src/phoenix_scraper/api_capabilities.py && uv run ruff check src tests && uv run pytest -q`
 Expected: under 400; clean; green (~738 → ~746).
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/phoenix_scraper/api_capabilities.py src/phoenix_scraper/api.py tests/test_capability_api.py
@@ -545,7 +545,7 @@ git commit -m "feat: capability CRUD API routes"
     `skill_coverage.cluster_deltas(snapshot(to or latest),
     snapshot(from or previous))`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `tests/test_capability_api.py`:
 
@@ -580,12 +580,12 @@ class TestRunRoutes:
         assert client.post("/capabilities/ghost/runs", json={}).status_code == 404
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_capability_api.py -q -k RunRoutes`
 Expected: FAIL — `404` / `405` on `POST /capabilities/plex/runs`.
 
-- [ ] **Step 3: Implement `_register_run_routes`**
+- [x] **Step 3: Implement `_register_run_routes`**
 
 Replace the stub in `src/phoenix_scraper/api_capabilities.py`:
 
@@ -663,17 +663,17 @@ Move the `import json` / `from . import skill_coverage` / duplicate
 `run_capabilities` import to the module's top import block (dedupe — they may
 already be there from Task 2's `capability_router`; keep one copy, alphabetical).
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/test_capability_api.py -q`
 Expected: PASS (whole file).
 
-- [ ] **Step 5: Lint + full suite**
+- [x] **Step 5: Lint + full suite**
 
 Run: `uv run ruff check src tests && uv run pytest -q`
 Expected: clean; green (~746 → ~752).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/phoenix_scraper/api_capabilities.py tests/test_capability_api.py
@@ -709,7 +709,7 @@ git commit -m "feat: capability run API routes (trigger, history, one, delta)"
   `ladder.py` (`ladder.DECISION_TRANSITIONS`) and import it in both `cli.py` and
   `api_ladder.py`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/test_ladder_api.py`:
 
@@ -804,12 +804,12 @@ class TestPromote:
         assert r.status_code == 409
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_ladder_api.py -q`
 Expected: FAIL — `404` on `/capabilities/plex/candidates`.
 
-- [ ] **Step 3: Move `DECISION_TRANSITIONS` to `ladder.py`**
+- [x] **Step 3: Move `DECISION_TRANSITIONS` to `ladder.py`**
 
 In `src/phoenix_scraper/ladder.py`, near the top-level constants, add:
 ```python
@@ -824,7 +824,7 @@ In `src/phoenix_scraper/cli.py`, replace the local `_DECISION_TRANSITIONS` dict
 with `from .ladder import DECISION_TRANSITIONS as _DECISION_TRANSITIONS` (keep
 the alias so the rest of `decide` is untouched).
 
-- [ ] **Step 4: Create `api_ladder.py`**
+- [x] **Step 4: Create `api_ladder.py`**
 
 Create `src/phoenix_scraper/api_ladder.py`:
 
@@ -961,24 +961,24 @@ def ladder_router(settings: Settings) -> APIRouter:
     return router
 ```
 
-- [ ] **Step 5: Mount the router**
+- [x] **Step 5: Mount the router**
 
 In `api.py`: `from .api_ladder import ladder_router`; and before
 `app.include_router(protected)`:
 `protected.include_router(ladder_router(settings))`.
 
-- [ ] **Step 6: Run the tests to verify they pass**
+- [x] **Step 6: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/test_ladder_api.py -q`
 Expected: PASS.
 
-- [ ] **Step 7: Lint + full suite**
+- [x] **Step 7: Lint + full suite**
 
 Run: `uv run ruff check src tests && uv run pytest -q`
 Expected: clean; green (~752 → ~764). `tests/test_candidate_cli.py` must still
 pass (the `_DECISION_TRANSITIONS` move is behaviour-preserving).
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add src/phoenix_scraper/api_ladder.py src/phoenix_scraper/api.py \
@@ -1005,7 +1005,7 @@ git commit -m "feat: ladder API routes — board, candidate, decision, promote, 
   lenient. `span_filters` and `quality_filters` get the same treatment via a
   shared `_merge_capability(qf, capability_id, store) -> QueryFilters`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/test_scoped_analytics_api.py`:
 
@@ -1060,12 +1060,12 @@ def test_spans_route_scopes_too(client: TestClient) -> None:
     assert all(row["workflow_stage"] == "plex" for row in scoped)
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_scoped_analytics_api.py -q`
 Expected: FAIL — `?capability=plex` is ignored, `scoped == whole`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `src/phoenix_scraper/api.py`, add a helper near `_utc` at module scope:
 ```python
@@ -1105,18 +1105,18 @@ Give `span_filters` a `capability: str | None = None` parameter (last, before
 `analysis_filters` and `quality_filters` forward `capability` to `span_filters`
 (add the parameter to each and pass it through).
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/test_scoped_analytics_api.py -q`
 Expected: PASS.
 
-- [ ] **Step 5: Lint + full suite**
+- [x] **Step 5: Lint + full suite**
 
 Run: `uv run ruff check src tests && uv run pytest -q`
 Expected: clean; green (~764 → ~768). Every existing API test must still pass —
 `capability` defaults to None so absent-param behaviour is byte-for-byte.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/phoenix_scraper/api.py tests/test_scoped_analytics_api.py
@@ -1131,7 +1131,7 @@ git commit -m "feat: optional ?capability= param on the analytics routes"
 - Modify: `CONTRACTS.md`
 - Modify: `README.md`
 
-- [ ] **Step 1: CONTRACTS.md**
+- [x] **Step 1: CONTRACTS.md**
 
 In the `## cli.py ... + api.py` block, under `API routes:`, append the new
 routes:
@@ -1160,7 +1160,7 @@ def ladder_router(settings) -> APIRouter       # board / candidate / decision / 
 Note the new `Settings.cors_origins` (`PHEONIX_CORS_ORIGINS`, comma-separated).
 Move `DECISION_TRANSITIONS` mention into the `## ladder.py` block.
 
-- [ ] **Step 2: README.md**
+- [x] **Step 2: README.md**
 
 In `## API (downloadable, filterable)`, add a short paragraph:
 
@@ -1171,12 +1171,12 @@ In `## API (downloadable, filterable)`, add a short paragraph:
 > filter and window. Set `PHEONIX_CORS_ORIGINS=http://localhost:5173` (comma-
 > separated) to let a separate frontend dev server call the API.
 
-- [ ] **Step 3: Lint + full suite (docs — sanity only)**
+- [x] **Step 3: Lint + full suite (docs — sanity only)**
 
 Run: `uv run ruff check src tests && uv run pytest -q`
 Expected: clean; green.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add CONTRACTS.md README.md
