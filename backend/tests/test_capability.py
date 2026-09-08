@@ -27,6 +27,20 @@ class TestSettings:
     def test_operator_name_defaults_blank(self) -> None:
         assert Settings(**_S).operator_name == ""
 
+    @pytest.mark.parametrize(
+        "raw, expected",
+        [
+            ("https://phx.corp/v1/projects", "https://phx.corp"),
+            ("https://phx.corp/v1/projects/UHJvamVjdDox", "https://phx.corp"),
+            ("https://phx.corp/v1/", "https://phx.corp"),
+            ("https://phx.corp/", "https://phx.corp"),
+            ("http://localhost:6006", "http://localhost:6006"),
+            ("https://phx.corp/phoenix/v1/projects", "https://phx.corp/phoenix"),
+        ],
+    )
+    def test_phoenix_endpoint_strips_v1_tail(self, raw: str, expected: str) -> None:
+        assert Settings(PHOENIX_COLLECTOR_ENDPOINT=raw, **_S).phoenix_endpoint == expected
+
 
 class TestCapabilityModels:
     def test_defaults(self) -> None:

@@ -95,6 +95,24 @@ class Settings(BaseSettings):
             return None
         return value
 
+    @field_validator("phoenix_endpoint", mode="after")
+    @classmethod
+    def _normalize_endpoint(cls, value: str | None) -> str | None:
+        """The Phoenix client appends its own /v1/... routes, so the endpoint must
+        be the server root. Trim a trailing slash and a mistakenly-pasted
+        /v1/... tail (the URL you open in a browser to check, not what goes in
+        config) so the client doesn't build `/v1/projects/v1/spans`."""
+        from urllib.parse import urlsplit, urlunsplit
+
+        if not value:
+            return value
+        parts = urlsplit(value.strip())
+        path = parts.path
+        idx = path.lower().find("/v1")
+        if idx != -1:
+            path = path[:idx]
+        return urlunsplit((parts.scheme, parts.netloc, path.rstrip("/"), "", ""))
+
     def skills_dir_paths(self) -> list[Path]:
         return [Path(p.strip()) for p in self.skills_dirs.split(",") if p.strip()]
 
