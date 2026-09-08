@@ -60,7 +60,7 @@ item #22 (`window_days: 0`).
   failures in `evaluate_spans` must not abort the run (wrap, log, add a
   `"validation skipped: <exc>"` note, do not force `partial`).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `tests/test_capability_run.py` (inside `TestRunCapabilityAnalysis`):
 ```python
@@ -83,12 +83,12 @@ Append to `tests/test_capability_run.py` (inside `TestRunCapabilityAnalysis`):
         assert n1 == n2  # re-run rewrites the same rows, does not stack
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_capability_run.py -q -k "evaluates_in_scope or idempotent"`
 Expected: FAIL — `evaluations_frame(...)` is empty after a run.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `src/phoenix_scraper/capability_run.py`:
 - add `from .evaluations import evaluate_spans` to the imports (alphabetical —
@@ -104,19 +104,19 @@ In `src/phoenix_scraper/capability_run.py`:
             run_notes.append(f"validation skipped: {exc}")
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/test_capability_run.py -q`
 Expected: PASS.
 
-- [ ] **Step 5: Lint + full suite**
+- [x] **Step 5: Lint + full suite**
 
 Run: `uv run ruff check src tests && uv run pytest -q`
 Expected: clean; green (764 → 766). `tests/test_ladder_api.py` /
 `test_scoped_analytics_api.py` still pass (the quality routes now return rows
 for a run capability — the assertions there don't require empty).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/phoenix_scraper/capability_run.py tests/test_capability_run.py
@@ -140,12 +140,21 @@ git commit -m "feat: pheonix run evaluates its in-scope spans (idempotent upsert
   _member_pairs(...) or [(p, p) for p in prompts[:20]]`. The `render_rung2_stub`
   call and the fallback are otherwise unchanged.
 
-- [ ] **Step 1: Write the failing test**
+> **Deviation from the drafted snippet (applied 2026-09-08):** the test uses
+> `tmp_store` (not `seeded_store`) so the 8 conftest `sample_spans` — whose
+> prompt/answer are lexically close to the `det-*` spans and would merge into the
+> same cluster — do not pollute `_member_pairs`. The candidate is selected by a
+> title-substring match (`"recon break of" in title`) rather than `.iloc[0]`, and
+> the `test_` file is picked by basename (`p.rsplit("/", 1)[-1].startswith("test_")`)
+> because pytest's `tmp_path` directory is itself named `test_promote_...`, so the
+> drafted `"/test_" in p` matched the temp dir, not the file.
+
+- [x] **Step 1: Write the failing test**
 
 Append to `tests/test_artifacts.py` (`TestRung2Artifacts`):
 ```python
     def test_promote_deterministic_uses_real_prompt_answer_pairs(
-        self, seeded_store, tmp_path, settings
+        self, tmp_store, tmp_path, settings
     ) -> None:
         from datetime import timedelta as _td
 
@@ -157,7 +166,7 @@ Append to `tests/test_artifacts.py` (`TestRung2Artifacts`):
         )
         s = settings.model_copy(update={"capabilities_dir": root})
         base = datetime(2026, 7, 20, 9, tzinfo=UTC)
-        seeded_store.upsert_spans([
+        tmp_store.upsert_spans([
             SpanRecord(
                 span_id=f"det-{i:03d}", trace_id=f"det-t{i}", session_id=f"det-s{i}",
                 project="pnl-agent", span_kind="LLM", start_time=base + _td(minutes=i),
@@ -167,24 +176,35 @@ Append to `tests/test_artifacts.py` (`TestRung2Artifacts`):
             )
             for i in range(14)
         ])
-        run_capability_analysis(seeded_store, s, cap, now=datetime(2026, 7, 21, 12, tzinfo=UTC))
-        cid = seeded_store.candidates_frame("fobo", rung="deterministic").iloc[0]["candidate_id"]
-        cand = seeded_store.get_candidate(cid).model_copy(update={"status": "accepted"})
-        seeded_store.upsert_candidate(cand)
+        run_capability_analysis(
+            tmp_store, s, cap, now=datetime(2026, 7, 21, 12, tzinfo=UTC)
+        )
+        d_cands = tmp_store.candidates_frame("fobo", rung="deterministic")
+        cid = next(
+            row["candidate_id"]
+            for row in d_cands.to_dict("records")
+            if "recon break of" in str(row["title"])
+        )
+        cand = tmp_store.get_candidate(cid).model_copy(update={"status": "accepted"})
+        tmp_store.upsert_candidate(cand)
 
-        result = artifacts.promote_candidate(seeded_store, cap, cand, now=TS, actor="a", settings=s)
-        test_file = next(b for p, b in result.contents if "/test_" in p)
-        assert "The FX break is caused by an unsettled trade" in test_file  # a real answer, not a prompt echo
-        assert "why is there a recon break of" in test_file                 # a real prompt
+        result = artifacts.promote_candidate(
+            tmp_store, cap, cand, now=TS, actor="a", settings=s
+        )
+        test_file = next(
+            b for p, b in result.contents if p.rsplit("/", 1)[-1].startswith("test_")
+        )
+        assert "The FX break is caused by an unsettled trade" in test_file
+        assert "why is there a recon break of" in test_file
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_artifacts.py -q -k real_prompt_answer`
 Expected: FAIL — the generated `test_` file's `CASES` are `(prompt, prompt)`, so
 the answer string is absent.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `src/phoenix_scraper/artifacts.py`, add near `_member_prompts`:
 ```python
@@ -192,14 +212,15 @@ def _member_pairs(
     store: Store, capability: Capability, candidate: Candidate
 ) -> list[tuple[str, str]]:
     """Real (input_text, output_text) pairs for this candidate's cluster, from the
-    latest recorded run's member span ids."""
+    latest recorded run's member span ids. Empty when there is no run or no
+    answer spans."""
     run_id = store.previous_capability_run_id(capability.id)
     if run_id is None:
         return []
     members = store.capability_cluster_members_frame(capability.id, run_id)
-    span_ids = set(
-        members.loc[members["cluster_id"] == candidate.cluster_id, "span_id"]
-    )
+    if members.empty or "cluster_id" not in members.columns:
+        return []
+    span_ids = set(members.loc[members["cluster_id"] == candidate.cluster_id, "span_id"])
     if not span_ids:
         return []
     f = capability.filter
@@ -229,25 +250,27 @@ In `promote_candidate`, the `rung == "deterministic"` branch — change:
 ```
 to:
 ```python
-        pairs = _member_pairs(store, capability, candidate) or [(p, p) for p in prompts[:20]]
+        pairs = _member_pairs(store, capability, candidate) or [
+            (p, p) for p in prompts[:20]
+        ]
         files = render_rung2_stub(
             candidate, latest_observation_signals=obs_signals, pairs=pairs,
         )
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/test_artifacts.py -q`
 Expected: PASS (the existing `test_promote_deterministic_writes_three_files`
 still passes — it has one observation and its candidate's cluster has no members
 recorded, so `_member_pairs` returns `[]` and the placeholder fallback applies).
 
-- [ ] **Step 5: Lint + full suite**
+- [x] **Step 5: Lint + full suite**
 
 Run: `uv run ruff check src tests && uv run pytest -q`
 Expected: clean; green (766 → 767).
 
-- [ ] **Step 6: Update the plan/docs note**
+- [x] **Step 6: Update the plan/docs note**
 
 In `docs/superpowers/plans/2026-09-08-capability-ladder-phase-d.md`, the Task 6
 "Note on `pairs`" paragraph — append: *"(Resolved 2026-09-08:
@@ -255,7 +278,7 @@ In `docs/superpowers/plans/2026-09-08-capability-ladder-phase-d.md`, the Task 6
 fallback only fires when a cluster has no recorded members.)"* — a one-line
 amendment, keep it factual.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/phoenix_scraper/artifacts.py tests/test_artifacts.py \

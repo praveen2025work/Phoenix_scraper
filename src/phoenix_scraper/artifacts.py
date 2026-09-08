@@ -215,6 +215,40 @@ def _member_prompts(store: Store, capability: Capability, candidate: Candidate) 
     return unique[:_MEMBER_PROMPT_LIMIT] or [candidate.title]
 
 
+def _member_pairs(
+    store: Store, capability: Capability, candidate: Candidate
+) -> list[tuple[str, str]]:
+    """Real (input_text, output_text) pairs for this candidate's cluster, from the
+    latest recorded run's member span ids. Empty when there is no run or no
+    answer spans."""
+    run_id = store.previous_capability_run_id(capability.id)
+    if run_id is None:
+        return []
+    members = store.capability_cluster_members_frame(capability.id, run_id)
+    if members.empty or "cluster_id" not in members.columns:
+        return []
+    span_ids = set(members.loc[members["cluster_id"] == candidate.cluster_id, "span_id"])
+    if not span_ids:
+        return []
+    f = capability.filter
+    frame = store.spans_frame(QueryFilters(
+        project=f.project, workflow_stage=f.workflow_stage, asset_class=f.asset_class,
+        model_name=f.model_name, search=f.search, limit=5000,
+    ))
+    if frame.empty or "span_id" not in frame.columns:
+        return []
+    rows = frame[frame["span_id"].isin(span_ids)]
+    pairs: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for row in rows.to_dict("records"):
+        inp = str(row.get("input_text") or "").strip()
+        out = str(row.get("output_text") or "").strip()
+        if inp and out and (inp, out) not in seen:
+            seen.add((inp, out))
+            pairs.append((inp, out))
+    return pairs[: _MEMBER_PROMPT_LIMIT * 2]
+
+
 def promote_candidate(
     store: Store,
     capability: Capability,
@@ -233,9 +267,11 @@ def promote_candidate(
         det_dir.mkdir(parents=True, exist_ok=True)
         recent = store.recent_candidate_observations(candidate.candidate_id, 1)
         obs_signals = recent[0].signals if recent else {}
+        pairs = _member_pairs(store, capability, candidate) or [
+            (p, p) for p in prompts[:20]
+        ]
         files = render_rung2_stub(
-            candidate, latest_observation_signals=obs_signals,
-            pairs=[(p, p) for p in prompts[:20]],
+            candidate, latest_observation_signals=obs_signals, pairs=pairs,
         )
         base_stem = files[0][0][:-3]
         final_stem = dedupe_path(det_dir, base_stem, ".py").stem

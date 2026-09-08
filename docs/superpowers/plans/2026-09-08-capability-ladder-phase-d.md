@@ -1445,6 +1445,10 @@ check, add a `rung == "deterministic"` branch:
 fills the real expected answers from the `.md` templates. A follow-up can thread
 real `(input_text, output_text)` pairs through `promote_candidate` from the
 cluster members; noted in §16.
+_(Resolved 2026-09-08 in `2026-09-08-ladder-trustworthiness.md` Task 2:
+`artifacts._member_pairs` threads the real observed `(input_text, output_text)`
+pairs from the latest run's cluster members; the `(prompt, prompt)` fallback only
+fires when a cluster has no recorded members or no answer spans.)_
 
 - [x] **Step 4: Run the tests to verify they pass**
 
