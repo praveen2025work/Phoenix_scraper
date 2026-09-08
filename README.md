@@ -499,6 +499,17 @@ Schedule `pheonix run --all` with cron or your scheduler — there is no built-i
 daemon. Offline or with Phoenix unreachable, the run still executes against the
 stored spans and is marked `partial`.
 
+### Background runs (API)
+
+The HTTP API can run a capability without blocking the request. `POST
+/capabilities/<id>/jobs` returns `202` with a `job_id`; poll `GET
+/capabilities/<id>/jobs/<job_id>` until `state` is `done` (with a `run_id`) or
+`error`. A single worker thread inside the API process drains the queue one run
+at a time — it starts with `pheonix serve` / the uvicorn factory, and a restart
+marks any interrupted job `error`. The `pheonix run` CLI stays synchronous;
+`pheonix capability jobs <id>` lists the job history. The SPA's "Run now" button
+uses this flow.
+
 ## The promotion ladder
 
 Each `pheonix run` also updates the capability's **Rung-1 candidates** — an
