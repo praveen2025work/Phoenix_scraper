@@ -14,15 +14,10 @@ npm install          # first run only
 npm run dev           # http://localhost:5173   (or `make ui` from the repo root)
 ```
 
-The dev server expects the backend on `http://localhost:8000` with CORS open to
-`http://localhost:5173`. From the repo root, `make api` starts it that way; by
-hand:
-
-```bash
-cd ../backend
-PHEONIX_CORS_ORIGINS=http://localhost:5173 \
-  uv run uvicorn --factory phoenix_scraper.api:create_app_default --port 8000
-```
+The dev server calls the backend at `http://localhost:8000`. Start it with
+`cd ../backend && pheonix serve` — it allows the `:5173` dev origin out of the
+box (no `PHEONIX_CORS_ORIGINS` needed). Set `PHEONIX_CORS_ORIGINS` only for a
+non-default SPA origin.
 
 ## Scripts
 

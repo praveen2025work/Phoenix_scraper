@@ -12,15 +12,29 @@ promotion ladder. Ships a Typer CLI (`pheonix`) and a FastAPI service.
 The React UI that consumes this API lives in [`../frontend`](../frontend/README.md);
 the root [README](../README.md) covers how the two run together.
 
-## Quick start (offline)
+## Run it — two commands
 
 ```bash
-uv sync --all-extras          # .venv + Python 3.11+   (or: make setup)
-uv run pheonix demo           # seed synthetic P&L-agent traffic → analyze → report
-uv run pheonix serve          # API + job worker on http://localhost:8000  (docs at /docs)
+cd backend
+pip install -e .          # 1 · deps + the `pheonix` command  (Python 3.11+)
+pheonix serve            # 2 · API + job worker on http://localhost:8000  (docs: /docs)
 ```
 
-`demo` prints the top-prompts table and writes `data/exports/report.md`.
+That's the whole CLI too: `pheonix demo`, `pheonix scrape`, `pheonix capability …`.
+
+**No editable install?** `pip install -r requirements.txt` then `python run.py`
+— `run.py` serves the same thing (`--host`, `--port`, `--reload`) without
+installing the package. (The `pheonix` subcommands still need `pip install -e .`.)
+
+**Externally-managed Python** (Homebrew / system): make a venv first —
+`python -m venv .venv && source .venv/bin/activate` (`.venv\Scripts\activate` on
+Windows).
+
+**Sample data:** the store starts empty — `pheonix demo` seeds synthetic
+P&L-agent traffic, analyzes it, writes `data/exports/report.md`.
+
+**Live Phoenix:** `pip install -e '.[live]'` (or `-r requirements-live.txt`),
+fill in `backend/.env` (below), then `pheonix scrape`.
 
 ## Install
 

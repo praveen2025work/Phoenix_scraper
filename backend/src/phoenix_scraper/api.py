@@ -58,13 +58,25 @@ _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 logger = logging.getLogger(__name__)
 
 
-def create_app(settings: Settings, *, run_jobs: bool = False) -> FastAPI:
+_DEV_CORS_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
+
+
+def create_app(
+    settings: Settings, *, run_jobs: bool = False, dev_cors: bool = False
+) -> FastAPI:
     """Build the API around one Settings instance (dependency-injectable for tests).
 
     run_jobs=True starts the background capability-run worker (create_app_default
     / real serving). Tests pass run_jobs=False (the default) — no thread.
+
+    dev_cors=True allows the Vite dev server (localhost:5173) when no
+    PHEONIX_CORS_ORIGINS is configured, so `pheonix serve` works with the SPA
+    out of the box. Ignored when CORS origins are set explicitly.
     """
     from .jobs import JobWorker
+
+    if dev_cors and not settings.cors_origin_list():
+        settings = settings.model_copy(update={"cors_origins": _DEV_CORS_ORIGINS})
 
     worker = JobWorker(settings) if run_jobs else None
 
@@ -644,7 +656,7 @@ def create_app(settings: Settings, *, run_jobs: bool = False) -> FastAPI:
 
 def create_app_default() -> FastAPI:
     """Zero-arg factory for `uvicorn phoenix_scraper.api:create_app_default --factory`."""
-    return create_app(load_settings(), run_jobs=True)
+    return create_app(load_settings(), run_jobs=True, dev_cors=True)
 
 
 # ---- helpers -------------------------------------------------------------------
