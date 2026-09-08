@@ -373,3 +373,18 @@ git commit -m "fix: capability.yaml window_days must be positive (was silently -
   ↔ its signature `(spans_df, settings, now=None)`. ✓
 - Ambiguity: a capability with a 0-span in-scope window skips evaluation
   (`not in_scope.empty` guard) — no rows written, no note, `status` unaffected.
+
+---
+
+## Follow-up (2026-09-08, `fix/rung2-stub-module-name`)
+
+Task 2 surfaced a latent bug in the §8.4 "green-bar target": `render_rung2_stub`
+named its files off the kebab-case `_skill_stem` (`recon-break`), so the emitted
+`test_recon-break.py` carried `from .recon-break import handle` — a `SyntaxError`,
+and the `.py` files were not importable anyway. Fixed: new `artifacts._module_name()`
+snake-cases the stem (`recon-break` → `recon_break`, leading digit → `m_`-prefixed,
+empty → `handler`); `render_rung2_stub` names all three files and the import off it,
+and `promote_candidate` passes the dedupe-collision stem (`…-2`) through it too.
+Test: `test_stub_files_are_valid_importable_python` `compile()`s the generated
+bodies. Suite 769 → 770. `_skill_stem` itself is unchanged — Rung-1 `skills/<kebab>.md`
+still uses kebab per §7.
