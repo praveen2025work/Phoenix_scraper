@@ -13,7 +13,9 @@ test("renders a row from each panel and expands the paste block", async () => {
   vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
     const p = new URL(String(url), "http://x").pathname;
     if (p === "/skills/coverage")
-      return json([{ skill_name: "fobo-triage", count: 30, n_declared_examples: 2, covered: true }]);
+      return json([
+        { skill_name: "fobo-triage", n_asks: 30, n_declared_examples: 2, coverage: 0.82, top_gap: "explain the odd break" },
+      ]);
     if (p === "/skills/updates")
       return json([
         { skill_name: "fobo-triage", source_file: "x.yaml", n_new_prompts: 1, uncovered_asks: 6, n_users: 3, yaml_block: "example_prompts:\n  - why break" },

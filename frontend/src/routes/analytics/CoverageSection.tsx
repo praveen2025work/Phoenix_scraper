@@ -41,14 +41,20 @@ export function CoverageSection({ id }: { id: string }) {
           rows={coverage.data}
           columns={[
             { key: "skill_name", header: "skill" },
+            { key: "n_asks", header: "asks", align: "right", format: (v) => num(v) },
             {
-              key: "asks_routed",
-              header: "asked",
+              key: "n_declared_examples",
+              header: "examples",
               align: "right",
-              format: (v, r) => num(v ?? r.count),
+              format: (v) => num(v),
             },
-            { key: "n_declared_examples", header: "demonstrated", align: "right", format: (v) => num(v) },
-            { key: "covered", header: "covered", format: (v) => (v ? "✓" : "") },
+            {
+              key: "coverage",
+              header: "covered",
+              align: "right",
+              format: (v) => `${Math.round(Number(v ?? 0) * 100)}%`,
+            },
+            { key: "top_gap", header: "biggest gap", format: (v) => truncate(v, 55) },
           ]}
         />
       </Panel>
