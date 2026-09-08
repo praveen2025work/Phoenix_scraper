@@ -377,7 +377,7 @@ evaluate (+ --pull-annotations / --push / --push-all / --user), coverage (+ --wr
 report, export (--what spans|clusters|matches|proposals|sessions|evaluations|
 coverage|uncovered --fmt csv|json|parquet + filter options), serve,
 run (--capability | --all, --from, --to, --replace-today),
-capability (new | list | show | sync | runs),
+capability (new | list | show | sync | runs | jobs),
 candidates (<id> --rung --status --all), candidate (<cid>),
 decide (<cid> --action accept|reject|snooze|reopen --actor --note --snooze-runs),
 promote (<cid> --accept --dry-run), serve-ui (--dist --port).
@@ -392,8 +392,12 @@ POST /annotations/{pull,push} — all list endpoints accept filter query params 
 
 Phase E — Capabilities: GET/POST /capabilities, GET/PATCH/DELETE
 /capabilities/{id} (?purge=), POST /capabilities/{id}/sync. Runs: POST
-/capabilities/{id}/runs {from?,to?,replace_today?}, GET /capabilities/{id}/runs,
-GET /capabilities/{id}/runs/{run_id}, GET /capabilities/{id}/runs/delta?from=&to=.
+/capabilities/{id}/runs {from?,to?,replace_today?} (synchronous), GET
+/capabilities/{id}/runs, GET /capabilities/{id}/runs/{run_id}, GET
+/capabilities/{id}/runs/delta?from=&to=. Async runs: POST
+/capabilities/{id}/jobs {from?,to?,replace_today?} -> 202 {job_id, state},
+GET /capabilities/{id}/jobs, GET /capabilities/{id}/jobs/{job_id}
+{state: queued|running|done|error, run_id, error}.
 Ladder: GET /capabilities/{id}/candidates?rung=&status=, GET /candidates/{cid},
 POST /candidates/{cid}/decision {action,actor?,note?,snooze_runs?} (409 on
 invalid transition), POST /candidates/{cid}/promote?accept=, GET
@@ -404,11 +408,33 @@ invalid transition), POST /candidates/{cid}/promote?accept=, GET
 
 ## api_capabilities.py / api_ladder.py
 ```python
-def capability_router(settings) -> APIRouter   # capability CRUD + run routes
+def capability_router(settings) -> APIRouter   # capability CRUD + run + job routes
 def ladder_router(settings) -> APIRouter       # board / candidate / decision / promote
 # both mounted under the protected (X-API-Key) router in create_app.
 # DECISION_TRANSITIONS lives in ladder.py, shared by the CLI and the API.
 ```
+
+## jobs.py  (background capability-run worker — one daemon thread, one run at a time)
+```python
+class JobWorker(settings, *, poll_seconds=1.0)
+    # start() / stop(timeout=5) / drain_once() -> job_id | None
+    # _loop polls Store.claim_next_job every poll_seconds; each iteration wrapped
+    # so the thread never dies. A capability that fails inside run_capabilities
+    # ends the job 'done' (the run row carries status='failed'); only an escape
+    # ends it 'error' (message on the row).
+```
+`api.create_app(settings, *, run_jobs=False)` — `run_jobs=True` (only
+`create_app_default()` and the Playwright smoke) attaches a `lifespan` that
+`Store.reset_orphaned_jobs()` on startup then runs a `JobWorker`; the worker is
+on `app.state.job_worker` (or `None`).
+
+Store queue methods (mirror `capability_jobs`): `enqueue_job(job_id,
+capability_id, params: dict)`, `get_job(job_id) -> dict | None` (params back as a
+dict), `capability_jobs_frame(capability_id, limit=50)` (newest first),
+`claim_next_job() -> dict | None` (oldest 'queued' -> 'running'),
+`finish_job(job_id, *, run_id, state, error=None)`, `reset_orphaned_jobs() ->
+int`. `Store` is a context manager; its connection opens with
+`journal_mode=WAL` + `busy_timeout=5000`.
 
 ## frontend/  (separate npm package — React 19 + Vite + TS + Tailwind v4 + shadcn/ui)
 - Runs on its own dev server (`:5173`); talks to the API by absolute URL

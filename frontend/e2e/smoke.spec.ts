@@ -21,6 +21,11 @@ test("create a capability, run it, see the board", async ({ page, request }) => 
   await expect(page.getByText("No runs yet.")).toBeVisible();
 
   await page.getByRole("button", { name: /run now/i }).click();
+  // the run is enqueued as a background job; the button re-enables once the
+  // worker finishes it and the SPA's poll settles.
+  await expect(page.getByRole("button", { name: /^run now$/i })).toBeEnabled({
+    timeout: 30_000,
+  });
   // the run-summary panel replaces "No runs yet." once the run lands
   await expect(page.getByText("No runs yet.")).toBeHidden({ timeout: 30_000 });
   await expect(page.getByText(/in scope/i)).toBeVisible();

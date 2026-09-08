@@ -2,6 +2,7 @@
 
 import json
 import shutil
+import uuid
 from contextlib import contextmanager
 from datetime import datetime
 
@@ -36,6 +37,14 @@ class CapabilityPatch(BaseModel):
 
 
 class RunRequest(BaseModel):
+    from_: datetime | None = Field(default=None, alias="from")
+    to: datetime | None = None
+    replace_today: bool = False
+
+    model_config = {"populate_by_name": True}
+
+
+class JobRequest(BaseModel):
     from_: datetime | None = Field(default=None, alias="from")
     to: datetime | None = None
     replace_today: bool = False
@@ -216,3 +225,34 @@ def _register_run_routes(router: APIRouter, settings: Settings, _store) -> None:
         if match.empty:
             raise HTTPException(status_code=404, detail="No such run")
         return _run_summary(match.iloc[0].to_dict())
+
+    @router.post("/capabilities/{cap_id}/jobs", status_code=202)
+    def enqueue_run_job(cap_id: str, body: JobRequest) -> dict:
+        try:
+            capability_mod.load_capability(root, cap_id)
+        except (ValueError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        job_id = uuid.uuid4().hex
+        params = {
+            "from": body.from_.isoformat() if body.from_ else None,
+            "to": body.to.isoformat() if body.to else None,
+            "replace_today": body.replace_today,
+        }
+        with _store() as store:
+            store.enqueue_job(job_id, cap_id, params)
+        return {"job_id": job_id, "capability_id": cap_id, "state": "queued"}
+
+    @router.get("/capabilities/{cap_id}/jobs")
+    def list_run_jobs(cap_id: str, fmt: str = "json"):
+        from .api import _frame_response
+        with _store() as store:
+            df = store.capability_jobs_frame(cap_id)
+        return _frame_response(df, fmt, "capability_jobs")
+
+    @router.get("/capabilities/{cap_id}/jobs/{job_id}")
+    def one_run_job(cap_id: str, job_id: str) -> dict:
+        with _store() as store:
+            job = store.get_job(job_id)
+        if job is None or job["capability_id"] != cap_id:
+            raise HTTPException(status_code=404, detail="No such job")
+        return job

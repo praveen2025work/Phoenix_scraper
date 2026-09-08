@@ -878,6 +878,29 @@ def capability_runs(
         )
 
 
+@capability_app.command("jobs")
+def capability_jobs(
+    cap_id: str = CapIdArg,
+    db: Path | None = DbOpt,
+    capabilities_dir: Path | None = CapabilitiesDirOpt,
+) -> None:
+    """Background run jobs for a capability, newest first."""
+    settings = _settings(db=db, capabilities_dir=capabilities_dir)
+    with _open_store(settings) as store:
+        frame = store.capability_jobs_frame(cap_id)
+    if not len(frame):
+        typer.echo(f"No jobs for '{cap_id}'.")
+        return
+    typer.echo(f"{'job_id':<34} {'state':<9} {'run_id':<27} enqueued")
+    typer.echo("-" * 90)
+    for row in frame.to_dict("records"):
+        run_id = str(row["run_id"] or "-")
+        typer.echo(
+            f"{row['job_id']:<34} {row['state']:<9} {run_id:<27} "
+            f"{row['enqueued_at'][:19]}"
+        )
+
+
 # ---- helpers -------------------------------------------------------------------
 
 

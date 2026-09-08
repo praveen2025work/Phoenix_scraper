@@ -47,8 +47,10 @@ function mock() {
           cluster_id: "a",
         },
       ]);
-    if (p === "/capabilities/fobo/runs" && init?.method === "POST")
-      return json({ run_id: "2026-09-08T11:00:00+00:00", status: "ok" });
+    if (p === "/capabilities/fobo/jobs" && init?.method === "POST")
+      return json({ job_id: "job-1", state: "queued" });
+    if (p === "/capabilities/fobo/jobs/job-1")
+      return json({ state: "done", run_id: "2026-09-08T11:00:00+00:00", error: null });
     return new Response("null", { status: 404 });
   });
 }
@@ -65,7 +67,7 @@ test("renders the header, run summary, and the two rung tabs", async () => {
   expect(screen.getByText("why recon break")).toBeInTheDocument();
 });
 
-test("Run now POSTs to the run route", async () => {
+test("Run now enqueues a background job and polls it", async () => {
   const spy = mock();
   renderWithProviders(<CapabilityDetail />, { route: "/c/fobo", path: "/c/:id" });
   await waitFor(() => screen.getByRole("button", { name: /run now/i }));
@@ -74,9 +76,12 @@ test("Run now POSTs to the run route", async () => {
     expect(
       spy.mock.calls.some(
         ([u, i]) =>
-          String(u).endsWith("/capabilities/fobo/runs") &&
+          String(u).endsWith("/capabilities/fobo/jobs") &&
           (i as RequestInit).method === "POST",
       ),
     ).toBe(true),
+  );
+  await waitFor(() =>
+    expect(spy.mock.calls.some(([u]) => String(u).includes("/jobs/job-1"))).toBe(true),
   );
 });
