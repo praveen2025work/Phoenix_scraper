@@ -172,11 +172,10 @@ def test_root_is_a_json_notice_not_html(client: TestClient) -> None:
     assert r.status_code == 200
     body = r.json()
     assert body["service"] == "pheonix"
-    assert body["legacy_dashboard"] == "/legacy"
+    assert "frontend" in body
+    assert "legacy_dashboard" not in body
     assert "json" in r.headers["content-type"]
 
 
-def test_legacy_dashboard_still_serves_html(client: TestClient) -> None:
-    r = client.get("/legacy")
-    assert r.status_code == 200
-    assert r.text.lstrip().lower().startswith("<!doctype html")
+def test_legacy_dashboard_is_gone(client: TestClient) -> None:
+    assert client.get("/legacy").status_code == 404

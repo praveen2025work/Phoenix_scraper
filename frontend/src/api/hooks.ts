@@ -174,3 +174,14 @@ export const useRunDeltas = (capabilityId: string) =>
         `/capabilities/${enc(capabilityId)}/runs/delta`,
       ),
   });
+
+export type Row = Record<string, unknown>;
+
+/** Generic scoped-analytics query: GET <path> with ?capability=<id> merged in. */
+export function useScoped<T = Row[]>(key: string, path: string, capabilityId: string) {
+  const sep = path.includes("?") ? "&" : "?";
+  return useQuery({
+    queryKey: [key, capabilityId, path],
+    queryFn: () => api.get<T>(`${path}${sep}capability=${enc(capabilityId)}`),
+  });
+}

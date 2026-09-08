@@ -5,13 +5,12 @@ import secrets
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Annotated, Any, Literal
 
 import pandas as pd
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Security
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import JSONResponse, Response
 from fastapi.security.api_key import APIKeyHeader
 
 from . import (
@@ -38,8 +37,6 @@ from .pipeline import ANALYSIS_SPAN_LIMIT, run_analysis
 from .scraper import scrape_once
 from .skills import load_all_skills
 from .storage import Store
-
-_DASHBOARD_PATH = Path(__file__).parent / "static" / "dashboard.html"
 
 Fmt = Literal["json", "csv"]
 
@@ -206,15 +203,7 @@ def create_app(settings: Settings) -> FastAPI:
             "docs": "/docs",
             "health": "/health",
             "frontend": "the React SPA in frontend/ — `make ui` (dev) or `pheonix serve-ui`",
-            "legacy_dashboard": "/legacy",
         }
-
-    @app.get("/legacy", include_in_schema=False)
-    def legacy_dashboard() -> HTMLResponse:
-        # The pre-SPA bundled dashboard. Kept until the SPA's Analytics tab
-        # reaches panel parity; every value it shows still comes from the
-        # protected endpoints below, so auth still applies.
-        return HTMLResponse(_DASHBOARD_PATH.read_text(encoding="utf-8"))
 
     @protected.get("/filters/options")
     def filter_options() -> dict[str, Any]:
