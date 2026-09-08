@@ -85,7 +85,7 @@ it is an architectural change and gets its own brainstorm + spec later.
   DBs are unchanged (`CREATE TABLE IF NOT EXISTS`) and rely on the read-path
   coercion.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `tests/test_capability_storage.py` (after `class TestCapabilityCrud`):
 ```python
@@ -139,7 +139,7 @@ class TestCapabilitySchemaGuards:
         assert cap.status == "paused"
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `uv run pytest tests/test_capability_storage.py -q -k SchemaGuards`
 Expected: FAIL — the two `IntegrityError` tests pass nothing / raise nothing
@@ -147,7 +147,7 @@ Expected: FAIL — the two `IntegrityError` tests pass nothing / raise nothing
 `pydantic_core.ValidationError` (window_days not > 0) instead of returning a
 coerced model.
 
-- [ ] **Step 3: Add the CHECK constraints**
+- [x] **Step 3: Add the CHECK constraints**
 
 In `src/phoenix_scraper/storage.py`, in `_SCHEMA`, the `capabilities` table —
 change these two lines:
@@ -167,7 +167,7 @@ to
     status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'paused')),
 ```
 
-- [ ] **Step 4: Make `_capability_from_row` coerce**
+- [x] **Step 4: Make `_capability_from_row` coerce**
 
 In `src/phoenix_scraper/storage.py`, replace `_capability_from_row` with:
 ```python
@@ -191,19 +191,19 @@ def _capability_from_row(row: sqlite3.Row) -> Capability:
     )
 ```
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [x] **Step 5: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/test_capability_storage.py -q`
 Expected: PASS — `TestCapabilitySchemaGuards` green, `TestCapabilityCrud`
 unchanged (its fixtures only ever write valid `Capability` objects).
 
-- [ ] **Step 6: Lint + full suite**
+- [x] **Step 6: Lint + full suite**
 
 Run: `uv run ruff check src tests && uv run pytest -q`
 Expected: clean; green (770 → 774). `tests/test_ladder_api.py` /
 `test_capability_cli.py` unaffected — they round-trip valid capabilities only.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/phoenix_scraper/storage.py tests/test_capability_storage.py
@@ -219,7 +219,7 @@ git commit -m "fix: capabilities table rejects bad window_days/status; read path
 
 **Interfaces:** none — documentation only. Verification is grep + a read-through.
 
-- [ ] **Step 1: `CONTRACTS.md` — `load_capability` window_days**
+- [x] **Step 1: `CONTRACTS.md` — `load_capability` window_days**
 
 Find:
 ```
@@ -233,7 +233,7 @@ Replace the last comment line with:
     # window_days: absent/blank -> 30; <= 0 -> ValueError.
 ```
 
-- [ ] **Step 2: `CONTRACTS.md` — `run_capability_analysis` evaluate step + rung-2 count**
+- [x] **Step 2: `CONTRACTS.md` — `run_capability_analysis` evaluate step + rung-2 count**
 
 Find the `run_capability_analysis` doc comment:
 ```
@@ -260,7 +260,7 @@ Replace with:
     # informational. n_rung1_candidates and n_rung2_candidates are both set.
 ```
 
-- [ ] **Step 3: `CONTRACTS.md` — Rung-2 artifact filenames are a snake_case module**
+- [x] **Step 3: `CONTRACTS.md` — Rung-2 artifact filenames are a snake_case module**
 
 Find:
 ```
@@ -288,7 +288,7 @@ Replace with:
     #    falling back to (prompt, prompt) only when a cluster has no recorded members).
 ```
 
-- [ ] **Step 4: `README.md` — "Daily runs" mentions scoped validation**
+- [x] **Step 4: `README.md` — "Daily runs" mentions scoped validation**
 
 Find (in the "## Daily runs" section):
 ```
@@ -304,7 +304,7 @@ spans, runs the CODE validators over them so the quality panels reflect this
 capability, and records the run so consecutive runs can be diffed.
 ```
 
-- [ ] **Step 5: `README.md` — Rung-2 stub is runnable**
+- [x] **Step 5: `README.md` — Rung-2 stub is runnable**
 
 Find (in the "## The promotion ladder" section, the Rung 2 paragraph):
 ```
@@ -319,7 +319,7 @@ module) + a red, importable `test_<name>.py` parametrized over the real observed
 `(prompt, answer)` pairs, with
 ```
 
-- [ ] **Step 6: Verify**
+- [x] **Step 6: Verify**
 
 Run:
 ```bash
@@ -331,7 +331,7 @@ grep -n "importable .test_<name>.py." README.md
 Expected: the first prints `OK:`; the rest print one match each. Then read both
 diffs top to bottom once for tone/accuracy.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add CONTRACTS.md README.md
@@ -368,7 +368,7 @@ git commit -m "docs: sync CONTRACTS/README with scoped eval, real Rung-2 pairs, 
   `useScoped<Row[]>("qtypes", "/insights/questions", id)` — columns
   `question_type`, `count` (asks), `n_users`, `n_sessions`, `total_cost_usd`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `frontend/src/components/Panel.test.tsx`:
 ```tsx
@@ -464,14 +464,14 @@ and after the existing assertions in that test:
   expect(screen.getByText("why")).toBeInTheDocument();
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cd frontend && npm run test -- --run Panel ErrorBoundary DataTable CoverageSection`
 Expected: FAIL — `Panel.test` (no `panel-skeleton` testid, error has no `alert`
 role), `ErrorBoundary.test` (module does not exist), `DataTable.test` (no
 caption), `CoverageSection.test` ("Question types" not rendered).
 
-- [ ] **Step 3: Add the `Skeleton` primitive**
+- [x] **Step 3: Add the `Skeleton` primitive**
 
 Create `frontend/src/components/ui/skeleton.tsx`:
 ```tsx
@@ -483,7 +483,7 @@ export function Skeleton({ className, ...props }: React.HTMLAttributes<HTMLDivEl
 }
 ```
 
-- [ ] **Step 4: Skeleton + a11y in `Panel`**
+- [x] **Step 4: Skeleton + a11y in `Panel`**
 
 Replace `frontend/src/components/Panel.tsx` with:
 ```tsx
@@ -530,7 +530,7 @@ export function Panel({
 }
 ```
 
-- [ ] **Step 5: Add the `ErrorBoundary`**
+- [x] **Step 5: Add the `ErrorBoundary`**
 
 Create `frontend/src/components/ErrorBoundary.tsx`:
 ```tsx
@@ -566,7 +566,7 @@ export class ErrorBoundary extends Component<Props, State> {
 }
 ```
 
-- [ ] **Step 6: Wrap the router in `App.tsx`**
+- [x] **Step 6: Wrap the router in `App.tsx`**
 
 In `frontend/src/App.tsx`, add the import:
 ```tsx
@@ -588,7 +588,7 @@ and wrap the `<Suspense>` block:
         </main>
 ```
 
-- [ ] **Step 7: `DataTable` caption + `scope`**
+- [x] **Step 7: `DataTable` caption + `scope`**
 
 In `frontend/src/components/DataTable.tsx`, add `label` to the prop type and
 signature:
@@ -619,7 +619,7 @@ and give the header cell `scope`:
 ```
 (The empty-rows early return stays as is — `<p>No rows.</p>`.)
 
-- [ ] **Step 8: "Question types" panel in `CoverageSection`**
+- [x] **Step 8: "Question types" panel in `CoverageSection`**
 
 In `frontend/src/routes/analytics/CoverageSection.tsx`:
 - extend the format import:
@@ -653,7 +653,7 @@ In `frontend/src/routes/analytics/CoverageSection.tsx`:
   ```
   (`Row` is already imported via `import { type Row, useScoped } from "@/api/hooks";`.)
 
-- [ ] **Step 9: Run the tests to verify they pass**
+- [x] **Step 9: Run the tests to verify they pass**
 
 Run: `cd frontend && npm run test -- --run`
 Expected: PASS — 24 → 29 (3 Panel + 1 ErrorBoundary + 1 DataTable; the
@@ -661,20 +661,20 @@ CoverageSection test gains assertions, not a new test). `Analytics.test.tsx`
 and the other section tests still pass — `Panel`'s public contract is unchanged,
 the skeleton only shows while `isLoading`.
 
-- [ ] **Step 10: Type-check, lint, build**
+- [x] **Step 10: Type-check, lint, build**
 
 Run: `cd frontend && npx tsc --noEmit && npm run lint && npm run build`
 Expected: all clean. (If `tsc` flags `React.HTMLAttributes` in `skeleton.tsx`,
 confirm `import * as React from "react"` is present — it is in the snippet.)
 
-- [ ] **Step 11: Playwright smoke still green**
+- [x] **Step 11: Playwright smoke still green**
 
 Run: `cd frontend && npm run test:e2e` (or `make ui-e2e` from the repo root —
 starts the API on :8000 + Vite, runs `e2e/smoke.spec.ts`).
 Expected: PASS — the smoke drives the capability → run → candidate flow; the
 error boundary and skeletons don't change any of those paths.
 
-- [ ] **Step 12: Commit**
+- [x] **Step 12: Commit**
 
 ```bash
 git add frontend/src/components/ui/skeleton.tsx frontend/src/components/ErrorBoundary.tsx \
