@@ -838,6 +838,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/capabilities/{cap_id}/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Run Jobs */
+        get: operations["list_run_jobs_capabilities__cap_id__jobs_get"];
+        put?: never;
+        /** Enqueue Run Job */
+        post: operations["enqueue_run_job_capabilities__cap_id__jobs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/capabilities/{cap_id}/jobs/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One Run Job */
+        get: operations["one_run_job_capabilities__cap_id__jobs__job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/capabilities/{cap_id}/candidates": {
         parameters: {
             query?: never;
@@ -1005,6 +1040,18 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** JobRequest */
+        JobRequest: {
+            /** From */
+            from?: string | null;
+            /** To */
+            to?: string | null;
+            /**
+             * Replace Today
+             * @default false
+             */
+            replace_today: boolean;
         };
         /** RunRequest */
         RunRequest: {
@@ -2754,6 +2801,110 @@ export interface operations {
             path: {
                 cap_id: string;
                 run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_run_jobs_capabilities__cap_id__jobs_get: {
+        parameters: {
+            query?: {
+                fmt?: string;
+            };
+            header?: never;
+            path: {
+                cap_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    enqueue_run_job_capabilities__cap_id__jobs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                cap_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JobRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    one_run_job_capabilities__cap_id__jobs__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                cap_id: string;
+                job_id: string;
             };
             cookie?: never;
         };
