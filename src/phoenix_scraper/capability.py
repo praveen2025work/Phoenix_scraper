@@ -83,12 +83,20 @@ def load_capability(root: Path, cap_id: str) -> Capability:
             f"{path}: 'id: {raw['id']}' does not match its directory name {cap_id!r}"
         )
     status = raw.get("status")
+    raw_window = raw.get("window_days")
+    window_days = (
+        30 if raw_window is None or str(raw_window).strip() == "" else int(raw_window)
+    )
+    if window_days <= 0:
+        raise ValueError(
+            f"{path}: window_days must be a positive integer, got {window_days}"
+        )
     return Capability(
         id=validate_id(cap_id),
         name=str(raw.get("name") or cap_id),
         description=str(raw.get("description") or ""),
         filter=CapabilityFilter(**{k: _clean(filter_raw.get(k)) for k in _FILTER_KEYS}),
-        window_days=int(raw.get("window_days") or 30),
+        window_days=window_days,
         thresholds={str(k): float(v) for k, v in thresholds_raw.items() if v is not None},
         status=status if status in _STATUSES else "active",
     )

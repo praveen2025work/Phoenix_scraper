@@ -168,6 +168,16 @@ class TestLoadDump:
         assert cap.window_days == 30
         assert cap.thresholds == {}
 
+    def test_window_days_zero_is_rejected(self, tmp_path: Path) -> None:
+        self._write(tmp_path, "z", "id: z\nname: Z\nwindow_days: 0\n")
+        with pytest.raises(ValueError, match="window_days"):
+            cap_mod.load_capability(tmp_path, "z")
+
+    def test_window_days_negative_is_rejected(self, tmp_path: Path) -> None:
+        self._write(tmp_path, "n", "id: n\nname: N\nwindow_days: -5\n")
+        with pytest.raises(ValueError, match="window_days"):
+            cap_mod.load_capability(tmp_path, "n")
+
 
 class TestScaffold:
     def test_creates_tree_and_yaml(self, tmp_path: Path) -> None:

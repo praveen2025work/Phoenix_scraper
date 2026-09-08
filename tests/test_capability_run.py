@@ -100,6 +100,32 @@ class TestRunCapabilityAnalysis:
         assert result.run.status == "partial"
         assert "scrape failed for pnl-agent" in result.run.notes
 
+    def test_run_evaluates_in_scope_spans(self, seeded_store, fobo_capability) -> None:
+        from phoenix_scraper.models import QueryFilters
+        settings, cap = fobo_capability
+        assert seeded_store.evaluations_frame(
+            QueryFilters(workflow_stage="fobo_recon")
+        ).empty
+        run_capability_analysis(seeded_store, settings, cap, now=NOW)
+        evals = seeded_store.evaluations_frame(QueryFilters(workflow_stage="fobo_recon"))
+        assert not evals.empty
+        assert set(evals["source"]) == {"local"}
+
+    def test_evaluation_is_idempotent_across_two_runs(
+        self, seeded_store, fobo_capability
+    ) -> None:
+        from phoenix_scraper.models import QueryFilters
+        settings, cap = fobo_capability
+        run_capability_analysis(seeded_store, settings, cap, now=NOW - timedelta(days=1))
+        n1 = len(
+            seeded_store.evaluations_frame(QueryFilters(workflow_stage="fobo_recon"))
+        )
+        run_capability_analysis(seeded_store, settings, cap, now=NOW)
+        n2 = len(
+            seeded_store.evaluations_frame(QueryFilters(workflow_stage="fobo_recon"))
+        )
+        assert n1 == n2  # re-run rewrites the same rows, does not stack
+
     def test_capability_skills_dir_is_scanned(self, seeded_store, fobo_capability) -> None:
         settings, cap = fobo_capability
         skill_md = (settings.capabilities_dir / "fobo" / "skills" / "recon.md")

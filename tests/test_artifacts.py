@@ -179,3 +179,47 @@ class TestRung2Artifacts:
         assert all(Path(p).exists() for p in result.paths)
         assert any(p.endswith(".py") for p in result.paths)
         assert seeded_store.get_candidate(cand.candidate_id).status == "promoted"
+
+    def test_promote_deterministic_uses_real_prompt_answer_pairs(
+        self, tmp_store, tmp_path, settings
+    ) -> None:
+        from datetime import timedelta as _td
+
+        from phoenix_scraper.capability_run import run_capability_analysis
+        from phoenix_scraper.models import SpanRecord
+        root = tmp_path / "caps"
+        cap = cap_mod.scaffold_capability(
+            root, "fobo", cap_filter=CapabilityFilter(workflow_stage="fobo_recon")
+        )
+        s = settings.model_copy(update={"capabilities_dir": root})
+        base = datetime(2026, 7, 20, 9, tzinfo=UTC)
+        tmp_store.upsert_spans([
+            SpanRecord(
+                span_id=f"det-{i:03d}", trace_id=f"det-t{i}", session_id=f"det-s{i}",
+                project="pnl-agent", span_kind="LLM", start_time=base + _td(minutes=i),
+                workflow_stage="fobo_recon", asset_class="fx", user_id=f"analyst-{i % 4}",
+                input_text=f"why is there a recon break of {100 + i}k on EURUSD",
+                output_text="The FX break is caused by an unsettled trade; post an adjustment.",
+            )
+            for i in range(14)
+        ])
+        run_capability_analysis(
+            tmp_store, s, cap, now=datetime(2026, 7, 21, 12, tzinfo=UTC)
+        )
+        d_cands = tmp_store.candidates_frame("fobo", rung="deterministic")
+        cid = next(
+            row["candidate_id"]
+            for row in d_cands.to_dict("records")
+            if "recon break of" in str(row["title"])
+        )
+        cand = tmp_store.get_candidate(cid).model_copy(update={"status": "accepted"})
+        tmp_store.upsert_candidate(cand)
+
+        result = artifacts.promote_candidate(
+            tmp_store, cap, cand, now=TS, actor="a", settings=s
+        )
+        test_file = next(
+            b for p, b in result.contents if p.rsplit("/", 1)[-1].startswith("test_")
+        )
+        assert "The FX break is caused by an unsettled trade" in test_file
+        assert "why is there a recon break of" in test_file

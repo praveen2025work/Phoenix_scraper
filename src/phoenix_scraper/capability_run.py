@@ -29,6 +29,7 @@ from .capability import (
 from .cluster import build_clusters
 from .config import Settings
 from .costs import compute_span_costs, load_pricing
+from .evaluations import evaluate_spans
 from .insights import cluster_efficiency
 from .ladder import detect_rung1, detect_rung2, resolve_thresholds
 from .ladder_run import update_rung1, update_rung2
@@ -160,6 +161,13 @@ def run_capability_analysis(
         if new_costs:
             store.update_span_costs(new_costs)
             in_scope = store.spans_frame(filters)
+
+    if settings.evaluate_on_analyze and not in_scope.empty:
+        try:
+            store.upsert_evaluations(evaluate_spans(in_scope, settings, now=started_at))
+        except Exception as exc:  # noqa: BLE001 — a broken checker must not abort the run
+            logger.warning("scoped evaluation failed for %s: %s", capability.id, exc)
+            run_notes.append(f"validation skipped: {exc}")
 
     clusters = build_clusters(in_scope, fuzz_threshold=settings.cluster_fuzz_threshold)
     skills = load_capability_skills(settings, capability)
