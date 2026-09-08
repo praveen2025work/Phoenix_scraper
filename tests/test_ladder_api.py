@@ -38,6 +38,9 @@ class TestBoard:
         board = client.get("/capabilities/plex/candidates").json()
         assert isinstance(board, list) and board
         assert board[0]["candidate_id"].startswith("plex:")
+        # json fields are parsed for the SPA, not handed back as *_json strings
+        assert isinstance(board[0]["current_evidence"], dict)
+        assert "current_evidence_json" not in board[0]
 
     def test_board_filters_by_rung(self, client: TestClient) -> None:
         r = client.get("/capabilities/plex/candidates?rung=deterministic")

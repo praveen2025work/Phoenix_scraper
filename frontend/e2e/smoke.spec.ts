@@ -1,7 +1,11 @@
 import { expect, test } from "@playwright/test";
 
+const API = "http://localhost:8000";
+
 test("create a capability, run it, see the board", async ({ page, request }) => {
-  await request.post("http://localhost:8000/demo/seed");
+  await request.post(`${API}/demo/seed`);
+  // idempotent setup: start from a clean 'plex' capability.
+  await request.delete(`${API}/capabilities/plex?purge=true`);
 
   await page.goto("/");
   // API-key gate: submit blank (server runs open on localhost).
@@ -14,7 +18,10 @@ test("create a capability, run it, see the board", async ({ page, request }) => 
 
   await page.getByRole("link", { name: "plex" }).first().click();
   await expect(page.getByRole("heading", { name: /\/ plex/i })).toBeVisible();
+  await expect(page.getByText("No runs yet.")).toBeVisible();
 
   await page.getByRole("button", { name: /run now/i }).click();
-  await expect(page.getByText(/in scope/i)).toBeVisible({ timeout: 20_000 });
+  // the run-summary panel replaces "No runs yet." once the run lands
+  await expect(page.getByText("No runs yet.")).toBeHidden({ timeout: 30_000 });
+  await expect(page.getByText(/in scope/i)).toBeVisible();
 });

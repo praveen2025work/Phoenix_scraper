@@ -5,6 +5,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from . import artifacts
@@ -43,7 +44,16 @@ def ladder_router(settings: Settings) -> APIRouter:
         from .api import _frame_response
         with _store() as store:
             df = store.candidates_frame(cap_id, rung=rung, status=status)
-        return _frame_response(df, fmt, "candidates")
+        if fmt == "csv":
+            return _frame_response(df, fmt, "candidates")
+        # JSON: hand back candidate objects (json fields parsed), not raw columns.
+        rows = json.loads(df.to_json(orient="records"))
+        for row in rows:
+            row["current_evidence"] = json.loads(row.pop("current_evidence_json", "{}") or "{}")
+            row["promoted_artifact_paths"] = json.loads(
+                row.pop("promoted_artifact_paths_json", "[]") or "[]"
+            )
+        return JSONResponse(content=rows)
 
     @router.get("/candidates/{cid}")
     def candidate_detail(cid: str) -> dict:
