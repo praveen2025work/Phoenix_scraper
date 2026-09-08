@@ -433,7 +433,7 @@ def serve(
         )
         raise typer.Exit(code=1)
     typer.echo(f"Serving on http://{host}:{port} (db: {settings.db_path})")
-    uvicorn.run(create_app(settings), host=host, port=port)
+    uvicorn.run(create_app(settings, run_jobs=True), host=host, port=port)
 
 
 UiDistOpt = typer.Option(None, "--dist", help="Path to the built SPA (default: frontend/dist).")
