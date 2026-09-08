@@ -1,35 +1,23 @@
-# local data store and exports
-data/
+# --- backend (Python) ---------------------------------------------------------
+backend/.venv/
+backend/data/            # local SQLite store + exports (runtime, cwd-relative)
+backend/.pytest_cache/
+backend/.ruff_cache/
+backend/.coverage
+backend/htmlcov/
+backend/*.egg-info/
+backend/certs/*.pem      # corporate CA certs stay local (force-add to version yours)
+backend/**/__pycache__/
+*.pyc
 *.db
 *.sqlite3
+*.db-wal
+*.db-shm
 
-# python
-__pycache__/
-*.pyc
-.venv/
-*.egg-info/
-.pytest_cache/
-.ruff_cache/
-.coverage
-htmlcov/
+# backend/.env IS tracked (placeholders only); protect real values with:
+#   git update-index --skip-worktree backend/.env
 
-# env — .env IS tracked (placeholders only); protect real values with:
-#   git update-index --skip-worktree .env
-
-# corporate CA certs stay local by default (force-add if you want yours versioned)
-certs/*.pem
-
-# subagent-driven-development scratch (ledger, briefs, reports)
-.superpowers/
-
-# os
-.DS_Store
-.gstack/
-
-# browser tooling artifacts
-.playwright-mcp/
-
-# frontend
+# --- frontend (npm) ----------------------------------------------------------
 frontend/node_modules/
 frontend/dist/
 frontend/coverage/
@@ -39,3 +27,9 @@ frontend/.e2e/
 frontend/*.tsbuildinfo
 frontend/.e2e-api.log
 frontend/.e2e-vite.log
+
+# --- tooling / OS ------------------------------------------------------------
+.superpowers/            # subagent-driven-development scratch
+.playwright-mcp/
+.DS_Store
+.gstack/
