@@ -6,12 +6,14 @@ already written — read them first, do not modify them. All functions return NE
 
 ## normalize.py
 ```python
-def normalize_prompt(text: str) -> str
+def mask_volatile(text: str) -> str
     # casefold, collapse whitespace, mask volatile tokens with placeholders:
     # numbers/amounts -> <num>, dates -> <date>, currency pairs (EURUSD, EUR/USD) -> <ccy>,
-    # ISO currency codes -> <ccy>, ids like ADJ-1234 / trade refs -> <id>.
+    # ISO currency codes -> <ccy>, ids like ADJ-1234 / trade refs -> <id>, book codes -> <book>.
+    # The one masker shared by prompt_signature (input) and Rung 2 (answer text).
+def normalize_prompt(text: str) -> str      # backwards-compatible alias for mask_volatile
 def prompt_signature(text: str) -> str
-    # normalize_prompt + strip punctuation; the cluster grouping key. "" for empty input.
+    # mask_volatile + strip punctuation; the cluster grouping key. "" for empty input.
 ```
 
 ## cluster.py
@@ -126,13 +128,33 @@ def detect_rung1(clusters, matches, annotated, efficiency, *, thresholds) -> lis
     # score = gap strength; met_evidence_bar = n_users>=rung1_min_users AND count>=rung1_min_count.
 def readiness_met(recent_observations, *, sustained_runs, capability_run_count) -> bool
 def is_material_change(candidate, observation, *, thresholds) -> bool
+def detect_rung2(clusters, matches, in_scope, *, thresholds) -> list[Rung2Signal]
+    # determinism.score_cluster per cluster; stamps met_evidence_bar
+    # (eligible AND determinism_score >= rung2_determinism_score).
 def next_status(candidate, observation, recent_observations, *, run_ordinal,
-        capability_run_count, thresholds) -> LadderTransition        # observed this run
+        capability_run_count, thresholds, eligible=True, rung="skill") -> LadderTransition
+    # observed this run. eligible=False + new/accumulating -> insufficient_data;
+    # insufficient_data + eligible -> accumulating. rung picks the sustained-runs
+    # threshold (skill: rung1_sustained_runs, deterministic: rung2_sustained_runs).
 def advance_unobserved(candidate, *, run_ordinal, last_seen_ordinal,
         history_limit) -> LadderTransition | None                    # not observed this run
 ```
 
-## ladder_run.py  (store-touching: persist a run's Rung-1 candidates)
+## determinism.py  (pure: the Rung-2 lexical determinism signal; no LLM)
+```python
+# mask_volatile now lives in normalize.py — shared with prompt_signature.
+def build_templates(answers, *, fuzz_threshold) -> list[(masked_rep, count)]
+def template_concentration(answers, *, fuzz_threshold) -> (concentration, k)   # k covers >=90%
+def route_invariance(flows) -> float                                          # modal / n
+def output_self_similarity(answers, *, sample=200, max_pairs=5000) -> float
+def slot_stability(pairs, templates, *, fuzz_threshold) -> float
+def blend_determinism(signals: DeterminismSignals) -> float   # 0.4/0.3/0.2/0.1, route N/A renormalises
+def score_cluster(cluster_id, title, signature, matched_skill, member_spans, *,
+        min_answer_spans, fuzz_threshold) -> Rung2Signal
+    # answer span = LLM member span with non-empty output_text; < min -> eligible=False, score=0.
+```
+
+## ladder_run.py  (store-touching: persist a run's Rung-1 / Rung-2 candidates)
 ```python
 def update_rung1(store, capability, *, run_id, run_ordinal, capability_run_count,
         observed_at, signals, thresholds, history_limit) -> Rung1RunOutcome
@@ -140,6 +162,11 @@ def update_rung1(store, capability, *, run_id, run_ordinal, capability_run_count
     # flag), run next_status, persist status/ready_at + auto 'reopen' decision, prune
     # observations to history_limit; then advance_unobserved for every other
     # rung-'skill' candidate.
+def update_rung2(store, capability, *, run_id, run_ordinal, capability_run_count,
+        observed_at, signals, thresholds, history_limit) -> Rung2RunOutcome
+    # parallel to update_rung1: <cap>:d:<cluster> ids, rung='deterministic',
+    # creation floor determinism_score >= 0.5, insufficient_data holding state,
+    # "Rung 2: N clusters skipped" note.
 ```
 
 ## artifacts.py  (render / write the ladder's draft artifacts; never edits hand-authored files)
@@ -150,10 +177,14 @@ def render_new_skill_md(candidate, *, capability, member_prompts, today) -> (fil
     # scaffold comment + "## When to use" + "## Procedure\n1. TODO".
 def render_strengthen_block(candidate, skill, *, member_prompts, member_signatures) -> (target_path, yaml_block)
     # reuses skill_coverage._yaml_block / _suggested_keywords; writes nothing.
+def render_rung2_stub(candidate, *, latest_observation_signals, pairs) -> [(filename, body) x3]
+    # <name>.py (TEMPLATES, DECISION_TABLE when slot_stability>=0.8, handle raises
+    # NotImplementedError), test_<name>.py (parametrized over pairs, ships red), <name>.md.
 def promote_candidate(store, capability, candidate, *, now, actor, settings,
         dry_run=False) -> PromoteResult
-    # new_skill -> writes capabilities/<cap>/skills/<name>.md (dedup-collided);
-    # strengthen_skill -> returns the paste block + target path, no file.
+    # rung 'skill' new_skill -> writes capabilities/<cap>/skills/<name>.md (dedup);
+    # strengthen_skill -> returns the paste block + target path, no file;
+    # rung 'deterministic' -> writes deterministic/<name>.{py,md} + test_<name>.py.
     # Records a 'promote' decision; sets status='promoted' + promoted_artifact_paths.
 ```
 
@@ -164,6 +195,11 @@ New Store methods (Phase C): `upsert_candidate` / `get_candidate` /
 `record_candidate_decision_now` / `candidate_decisions_frame`;
 `capability_run_ordinal(cap, run_id=None)`. New tables: `candidates`,
 `candidate_observations`, `candidate_decisions`.
+
+New `Settings` (Phase C/D): `rung1_min_users` (3), `rung1_min_count` (15),
+`rung1_sustained_runs` (5), `material_change_count_factor` (1.5),
+`material_change_users_delta` (2), `rung2_min_answer_spans` (10),
+`rung2_determinism_score` (0.8), `rung2_sustained_runs` (3).
 
 ## taxonomy.py
 ```python
@@ -332,7 +368,7 @@ report, export (--what spans|clusters|matches|proposals|sessions|evaluations|
 coverage|uncovered --fmt csv|json|parquet + filter options), serve,
 run (--capability | --all, --from, --to, --replace-today),
 capability (new | list | show | sync | runs),
-candidates (<id> --rung --status --all),
+candidates (<id> --rung --status --all), candidate (<cid>),
 decide (<cid> --action accept|reject|snooze|reopen --actor --note --snooze-runs),
 promote (<cid> --accept --dry-run).
 API routes: GET /health, POST /demo/seed, POST /scrape/run, POST /analyze/run,

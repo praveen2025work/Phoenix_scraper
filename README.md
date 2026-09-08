@@ -516,7 +516,21 @@ for a `new_skill`, or prints the paste-ready `example_prompts` / `keywords`
 block for a `strengthen_skill`. pheonix never edits a hand-authored file. A
 rejected candidate reopens automatically only on a **material change** in
 volume (`material_change_count_factor` / `material_change_users_delta`).
-Rung 2 (make it deterministic) is the next phase.
+
+**Rung 2 — make it deterministic.** The same run scores every eligible cluster
+(`rung2_min_answer_spans` answer spans, default 10) on four lexical signals — do
+the answers collapse to a few templates, does the agent take the same route, are
+the answers similar, does each input phrasing map to one template — blended into
+a `determinism_score`. At `rung2_determinism_score` (0.8) sustained over
+`rung2_sustained_runs` (3) runs the `<cap>:d:<cluster>` candidate is `ready`;
+`promote` writes a `deterministic/<name>.py` stub + a red `test_<name>.py` with
+the observed cases + a `<name>.md` write-up. A low score is a real "keep the
+model" answer, not a failure.
+
+```bash
+pheonix candidates fobo --rung deterministic
+pheonix candidate fobo:d:abc123          # signals, templates, trend, decisions
+```
 
 ## Dashboard UI
 
