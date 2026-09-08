@@ -492,6 +492,32 @@ Schedule `pheonix run --all` with cron or your scheduler — there is no built-i
 daemon. Offline or with Phoenix unreachable, the run still executes against the
 stored spans and is marked `partial`.
 
+## The promotion ladder
+
+Each `pheonix run` also updates the capability's **Rung-1 candidates** — an
+in-scope prompt cluster that recurs across users and either has no skill
+(`new_skill`) or matched one that doesn't demonstrate it (`strengthen_skill`).
+A candidate is created once it clears a low floor, gathers an evidence trend
+run over run, and reaches `ready` after `rung1_sustained_runs` (default 5)
+consecutive runs meeting the bar (`rung1_min_users` users AND `rung1_min_count`
+asks).
+
+```bash
+pheonix candidates fobo                       # the board, active candidates
+pheonix candidates fobo --all                 # include rejected / snoozed / stale
+pheonix decide fobo:s:abc123 --action reject --actor you --note "covered by X"
+pheonix decide fobo:s:abc123 --action snooze --snooze-runs 5 --actor you
+pheonix promote fobo:s:abc123 --actor you     # writes capabilities/fobo/skills/<name>.md
+pheonix promote fobo:s:abc123 --dry-run       # show the draft without writing
+```
+
+`promote` writes a **draft** `skills/<name>.md` (frontmatter `status: draft`)
+for a `new_skill`, or prints the paste-ready `example_prompts` / `keywords`
+block for a `strengthen_skill`. pheonix never edits a hand-authored file. A
+rejected candidate reopens automatically only on a **material change** in
+volume (`material_change_count_factor` / `material_change_users_delta`).
+Rung 2 (make it deterministic) is the next phase.
+
 ## Dashboard UI
 
 `pheonix serve` and open **http://127.0.0.1:8000/** — a self-contained dashboard
