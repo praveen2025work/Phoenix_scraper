@@ -270,6 +270,23 @@ CREATE TABLE IF NOT EXISTS candidate_decisions (
     created_at   TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_cand_decisions ON candidate_decisions (candidate_id, id);
+
+CREATE TABLE IF NOT EXISTS capability_jobs (
+    job_id        TEXT PRIMARY KEY,
+    capability_id TEXT NOT NULL,
+    state         TEXT NOT NULL DEFAULT 'queued'
+                  CHECK (state IN ('queued', 'running', 'done', 'error')),
+    params_json   TEXT NOT NULL DEFAULT '{}',
+    run_id        TEXT,
+    error         TEXT,
+    enqueued_at   TEXT NOT NULL,
+    started_at    TEXT,
+    finished_at   TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_capability_jobs_cap
+    ON capability_jobs (capability_id, enqueued_at);
+CREATE INDEX IF NOT EXISTS idx_capability_jobs_state
+    ON capability_jobs (state, enqueued_at);
 """
 
 
@@ -279,13 +296,21 @@ class Store:
     def __init__(self, db_path: Path | str):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(self.db_path)
+        self._conn = sqlite3.connect(self.db_path, timeout=5.0)
         self._conn.row_factory = sqlite3.Row
+        self._conn.execute("PRAGMA journal_mode = WAL")
+        self._conn.execute("PRAGMA busy_timeout = 5000")
         self._conn.executescript(_SCHEMA)
         self._conn.commit()
 
     def close(self) -> None:
         self._conn.close()
+
+    def __enter__(self) -> "Store":
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        self.close()
 
     # ---- spans -------------------------------------------------------------
     def upsert_spans(self, records: Iterable[SpanRecord]) -> int:
@@ -644,6 +669,69 @@ class Store:
         self._conn.commit()
         return cur.rowcount > 0
 
+    # ---- capability jobs (async run queue) -----------------------------------
+    def enqueue_job(self, job_id: str, capability_id: str, params: dict) -> None:
+        self._conn.execute(
+            "INSERT INTO capability_jobs "
+            "(job_id, capability_id, state, params_json, enqueued_at) "
+            "VALUES (?,?,'queued',?,?)",
+            (job_id, capability_id, json.dumps(params), _iso(datetime.now(UTC))),
+        )
+        self._conn.commit()
+
+    def get_job(self, job_id: str) -> dict | None:
+        row = self._conn.execute(
+            "SELECT * FROM capability_jobs WHERE job_id = ?", (job_id,)
+        ).fetchone()
+        return _job_from_row(row) if row is not None else None
+
+    def capability_jobs_frame(self, capability_id: str, limit: int = 50) -> pd.DataFrame:
+        return pd.read_sql_query(
+            "SELECT * FROM capability_jobs WHERE capability_id = ? "
+            "ORDER BY enqueued_at DESC LIMIT ?",
+            self._conn, params=[capability_id, limit],
+        )
+
+    def claim_next_job(self) -> dict | None:
+        row = self._conn.execute(
+            "SELECT * FROM capability_jobs WHERE state = 'queued' "
+            "ORDER BY enqueued_at LIMIT 1"
+        ).fetchone()
+        if row is None:
+            return None
+        now = _iso(datetime.now(UTC))
+        self._conn.execute(
+            "UPDATE capability_jobs SET state = 'running', started_at = ? "
+            "WHERE job_id = ?",
+            (now, row["job_id"]),
+        )
+        self._conn.commit()
+        job = _job_from_row(row)
+        job["state"] = "running"
+        job["started_at"] = now
+        return job
+
+    def finish_job(
+        self, job_id: str, *, run_id: str | None, state: str,
+        error: str | None = None,
+    ) -> None:
+        self._conn.execute(
+            "UPDATE capability_jobs SET state = ?, run_id = ?, error = ?, "
+            "finished_at = ? WHERE job_id = ?",
+            (state, run_id, error, _iso(datetime.now(UTC)), job_id),
+        )
+        self._conn.commit()
+
+    def reset_orphaned_jobs(self) -> int:
+        cur = self._conn.execute(
+            "UPDATE capability_jobs SET state = 'error', "
+            "error = 'interrupted by restart', finished_at = ? "
+            "WHERE state IN ('queued', 'running')",
+            (_iso(datetime.now(UTC)),),
+        )
+        self._conn.commit()
+        return cur.rowcount
+
     # ---- capability runs ------------------------------------------------------
     def span_count(self) -> int:
         return self._count("spans")
@@ -964,6 +1052,20 @@ def _capability_from_row(row: sqlite3.Row) -> Capability:
         thresholds=json.loads(row["thresholds_json"]),
         status=status if status in ("active", "paused") else "active",
     )
+
+
+def _job_from_row(row: sqlite3.Row) -> dict:
+    return {
+        "job_id": row["job_id"],
+        "capability_id": row["capability_id"],
+        "state": row["state"],
+        "params": json.loads(row["params_json"]),
+        "run_id": row["run_id"],
+        "error": row["error"],
+        "enqueued_at": row["enqueued_at"],
+        "started_at": row["started_at"],
+        "finished_at": row["finished_at"],
+    }
 
 
 def _dt_or_none(value: str | None) -> datetime | None:
