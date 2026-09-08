@@ -121,7 +121,7 @@ is explicitly out of v1 (§16.2) — the `signals` dict + blend is the seam.
   `normalize_prompt` behaviour). `normalize_prompt` stays as a name that calls
   `mask_volatile` so every existing import keeps working.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `tests/test_normalize.py`:
 
@@ -142,12 +142,12 @@ def test_mask_volatile_masks_output_style_text() -> None:
     assert a == b  # same template once the volatile bits are masked
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_normalize.py -q -k mask_volatile`
 Expected: FAIL — `ImportError: cannot import name 'mask_volatile'`.
 
-- [ ] **Step 3: Extract**
+- [x] **Step 3: Extract**
 
 In `src/phoenix_scraper/normalize.py`, rename the current `normalize_prompt`
 function body to `mask_volatile`, then re-add `normalize_prompt` as an alias:
@@ -177,17 +177,17 @@ def normalize_prompt(text: str) -> str:
     return mask_volatile(text)
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/test_normalize.py -q`
 Expected: PASS (the whole file — `normalize_prompt` behaviour is unchanged).
 
-- [ ] **Step 5: Lint + full suite**
+- [x] **Step 5: Lint + full suite**
 
 Run: `uv run ruff check src tests && uv run pytest -q`
 Expected: clean; green (702 → 704).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/phoenix_scraper/normalize.py tests/test_normalize.py
@@ -227,7 +227,7 @@ git commit -m "refactor: extract normalize.mask_volatile (shared input/output ma
     output_text)`; group by masked input signature; per group the modal template
     share; frequency-weighted mean.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/test_determinism.py`:
 
@@ -307,12 +307,12 @@ class TestSlotStability:
         assert d.slot_stability(pairs, templates, fuzz_threshold=FUZZ) == 0.5
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_determinism.py -q`
 Expected: FAIL — `ModuleNotFoundError: No module named 'phoenix_scraper.determinism'`.
 
-- [ ] **Step 3: Create `determinism.py` (sub-signals only)**
+- [x] **Step 3: Create `determinism.py` (sub-signals only)**
 
 Create `src/phoenix_scraper/determinism.py`:
 
@@ -444,7 +444,7 @@ def slot_stability(
     return weighted / total if total else 0.0
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/test_determinism.py -q`
 Expected: PASS. (If `test_two_templates_scores_075`'s `k == 1` assertion is
@@ -452,14 +452,14 @@ wrong — 16/20 = 0.80 < 0.90 so the 2nd template IS needed, `k == 2` — fix th
 assertion to `k == 2` and drop the stale comment. The test is the spec check;
 make it match `_COVER_TARGET`.)
 
-- [ ] **Step 5: File length + lint**
+- [x] **Step 5: File length + lint**
 
 Run: `wc -l src/phoenix_scraper/determinism.py && uv run ruff check src/phoenix_scraper/determinism.py tests/test_determinism.py`
 Expected: under 400; ruff clean. (`_flow_signature` is a private import from
 `insights_llm` — a deliberate reuse, mirroring `artifacts.py` importing
 `skill_coverage._yaml_block`.)
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/phoenix_scraper/determinism.py tests/test_determinism.py
@@ -492,7 +492,7 @@ git commit -m "feat: determinism.py — the four Rung-2 sub-signals"
     When `n_answer_spans < min_answer_spans`: `eligible = False`,
     `determinism_score = 0.0`, signals still computed on what exists (or zeros).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `tests/test_determinism.py`:
 
@@ -557,12 +557,12 @@ class TestBlendAndScore:
         assert sig.signals.route_invariance == 1.0
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_determinism.py -q -k "Blend"`
 Expected: FAIL — `AttributeError: module 'phoenix_scraper.determinism' has no attribute 'blend_determinism'`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Append to `src/phoenix_scraper/determinism.py`. Add `import pandas as pd` to the
 imports.
@@ -666,17 +666,17 @@ def score_cluster(
     )
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/test_determinism.py -q`
 Expected: PASS.
 
-- [ ] **Step 5: File length + lint**
+- [x] **Step 5: File length + lint**
 
 Run: `wc -l src/phoenix_scraper/determinism.py && uv run ruff check src/phoenix_scraper/determinism.py tests/test_determinism.py`
 Expected: under 400; ruff clean.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/phoenix_scraper/determinism.py tests/test_determinism.py
@@ -708,7 +708,7 @@ git commit -m "feat: determinism.score_cluster — blend + eligibility gate"
     `insufficient_data` candidate that is eligible again → `accumulating` and
     the normal machine resumes.
 
-- [ ] **Step 1: Settings fields**
+- [x] **Step 1: Settings fields**
 
 In `src/phoenix_scraper/config.py`, after the `material_change_users_delta` line:
 
@@ -718,7 +718,7 @@ In `src/phoenix_scraper/config.py`, after the `material_change_users_delta` line
     rung2_sustained_runs: int = 3  # consecutive runs meeting the bar -> ready
 ```
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 Append to `tests/test_ladder.py`:
 
@@ -788,13 +788,13 @@ class TestNextStatusRung2:
         assert tr.status == "insufficient_data"
 ```
 
-- [ ] **Step 3: Run test to verify it fails**
+- [x] **Step 3: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_ladder.py -q -k "Rung2 or insufficient"`
 Expected: FAIL — `AttributeError` on `detect_rung2` / `TypeError` on the
 `eligible` kwarg.
 
-- [ ] **Step 4: Extend `LadderThresholds` + `resolve_thresholds`**
+- [x] **Step 4: Extend `LadderThresholds` + `resolve_thresholds`**
 
 In `src/phoenix_scraper/ladder.py`, add to `LadderThresholds`:
 ```python
@@ -817,7 +817,7 @@ and to `resolve_thresholds`'s `LadderThresholds(...)` call:
         cluster_fuzz_threshold=settings.cluster_fuzz_threshold,
 ```
 
-- [ ] **Step 5: Add `detect_rung2`**
+- [x] **Step 5: Add `detect_rung2`**
 
 In `ladder.py`, add `from . import determinism` at the top of the file (module
 import to avoid a name clash with the `Rung1Signal` etc.), then after
@@ -858,7 +858,7 @@ Add `met_evidence_bar: bool = False` to `determinism.Rung2Signal` (Task 3's
 model) — update Task 3's model class and re-run `tests/test_determinism.py` to
 confirm still green (the default keeps existing tests valid).
 
-- [ ] **Step 6: Extend `next_status` with `eligible`**
+- [x] **Step 6: Extend `next_status` with `eligible`**
 
 Change the `next_status` signature to add `eligible: bool = True` (keyword), and
 insert the `insufficient_data` handling right after the `_HUMAN_TERMINAL` check
@@ -879,18 +879,18 @@ and before `if status == "stale"`:
         status = "accumulating"
 ```
 
-- [ ] **Step 7: Run the tests to verify they pass**
+- [x] **Step 7: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/test_ladder.py tests/test_determinism.py -q`
 Expected: PASS (whole files — Rung-1 `next_status` callers still pass because
 `eligible` defaults to True).
 
-- [ ] **Step 8: Lint + full suite**
+- [x] **Step 8: Lint + full suite**
 
 Run: `uv run ruff check src tests && uv run pytest -q`
 Expected: clean; green (~706 → ~717).
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add src/phoenix_scraper/config.py src/phoenix_scraper/ladder.py \
@@ -928,7 +928,7 @@ git commit -m "feat: ladder Rung-2 thresholds + detect_rung2 + insufficient_data
     text)"` note when `n_insufficient` > 0 — informational, does not force
     `partial`).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `tests/test_ladder_run.py`:
 
@@ -1030,12 +1030,12 @@ Append to `tests/test_capability_run.py` (inside `TestRunCapabilityAnalysis`):
         assert len(d_cands) >= 1
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_ladder_run.py tests/test_capability_run.py -q -k "Rung2 or rung2"`
 Expected: FAIL — `ImportError: cannot import name 'update_rung2'`.
 
-- [ ] **Step 3: Implement `update_rung2` + `_advance_unobserved(rung=...)`**
+- [x] **Step 3: Implement `update_rung2` + `_advance_unobserved(rung=...)`**
 
 In `src/phoenix_scraper/ladder_run.py`, change `_advance_unobserved` to take
 `rung: str` and pass it to `store.candidates_frame(capability_id, rung=rung)`;
@@ -1176,12 +1176,12 @@ def update_rung2(
     )
 ```
 
-- [ ] **Step 4: Run the `ladder_run` tests**
+- [x] **Step 4: Run the `ladder_run` tests**
 
 Run: `uv run pytest tests/test_ladder_run.py -q`
 Expected: PASS.
 
-- [ ] **Step 5: Wire into `run_capability_analysis`**
+- [x] **Step 5: Wire into `run_capability_analysis`**
 
 In `src/phoenix_scraper/capability_run.py`, add imports:
 ```python
@@ -1205,17 +1205,17 @@ In the `CapabilityRun(...)` constructor, replace the defaulted
         n_rung2_candidates=rung2.n_candidates,
 ```
 
-- [ ] **Step 6: Run the wiring tests**
+- [x] **Step 6: Run the wiring tests**
 
 Run: `uv run pytest tests/test_capability_run.py tests/test_ladder_run.py -q`
 Expected: PASS.
 
-- [ ] **Step 7: Lint + full suite**
+- [x] **Step 7: Lint + full suite**
 
 Run: `uv run ruff check src tests && uv run pytest -q`
 Expected: clean; green (~717 → ~726).
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add src/phoenix_scraper/ladder_run.py src/phoenix_scraper/capability_run.py \
@@ -1249,7 +1249,7 @@ git commit -m "feat: ladder_run.update_rung2 — persist Rung-2 candidates in th
     and `status='promoted'` + all three paths in `promoted_artifact_paths`, as
     the Rung-1 branch does.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `tests/test_artifacts.py`:
 
@@ -1314,12 +1314,12 @@ class TestRung2Artifacts:
         assert seeded_store.get_candidate(cand.candidate_id).status == "promoted"
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_artifacts.py -q -k Rung2`
 Expected: FAIL — `AttributeError: module 'phoenix_scraper.artifacts' has no attribute 'render_rung2_stub'`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `src/phoenix_scraper/artifacts.py`, add:
 
@@ -1446,17 +1446,17 @@ fills the real expected answers from the `.md` templates. A follow-up can thread
 real `(input_text, output_text)` pairs through `promote_candidate` from the
 cluster members; noted in §16.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/test_artifacts.py -q`
 Expected: PASS.
 
-- [ ] **Step 5: File length + lint**
+- [x] **Step 5: File length + lint**
 
 Run: `wc -l src/phoenix_scraper/artifacts.py && uv run ruff check src/phoenix_scraper/artifacts.py tests/test_artifacts.py`
 Expected: under 400; ruff clean.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/phoenix_scraper/artifacts.py tests/test_artifacts.py
@@ -1479,7 +1479,7 @@ git commit -m "feat: artifacts.render_rung2_stub + promote deterministic branch"
     `run_id · count/score · met`), Rung-2 signal breakdown + templates from the
     latest observation, and the decision log.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `tests/test_candidate_cli.py`:
 
@@ -1502,12 +1502,12 @@ class TestCandidateDetail:
         assert r.exit_code == 1
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_candidate_cli.py -q -k CandidateDetail`
 Expected: FAIL — `candidate` is not a command (`exit_code == 2`).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `src/phoenix_scraper/cli.py`, after the `candidates` command:
 
@@ -1557,17 +1557,17 @@ def candidate(
         typer.echo("    (none)")
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/test_candidate_cli.py -q`
 Expected: PASS.
 
-- [ ] **Step 5: Lint + full suite**
+- [x] **Step 5: Lint + full suite**
 
 Run: `uv run ruff check src tests && uv run pytest -q`
 Expected: clean; green (~726 → ~730).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/phoenix_scraper/cli.py tests/test_candidate_cli.py
@@ -1582,7 +1582,7 @@ git commit -m "feat: pheonix candidate <cid> — one candidate's detail view"
 - Modify: `CONTRACTS.md`
 - Modify: `README.md`
 
-- [ ] **Step 1: CONTRACTS.md**
+- [x] **Step 1: CONTRACTS.md**
 
 After the `## ladder_run.py` block, add a `## determinism.py` block and extend
 the `## ladder.py` / `## ladder_run.py` / `## artifacts.py` blocks:
@@ -1615,7 +1615,7 @@ Note the new `Settings` fields: `rung2_min_answer_spans` (10),
 `rung2_determinism_score` (0.8), `rung2_sustained_runs` (3). Update the `## cli.py`
 line: add `candidate (<cid>)` next to `candidates`.
 
-- [ ] **Step 2: README.md**
+- [x] **Step 2: README.md**
 
 In the `## The promotion ladder` section, replace the final sentence
 ("Rung 2 ... is the next phase.") with a **Rung 2** paragraph + one `bash` line:
@@ -1635,12 +1635,12 @@ In the `## The promotion ladder` section, replace the final sentence
 > pheonix candidate fobo:d:abc123          # signals, templates, trend, decisions
 > ```
 
-- [ ] **Step 3: Lint + full suite (docs — sanity only)**
+- [x] **Step 3: Lint + full suite (docs — sanity only)**
 
 Run: `uv run ruff check src tests && uv run pytest -q`
 Expected: clean; green.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add CONTRACTS.md README.md
