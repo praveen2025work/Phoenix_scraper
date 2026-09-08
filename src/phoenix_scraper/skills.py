@@ -117,6 +117,28 @@ def scan_skill_dirs(dirs: list[Path]) -> list[SkillEntry]:
     return skills
 
 
+def scan_skill_files(paths: list[Path]) -> list[SkillEntry]:
+    """Parse an explicit list of markdown skill files (one skill per file).
+
+    ``scan_skill_dirs`` walks a tree for files named ``SKILL.md``; this reads the
+    exact paths given. Used for a capability's loose ``skills/<name>.md`` files
+    (see the spec's Rung-1 artifact layout). Missing or malformed files are
+    skipped with a warning.
+    """
+    skills: list[SkillEntry] = []
+    for path in paths:
+        if not path.is_file():
+            continue
+        try:
+            entry = _parse_skill_md(path)
+        except OSError as exc:
+            logger.warning("Could not read %s: %s", path, exc)
+            continue
+        if entry is not None:
+            skills.append(entry)
+    return skills
+
+
 def load_all_skills(settings: Settings) -> list[SkillEntry]:
     """Catalog entries plus scanned SKILL.md entries, de-duplicated by name (catalog wins)."""
     combined = load_catalog(settings.skills_catalog) + scan_skill_dirs(

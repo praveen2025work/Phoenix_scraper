@@ -128,7 +128,7 @@ the existing `cluster_snapshots` column. Phase C maps `snapshot.skill_name` →
   - `Store.latest_capability_run_id_on_day(self, capability_id: str, day: str) ->
     str | None` — `day` is `YYYY-MM-DD`; matches `run_id` starting with it.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/test_capability_run_storage.py`:
 
@@ -261,12 +261,12 @@ class TestRecordAndRead:
         assert tmp_store.span_count() == len(sample_spans)
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_capability_run_storage.py -q`
 Expected: FAIL — `ImportError: cannot import name 'CapabilityRun' from 'phoenix_scraper.models'`.
 
-- [ ] **Step 3: Add the models**
+- [x] **Step 3: Add the models**
 
 In `src/phoenix_scraper/models.py`, after the `Capability` class, add:
 
@@ -305,7 +305,7 @@ references `PromptCluster`, `SkillMatch`, `SkillGapProposal`, so place both new
 classes **immediately before the `SpanEvaluation` class** (after
 `SkillGapProposal`, which is where those three are defined).
 
-- [ ] **Step 4: Add the schema**
+- [x] **Step 4: Add the schema**
 
 In `src/phoenix_scraper/storage.py`, inside `_SCHEMA`, after the `capabilities`
 table (added in Phase A) and before the closing `"""`, add:
@@ -358,12 +358,12 @@ CREATE INDEX IF NOT EXISTS idx_cap_members_run
     ON capability_cluster_members (capability_id, run_id);
 ```
 
-- [ ] **Step 5: Extend the storage imports**
+- [x] **Step 5: Extend the storage imports**
 
 Add `CapabilityRun` to the `from .models import (...)` block in `storage.py`
 (alphabetical — after `Capability`, `CapabilityFilter`).
 
-- [ ] **Step 6: Add `span_count` and the capability-run methods**
+- [x] **Step 6: Add `span_count` and the capability-run methods**
 
 In `storage.py`, in the `# ---- capabilities` section (added in Phase A), after
 `delete_capability`, add:
@@ -515,19 +515,19 @@ normally read it top-to-bottom; import `CapabilityRun` at module top (Step 5)
 and you may drop the quotes — either is fine, keep it consistent with the file
 (the file imports its models, so **unquote it**: `run: CapabilityRun`).
 
-- [ ] **Step 7: Run the tests to verify they pass**
+- [x] **Step 7: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/test_capability_run_storage.py -q`
 Expected: PASS.
 
-- [ ] **Step 8: Backward-compat + lint + full suite**
+- [x] **Step 8: Backward-compat + lint + full suite**
 
 Run: `uv run pytest tests/test_capability_storage.py tests/test_scraper.py tests/test_pipeline.py -q && uv run ruff check src tests && uv run pytest -q`
 Expected: all green (609 → 619); ruff clean. The schema additions are
 `CREATE TABLE IF NOT EXISTS` under the existing `executescript`, so existing DBs
 gain the tables on next open.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add src/phoenix_scraper/models.py src/phoenix_scraper/storage.py tests/test_capability_run_storage.py
@@ -558,7 +558,7 @@ git commit -m "feat: capability_runs / snapshots / members tables and Store meth
     None = None, replace_today: bool = False, notes: list[str] | None = None, now:
     datetime | None = None) -> CapabilityRunResult` — does NOT scrape.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/test_capability_run.py`:
 
@@ -677,12 +677,12 @@ class TestRunCapabilityAnalysis:
         assert "glossary-explainer" in names  # catalog entries still present
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_capability_run.py -q`
 Expected: FAIL — `ModuleNotFoundError: No module named 'phoenix_scraper.capability_run'`.
 
-- [ ] **Step 3: Create the module**
+- [x] **Step 3: Create the module**
 
 Create `src/phoenix_scraper/capability_run.py`:
 
@@ -902,20 +902,20 @@ def run_capability_analysis(
     )
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/test_capability_run.py -q -k RunCapabilityAnalysis or "load_capability"`
 Expected: PASS for the `TestRunCapabilityAnalysis` class and
 `test_capability_skills_dir_is_scanned`.
 
-- [ ] **Step 5: File length + lint**
+- [x] **Step 5: File length + lint**
 
 Run: `wc -l src/phoenix_scraper/capability_run.py && uv run ruff check src/phoenix_scraper/capability_run.py tests/test_capability_run.py`
 Expected: under 400 lines; ruff clean. (If the `load_all_capabilities` import is
 unused at this point it will fail `F401` — it is used in Task 3; add it there,
 not here. For this task import only what `run_capability_analysis` uses.)
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/phoenix_scraper/capability_run.py tests/test_capability_run.py
@@ -941,7 +941,7 @@ git commit -m "feat: run_capability_analysis — scoped analysis + run recording
     | None = None) -> list[CapabilityRunResult]` — one result per capability run
     (including a `status='failed'` result when a capability's analysis raised).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `tests/test_capability_run.py`:
 
@@ -1053,12 +1053,12 @@ class TestRunCapabilities:
             run_capabilities(seeded_store, s, capability_ids=["ghost"], now=NOW)
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_capability_run.py -q -k RunCapabilities`
 Expected: FAIL — `ImportError: cannot import name 'run_capabilities'`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `src/phoenix_scraper/capability_run.py`, add `load_all_capabilities` to the
 `from .capability import ...` line if not already there, then append:
@@ -1151,17 +1151,17 @@ def run_capabilities(
     return results
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/test_capability_run.py -q`
 Expected: PASS (whole file).
 
-- [ ] **Step 5: Lint + full suite**
+- [x] **Step 5: Lint + full suite**
 
 Run: `uv run ruff check src tests && uv run pytest -q`
 Expected: clean; green (619 → ~638).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/phoenix_scraper/capability_run.py tests/test_capability_run.py
@@ -1187,7 +1187,7 @@ git commit -m "feat: run_capabilities orchestrator — sync, scrape-once, failur
   - CLI `pheonix capability runs <id> [--db] [--capabilities-dir]` — the recorded
     runs for a capability, newest first.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/test_capability_run_cli.py`:
 
@@ -1283,12 +1283,12 @@ class TestCapabilityRunsVerb:
         assert "no runs" in r.output.lower()
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_capability_run_cli.py -q`
 Expected: FAIL — `run` is not a command (`exit_code == 2`).
 
-- [ ] **Step 3: Add option singletons and imports**
+- [x] **Step 3: Add option singletons and imports**
 
 In `cli.py`, add to the package imports (next to `from . import capability as
 capability_mod`):
@@ -1314,7 +1314,7 @@ ReplaceTodayOpt = typer.Option(
 )
 ```
 
-- [ ] **Step 4: Implement `pheonix run`**
+- [x] **Step 4: Implement `pheonix run`**
 
 `run` holds one `Store` open for the whole call (via the existing `_open_store`
 context manager) because `run_capabilities` and the delta-printing both need it.
@@ -1388,7 +1388,7 @@ def _echo_capability_run(store: Store, result: CapabilityRunResult) -> None:
         typer.echo("  what changed since the last run: no movement")
 ```
 
-- [ ] **Step 5: Implement `pheonix capability runs`**
+- [x] **Step 5: Implement `pheonix capability runs`**
 
 Append to the `capability_app` commands (after `capability_show`):
 
@@ -1416,17 +1416,17 @@ def capability_runs(
         )
 ```
 
-- [ ] **Step 6: Run the tests to verify they pass**
+- [x] **Step 6: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/test_capability_run_cli.py -q`
 Expected: PASS.
 
-- [ ] **Step 7: Lint + full suite**
+- [x] **Step 7: Lint + full suite**
 
 Run: `uv run ruff check src tests && uv run pytest -q`
 Expected: clean; green (~638 → ~650).
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add src/phoenix_scraper/cli.py tests/test_capability_run_cli.py
@@ -1443,7 +1443,7 @@ git commit -m "feat: pheonix run and pheonix capability runs"
 
 **Interfaces:** none (docs only).
 
-- [ ] **Step 1: README section**
+- [x] **Step 1: README section**
 
 In `README.md`, insert a `## Daily runs` section immediately after the
 `## Capabilities` section (added in Phase A) and before `## Dashboard UI`. Body
@@ -1472,7 +1472,7 @@ nested fences):
 
 (Strip the leading `> ` markers.)
 
-- [ ] **Step 2: CONTRACTS.md**
+- [x] **Step 2: CONTRACTS.md**
 
 In `CONTRACTS.md`, after the `## capability.py` block (added in Phase A), add:
 
@@ -1509,12 +1509,12 @@ Also update the CLI line in `CONTRACTS.md` (`## cli.py ...`): append `, run
 `capability (new | list | show | sync)` group → `capability (new | list | show |
 sync | runs)`.
 
-- [ ] **Step 3: Lint + full suite (docs don't change behavior — sanity only)**
+- [x] **Step 3: Lint + full suite (docs don't change behavior — sanity only)**
 
 Run: `uv run ruff check src tests && uv run pytest -q`
 Expected: clean; green.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add README.md CONTRACTS.md
