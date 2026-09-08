@@ -1,9 +1,10 @@
 """FastAPI app factory exposing the prompt-mining store, pipeline, and exports."""
 
 import json
+import logging
 import secrets
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 
@@ -54,11 +55,38 @@ EVALUATION_ROW_LIMIT = ANALYSIS_SPAN_LIMIT * 20
 
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
+logger = logging.getLogger(__name__)
 
-def create_app(settings: Settings) -> FastAPI:
-    """Build the API around one Settings instance (dependency-injectable for tests)."""
-    app = FastAPI(title="Pheonix prompt miner", version=__version__)
+
+def create_app(settings: Settings, *, run_jobs: bool = False) -> FastAPI:
+    """Build the API around one Settings instance (dependency-injectable for tests).
+
+    run_jobs=True starts the background capability-run worker (create_app_default
+    / real serving). Tests pass run_jobs=False (the default) — no thread.
+    """
+    from .jobs import JobWorker
+
+    worker = JobWorker(settings) if run_jobs else None
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        if worker is not None:
+            with Store(settings.db_path) as store:
+                n = store.reset_orphaned_jobs()
+            if n:
+                logger.warning("marked %d orphaned capability job(s) as error", n)
+            worker.start()
+        try:
+            yield
+        finally:
+            if worker is not None:
+                worker.stop()
+
+    app = FastAPI(
+        title="Pheonix prompt miner", version=__version__, lifespan=lifespan
+    )
     app.state.settings = settings
+    app.state.job_worker = worker
 
     _cors = settings.cors_origin_list()
     if _cors:
@@ -616,7 +644,7 @@ def create_app(settings: Settings) -> FastAPI:
 
 def create_app_default() -> FastAPI:
     """Zero-arg factory for `uvicorn phoenix_scraper.api:create_app_default --factory`."""
-    return create_app(load_settings())
+    return create_app(load_settings(), run_jobs=True)
 
 
 # ---- helpers -------------------------------------------------------------------
