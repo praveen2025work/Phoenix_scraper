@@ -872,6 +872,16 @@ class Store:
             self._conn, params=[candidate_id],
         )
 
+    def record_candidate_decision_now(
+        self, candidate_id: str, action: str, actor: str, when: datetime,
+        *, note: str = "", run_id: str | None = None,
+    ) -> int:
+        """Convenience: build + record a CandidateDecision in one call."""
+        return self.record_candidate_decision(CandidateDecision(
+            candidate_id=candidate_id, run_id=run_id, action=action, actor=actor,
+            note=note, created_at=when,
+        ))
+
     def capability_run_ordinal(
         self, capability_id: str, run_id: str | None = None
     ) -> int:
