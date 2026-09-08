@@ -17,16 +17,16 @@ exports** — no external services. Live Phoenix scraping is optional and env-ga
 ```bash
 make setup    # uv sync (creates .venv, Python 3.11+)
 make demo     # seed synthetic P&L-agent traffic -> analyze -> report
-make api      # FastAPI on http://localhost:8100 (interactive docs at /docs)
+make api      # headless API on http://localhost:8000 (interactive docs at /docs)
 ```
 
 `make demo` prints the top prompts table and writes `data/exports/report.md` — top
 prompts with frequency/session/user/cost evidence, matched skills, and proposed new
 skills grouped by level.
 
-For the capability + ladder loop, use the **[React SPA](#frontend-react-spa)**
-(`make ui`, talks to the API on `:8000`) or the CLI (`pheonix capability new`,
-`pheonix run`, `pheonix candidates`).
+For the capability + ladder loop, run the **[React SPA](#frontend-react-spa)**
+(`make ui`, two terminals) or use the CLI (`pheonix capability new`, `pheonix
+run`, `pheonix candidates`).
 
 ## Running on your office machine
 
@@ -36,6 +36,7 @@ For the capability + ladder loop, use the **[React SPA](#frontend-react-spa)**
 | --- | --- | --- |
 | Python **3.11+** | `python3 --version` | 3.9/3.10 will not work (uses 3.11 syntax) |
 | `uv` *or* plain `pip` | `uv --version` | uv preferred; pip path below if uv isn't approved |
+| Node **20+** / npm **10+** | `node --version` | only for the [React SPA](#frontend-react-spa) — the CLI + API need no Node |
 | Network to Phoenix | `curl -s $PHOENIX_COLLECTOR_ENDPOINT/healthz` | only needed for live scraping — the demo is fully offline |
 
 Get the code onto the machine via your internal git remote, or copy the folder as a
@@ -261,8 +262,8 @@ by default; to let colleagues reach it you **must** set an inbound key first:
 
 ```bash
 export PHEONIX_API_KEY=<generate-a-long-random-string>
-pheonix serve --host 0.0.0.0 --port 8100
-# clients: curl -H "X-API-Key: ..." http://<host>:8100/prompts/frequent?fmt=csv
+pheonix serve --host 0.0.0.0 --port 8000
+# clients: curl -H "X-API-Key: ..." http://<host>:8000/prompts/frequent?fmt=csv
 ```
 
 Without `PHEONIX_API_KEY`, `serve` refuses non-loopback hosts by design.
@@ -411,7 +412,8 @@ fobo-break-triage          skills_catalog.yaml        6      0    6    0%  Are t
 examples already demonstrate — a blind spot asked 40 times matters more than one
 asked twice.
 
-Each gap comes with the exact edit, in `skill_updates.md` and on the dashboard:
+Each gap comes with the exact edit — in `skill_updates.md`, from
+`GET /skills/updates`, and in the SPA's Analytics tab:
 
 ```yaml
 example_prompts:
@@ -553,26 +555,45 @@ parity; `GET /` is a JSON notice. Its last version is in git history
 ## Frontend (React SPA)
 
 A separate `frontend/` SPA (React 19 + Vite + TypeScript + Tailwind v4 +
-shadcn/ui) drives the capability + ladder loop against the headless API. Run the
-two processes independently:
+shadcn/ui) drives the capability + ladder loop against the headless API. The two
+run as independent processes — **two terminals**:
 
 ```bash
-cp frontend/.env.example frontend/.env          # VITE_API_BASE=http://localhost:8000
+# terminal 1 — the API (CORS is opened to :5173 by the `api` target)
+make api                                    # http://localhost:8000
+
+# terminal 2 — the SPA
+cd frontend
+npm install                                 # first run only
+npm run dev                                 # http://localhost:5173   (or: make ui)
+```
+
+**Environment files** (both optional — the commands above work with zero config):
+
+| File | Var | Default | When you need it |
+| --- | --- | --- | --- |
+| `.env` (repo root) | `PHEONIX_CORS_ORIGINS` | `""` | if you run the API yourself instead of `make api`, set it to the SPA origin(s), comma-separated |
+| `.env` (repo root) | `PHEONIX_API_KEY` | unset (open on localhost) | set to require `X-API-Key`; the SPA prompts for it once and keeps it in `sessionStorage` |
+| `frontend/.env` | `VITE_API_BASE` | `http://localhost:8000` | if the API runs on another host/port — `cp frontend/.env.example frontend/.env` and edit |
+
+If you start the API by hand (not `make api`), pass CORS yourself:
+```bash
 PHEONIX_CORS_ORIGINS=http://localhost:5173 \
   uv run uvicorn --factory phoenix_scraper.api:create_app_default --port 8000
-cd frontend && npm install && npm run dev        # http://localhost:5173
 ```
 
 The SPA has four screens: **capabilities index** (`/`), **capability detail**
 (`/c/:id` — run now, Rung 1 / Rung 2 lane boards), **candidate detail**
 (`/c/:id/candidate/:cid` — evidence trend, determinism signals, decide, promote),
-and **analytics** (`/c/:id/analytics` — KPIs, coverage, run deltas scoped to the
-capability). The API key is entered once and kept in `sessionStorage`.
+and **analytics** (`/c/:id/analytics` — the ~17 carried-over panels: KPI row,
+activity chart, skill coverage / gaps / health, validation scoreboard, answer
+quality by user & model, agent flows, efficiency, tool/model usage, users, run
+deltas — all scoped to the capability).
 
-`make ui` / `make ui-build` / `make ui-test` / `make ui-types`. `pheonix
-serve-ui` serves the built `frontend/dist` (SPA fallback for deep links). The
-legacy bundled dashboard (`pheonix serve`) stays until the Analytics tab reaches
-parity.
+`make ui` / `make ui-build` / `make ui-test` / `make ui-types`. For a production
+build, `make ui-build` then `pheonix serve-ui` serves `frontend/dist` (with SPA
+fallback for deep links). `pheonix serve` (or `make api`) is now API-only —
+`GET /` returns a JSON notice, not HTML.
 
 ## CLI
 
@@ -632,19 +653,25 @@ frontend dev server call the API.
 
 ```
 config/           skills_catalog.yaml, pricing.yaml (illustrative token pricing)
+capabilities/     one dir per capability: capability.yaml + skills/ + deterministic/
 src/phoenix_scraper/
   phoenix_client  the ONLY module that talks to Phoenix (auth, retries)
   scraper         OpenInference attr flattening + watermark scrape + jsonl ingest
-  normalize/cluster       prompt signatures and frequency clustering
+  normalize/cluster       prompt signatures (mask_volatile) and frequency clustering
   skills/taxonomy/skills_mapper   catalog loading, level inference, matching + proposals
   evaluations     the CODE annotator: offline output and prompt validators
   annotations     pull HUMAN/LLM annotations from Phoenix, push CODE ones back
   skill_coverage  what each skill FILE is asked but doesn't show; run-over-run diffs
   insights*       analytics: traces, users, LLM behaviour, quality rollups
   costs/sessions  token->cost from pricing.yaml, session derivation
-  storage         SQLite store (spans, state, analysis, evaluations, run history)
+  storage         SQLite store (spans, analysis, capability runs, ladder candidates)
+  capability/capability_run   the capability entity + scoped per-capability runs
+  ladder/ladder_run/determinism   Rung 1 (prompt->skill) + Rung 2 (lexical determinism)
+  artifacts       draft skills/<name>.md and deterministic/<name>.{py,md} writers
   pipeline/cli/api        orchestration, Typer CLI, FastAPI service
-tests/            538 tests, ~94% coverage (`make test`)
+  api_capabilities/api_ladder   capability CRUD / run / ladder HTTP routes
+frontend/         React 19 + Vite + TS SPA (own npm package; see "Frontend")
+tests/            764 backend (`make test`) + 24 Vitest + 1 Playwright (`make ui-test`)
 ```
 
 ## POC limitations (deliberate)

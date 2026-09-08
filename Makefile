@@ -25,8 +25,9 @@ coverage:         ## show what each skill file is asked but doesn't demonstrate
 report:           ## write markdown report + exports to data/exports
 	uv run pheonix report
 
-api:              ## start the FastAPI service on :8100
-	uv run uvicorn --factory phoenix_scraper.api:create_app_default --port 8100 --reload
+api:              ## start the headless API on :8000 (CORS open to the SPA dev server)
+	PHEONIX_CORS_ORIGINS=http://localhost:5173 \
+	  uv run uvicorn --factory phoenix_scraper.api:create_app_default --port 8000 --reload
 
 test:             ## run test suite with coverage
 	uv run pytest --cov=phoenix_scraper --cov-report=term-missing
