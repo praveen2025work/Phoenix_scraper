@@ -20,7 +20,12 @@ from datetime import UTC, datetime, timedelta
 
 import pandas as pd
 
-from .capability import capability_query_filters, capability_skill_dirs
+from .capability import (
+    capability_query_filters,
+    capability_skill_dirs,
+    load_all_capabilities,
+    load_capability,
+)
 from .cluster import build_clusters
 from .config import Settings
 from .costs import compute_span_costs, load_pricing
@@ -31,7 +36,9 @@ from .models import (
     CapabilityRunResult,
     SkillEntry,
 )
+from .phoenix_client import PhoenixClientWrapper
 from .pipeline import ANALYSIS_SPAN_LIMIT
+from .scraper import scrape_once
 from .skill_coverage import annotate_coverage
 from .skills import load_all_skills, scan_skill_files
 from .skills_mapper import match_clusters
@@ -211,3 +218,92 @@ def run_capability_analysis(
         proposals=tuple(proposals),
         previous_run_id=previous_run_id,
     )
+
+
+def _target_capabilities(
+    settings: Settings, capability_ids: list[str] | None, all_active: bool
+) -> list[Capability]:
+    root = settings.capabilities_dir
+    if all_active:
+        return [c for c in load_all_capabilities(root) if c.status == "active"]
+    if capability_ids:
+        return [load_capability(root, cid) for cid in capability_ids]
+    return []
+
+
+def _scrape_projects(
+    store: Store,
+    settings: Settings,
+    projects: set[str],
+    client: PhoenixClientWrapper | None,
+) -> dict[str, list[str]]:
+    """Scrape each project once. Returns {project: [note, ...]} for problems."""
+    notes: dict[str, list[str]] = {}
+    if client is None or not client.available():
+        for project in projects:
+            notes.setdefault(project, []).append(
+                "offline: Phoenix not available, analysed stored spans"
+            )
+        return notes
+    for project in sorted(projects):
+        try:
+            scrape_once(store, client, settings.model_copy(update={"project": project}))
+        except Exception as exc:  # noqa: BLE001 — any client/network error must not abort the run
+            logger.warning("scrape failed for %s: %s", project, exc)
+            notes.setdefault(project, []).append(f"scrape failed for {project}: {exc}")
+    return notes
+
+
+def run_capabilities(
+    store: Store,
+    settings: Settings,
+    *,
+    capability_ids: list[str] | None = None,
+    all_active: bool = False,
+    client: PhoenixClientWrapper | None = None,
+    window_start: datetime | None = None,
+    window_end: datetime | None = None,
+    replace_today: bool = False,
+    now: datetime | None = None,
+) -> list[CapabilityRunResult]:
+    """Sync -> scrape each distinct project once -> run each capability, isolating
+    failures so one capability never aborts the others."""
+    started_at = now or datetime.now(UTC)
+    capabilities = _target_capabilities(settings, capability_ids, all_active)
+    for cap in capabilities:
+        store.upsert_capability(cap)
+
+    projects = {
+        (cap.filter.project or settings.project) for cap in capabilities
+    }
+    scrape_notes = _scrape_projects(store, settings, projects, client)
+
+    results: list[CapabilityRunResult] = []
+    for cap in capabilities:
+        project = cap.filter.project or settings.project
+        cap_notes = list(scrape_notes.get(project, []))
+        try:
+            results.append(
+                run_capability_analysis(
+                    store, settings, cap,
+                    window_start=window_start, window_end=window_end,
+                    replace_today=replace_today, notes=cap_notes, now=started_at,
+                )
+            )
+        except Exception as exc:  # noqa: BLE001 — record the failure, keep going
+            logger.exception("capability %s failed", cap.id)
+            failed = CapabilityRun(
+                run_id=started_at.isoformat(),
+                capability_id=cap.id,
+                started_at=started_at,
+                finished_at=datetime.now(UTC),
+                window_start=window_start or (started_at - timedelta(days=cap.window_days)),
+                window_end=window_end or started_at,
+                status="failed",
+                notes=(*cap_notes, f"analysis failed: {exc}"),
+            )
+            store.record_capability_run(
+                failed, [], [], history_limit=settings.run_history_limit
+            )
+            results.append(CapabilityRunResult(run=failed))
+    return results
