@@ -86,7 +86,7 @@ traffic evolves — hence daily runs and lifecycle tracking.
 | 1 | **Capability model** = a named record: a saved query (Phoenix project, `workflow_stage`, `asset_class`, `model_name`, prompt `search`, default time window) + an owned directory `capabilities/<id>/` (`capability.yaml` + `skills/*.md`). Scope = spans matching the filter within the run window. |
 | 2 | **Rung 2 signal** = lexical determinism score: output-template concentration + route invariance + output self-similarity + slot stability. No LLM judge in v1. |
 | 3 | **Tool owns files** — scaffolds the capability dir; writes draft `SKILL.md` (Rung 1) and `deterministic/*` stubs (Rung 2) into it for review in place; never edits hand-authored files. Skill format = `SKILL.md` + YAML frontmatter (the existing scanner). |
-| 4 | **Frontend** = new `frontend/` SPA, React + Vite + TypeScript, HTTP-only to the API, served independently. Centered on the capability + ladder loop; existing analytics carried over as scoped panels. API stops serving HTML. |
+| 4 | **Frontend** = new `frontend/` SPA, React + Vite + TypeScript + Tailwind v4 + shadcn/ui, HTTP-only to the API, served independently. Centered on the capability + ladder loop; existing analytics carried over as scoped panels. API stops serving HTML. |
 | 5 | **Live-first**, designed to run daily against real Phoenix; fixtures / JSONL kept for dev, tests, demo. |
 | 6 | **Full candidate lifecycle** — persistent records, status machine (`new → accumulating → ready → accepted / rejected / snoozed → promoted`), first-seen date, evidence trend, decision + actor. |
 | 7 | **v1 = full vertical slice**, thin — every piece above, end to end. |
@@ -714,16 +714,23 @@ middleware.
 
 ## 12. Section 6 — Frontend
 
-**Stack:** React 18 + Vite + TypeScript in `frontend/`. TanStack Query; types
-from `openapi-typescript` over a thin fetch wrapper. React Router. **No
-component library** — components reuse the existing dashboard's design tokens
-(CSS-variable palette, system fonts, light/dark-follows-system). Evidence trend
-= inline-SVG sparkline, no charting dependency. API key in `sessionStorage`,
+**Stack:** React 18 + Vite + TypeScript in `frontend/`. TanStack Query for
+server state; types from `openapi-typescript` over a thin fetch wrapper. React
+Router. **Tailwind CSS v4 + shadcn/ui** (Radix primitives — dialog, dropdown,
+tabs, toast, tooltip, popover — as copy-in components under
+`frontend/src/components/ui/`, not an npm-locked kit). Design tokens are the
+shadcn CSS-variable theme, seeded from the existing dashboard's palette;
+light / dark follows system with a manual toggle. Charts: shadcn's chart
+component (Recharts) for the Analytics tab's carried-over panels; the evidence
+trend and other micro-visuals stay hand-rolled inline-SVG (sparklines,
+determinism micro-bars, slot-stability matrix). API key in `sessionStorage`,
 sent as `X-API-Key`.
 
-**Serving:** Vite dev server proxies to the API on `:8000`; `npm run build` →
-static bundle (any static host, or a `pheonix serve-ui` convenience). API stops
-serving HTML (`GET /` removed or a JSON notice).
+**Serving:** Vite dev server (`:5173`) proxies `/` API calls to the API on
+`:8000` (`make ui`); `npm run build` → static bundle in `frontend/dist`
+(`make ui-build`), served by `pheonix serve-ui` (a small static-file server) or
+any static host. API stops serving HTML — `GET /` returns a JSON notice naming
+the SPA.
 
 **Screens:**
 
@@ -751,10 +758,12 @@ serving HTML (`GET /` removed or a JSON notice).
    by user/model, agent flows, users, run deltas), each hitting the existing
    endpoints with `?capability=:id`. The old dashboard's migration path.
 
-**Global:** API-key gate; light/dark follows system; error toasts; poll-on-focus
-(no realtime).
+**Global:** API-key gate; light/dark follows system + manual toggle; error
+toasts (shadcn `sonner`); TanStack Query `refetchOnWindowFocus` (no realtime);
+skeleton loaders on first load.
 
-**Out of v1:** drag-between-columns, realtime, any component kit.
+**Out of v1:** drag-between-columns, realtime/websockets, SSR, an npm-locked
+component kit (shadcn components are copied in and owned).
 
 ---
 
@@ -770,7 +779,7 @@ CLI before any UI exists.
 | **C — Rung 1 + lifecycle** | `Candidate`/`CandidateObservation`/`CandidateDecision` models + tables; Rung-1 detection in `ladder.py`; the state machine (`advance_lifecycle`, material-change reopen, snooze/stale); Rung-1 `skills/<name>.md` writer + strengthen-skill block; `pheonix candidates\|decide\|promote`. | table-driven transitions, sustained-runs, reopen-on-material-change, draft file contents, idempotent re-runs |
 | **D — Rung 2** | shared `mask_volatile()`; `determinism.py` (4 sub-signals, blend, guards, `insufficient_data`); wire into the run + state machine; the 3 `deterministic/` files. | each sub-signal on crafted frames, `insufficient_data` path, route-N/A renormalisation, stub + test-file generation |
 | **E — API** | capability / run / ladder routes; `?capability=` on existing analytics routes; `PHEONIX_CORS_ORIGINS` + origin-guard allowance. | each route, auth, back-compat when param omitted, CORS + CSRF coexistence |
-| **F — Frontend** | `frontend/` scaffold (Vite + React + TS), typed client, the 4 screens, key gate; `make ui` / `make ui-build`. | Vitest component tests (board, candidate detail, decision flow); one Playwright smoke on a seeded fixture capability |
+| **F — Frontend** | `frontend/` scaffold (Vite + React + TS + Tailwind v4 + shadcn/ui), typed client (`openapi-typescript`), the 4 screens, key gate; `make ui` / `make ui-build` + `pheonix serve-ui`. | Vitest + Testing Library component tests (board, candidate detail, decision flow); one Playwright smoke on a seeded fixture capability |
 | **G — Retire bundled dashboard** | move `static/dashboard.html` out once the Analytics tab reaches parity; drop `GET /` HTML; rewrite `README.md` + `CONTRACTS.md`; add the new `Settings` fields to `.env.example`. Legacy `run_analysis` + unscoped routes kept one release, marked legacy. | docs build; no dead routes |
 
 **Fixtures:** extend `fixtures.py` with a deterministic-by-construction cluster
