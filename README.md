@@ -24,6 +24,10 @@ make api      # FastAPI on http://localhost:8100 (interactive docs at /docs)
 prompts with frequency/session/user/cost evidence, matched skills, and proposed new
 skills grouped by level.
 
+For the capability + ladder loop, use the **[React SPA](#frontend-react-spa)**
+(`make ui`, talks to the API on `:8000`) or the CLI (`pheonix capability new`,
+`pheonix run`, `pheonix candidates`).
+
 ## Running on your office machine
 
 ### 1. Prerequisites
@@ -532,10 +536,12 @@ pheonix candidates fobo --rung deterministic
 pheonix candidate fobo:d:abc123          # signals, templates, trend, decisions
 ```
 
-## Dashboard UI
+## Legacy dashboard
 
-`pheonix serve` and open **http://127.0.0.1:8000/** — a self-contained dashboard
-(no CDN, works offline) over the analytics below.
+The **[React SPA](#frontend-react-spa)** is the primary frontend. `pheonix serve`
+still serves the pre-SPA self-contained dashboard (no CDN, works offline) at
+**http://127.0.0.1:8000/legacy** — `GET /` is now a JSON notice. The legacy
+dashboard stays until the SPA's Analytics tab reaches panel parity.
 
 - **Scrape / Analyze / Report buttons** — run the pipeline from the page. Each
   runs synchronously, reports what it did in the status line, and repaints every
