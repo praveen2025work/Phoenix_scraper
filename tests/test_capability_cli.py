@@ -161,3 +161,36 @@ class TestCapabilityShow:
             "capability", "show", "ghost", "--capabilities-dir", str(tmp_path / "caps")
         )
         assert result.exit_code == 1
+
+
+class TestCapabilityJobs:
+    def test_lists_job_rows(self, tmp_path: Path) -> None:
+        caps = tmp_path / "caps"
+        db = tmp_path / "c.db"
+        _invoke(
+            "capability", "new", "fobo", "--name", "FOBO",
+            "--capabilities-dir", str(caps), "--db", str(db),
+        )
+        with Store(db) as store:
+            store.enqueue_job("job-abc", "fobo", {})
+        result = _invoke(
+            "capability", "jobs", "fobo",
+            "--db", str(db), "--capabilities-dir", str(caps),
+        )
+        assert result.exit_code == 0, result.output
+        assert "job-abc" in result.output
+        assert "queued" in result.output
+
+    def test_empty(self, tmp_path: Path) -> None:
+        caps = tmp_path / "caps"
+        db = tmp_path / "c.db"
+        _invoke(
+            "capability", "new", "fobo", "--name", "FOBO",
+            "--capabilities-dir", str(caps), "--db", str(db),
+        )
+        result = _invoke(
+            "capability", "jobs", "fobo",
+            "--db", str(db), "--capabilities-dir", str(caps),
+        )
+        assert result.exit_code == 0
+        assert "No jobs" in result.output
