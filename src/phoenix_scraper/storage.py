@@ -11,6 +11,7 @@ import pandas as pd
 from .models import (
     Capability,
     CapabilityFilter,
+    CapabilityRun,
     PromptCluster,
     QueryFilters,
     SessionRecord,
@@ -169,6 +170,51 @@ CREATE TABLE IF NOT EXISTS capabilities (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS capability_runs (
+    capability_id      TEXT NOT NULL,
+    run_id             TEXT NOT NULL,
+    started_at         TEXT NOT NULL,
+    finished_at        TEXT,
+    window_start       TEXT NOT NULL,
+    window_end         TEXT NOT NULL,
+    n_spans            INTEGER NOT NULL DEFAULT 0,
+    n_in_scope_spans   INTEGER NOT NULL DEFAULT 0,
+    n_clusters         INTEGER NOT NULL DEFAULT 0,
+    n_rung1_candidates INTEGER NOT NULL DEFAULT 0,
+    n_rung2_candidates INTEGER NOT NULL DEFAULT 0,
+    status             TEXT NOT NULL DEFAULT 'ok',
+    notes_json         TEXT NOT NULL DEFAULT '[]',
+    PRIMARY KEY (capability_id, run_id)
+);
+
+CREATE TABLE IF NOT EXISTS capability_cluster_snapshots (
+    capability_id  TEXT NOT NULL,
+    run_id         TEXT NOT NULL,
+    cluster_id     TEXT NOT NULL,
+    signature      TEXT NOT NULL DEFAULT '',
+    representative TEXT NOT NULL DEFAULT '',
+    count          INTEGER NOT NULL DEFAULT 0,
+    n_users        INTEGER NOT NULL DEFAULT 0,
+    skill_name     TEXT,
+    covered        INTEGER NOT NULL DEFAULT 0,
+    in_scope       INTEGER NOT NULL DEFAULT 1,
+    route_len_avg  REAL,
+    long_route     INTEGER NOT NULL DEFAULT 0,
+    first_seen     TEXT,
+    last_seen      TEXT,
+    PRIMARY KEY (capability_id, run_id, cluster_id)
+);
+
+CREATE TABLE IF NOT EXISTS capability_cluster_members (
+    capability_id TEXT NOT NULL,
+    run_id        TEXT NOT NULL,
+    cluster_id    TEXT NOT NULL,
+    span_id       TEXT NOT NULL,
+    PRIMARY KEY (capability_id, run_id, cluster_id, span_id)
+);
+CREATE INDEX IF NOT EXISTS idx_cap_members_run
+    ON capability_cluster_members (capability_id, run_id);
 """
 
 
@@ -543,6 +589,135 @@ class Store:
         self._conn.commit()
         return cur.rowcount > 0
 
+    # ---- capability runs ------------------------------------------------------
+    def span_count(self) -> int:
+        return self._count("spans")
+
+    def record_capability_run(
+        self,
+        run: CapabilityRun,
+        snapshot_rows: list[dict],
+        member_rows: list[tuple[str, str]],
+        history_limit: int,
+    ) -> None:
+        """Write the run row, replace this run's snapshots + members, prune."""
+        c = self._conn
+        c.execute(
+            "INSERT OR REPLACE INTO capability_runs (capability_id, run_id, "
+            "started_at, finished_at, window_start, window_end, n_spans, "
+            "n_in_scope_spans, n_clusters, n_rung1_candidates, n_rung2_candidates, "
+            "status, notes_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                run.capability_id, run.run_id, _iso(run.started_at),
+                _iso(run.finished_at), _iso(run.window_start), _iso(run.window_end),
+                run.n_spans, run.n_in_scope_spans, run.n_clusters,
+                run.n_rung1_candidates, run.n_rung2_candidates, run.status,
+                json.dumps(list(run.notes)),
+            ),
+        )
+        c.execute(
+            "DELETE FROM capability_cluster_snapshots WHERE capability_id = ? AND run_id = ?",
+            (run.capability_id, run.run_id),
+        )
+        c.execute(
+            "DELETE FROM capability_cluster_members WHERE capability_id = ? AND run_id = ?",
+            (run.capability_id, run.run_id),
+        )
+        c.executemany(
+            "INSERT INTO capability_cluster_snapshots (capability_id, run_id, "
+            "cluster_id, signature, representative, count, n_users, skill_name, "
+            "covered, in_scope, route_len_avg, long_route, first_seen, last_seen) "
+            "VALUES (:capability_id,:run_id,:cluster_id,:signature,:representative,"
+            ":count,:n_users,:skill_name,:covered,:in_scope,:route_len_avg,"
+            ":long_route,:first_seen,:last_seen)",
+            snapshot_rows,
+        )
+        c.executemany(
+            "INSERT OR IGNORE INTO capability_cluster_members "
+            "(capability_id, run_id, cluster_id, span_id) VALUES (?,?,?,?)",
+            [(run.capability_id, run.run_id, cid, sid) for cid, sid in member_rows],
+        )
+        self._prune_capability_runs(run.capability_id, history_limit)
+        c.commit()
+
+    def capability_runs_frame(self, capability_id: str, limit: int = 50) -> pd.DataFrame:
+        return pd.read_sql_query(
+            "SELECT * FROM capability_runs WHERE capability_id = ? "
+            "ORDER BY run_id DESC LIMIT ?",
+            self._conn, params=[capability_id, limit],
+        )
+
+    def previous_capability_run_id(
+        self, capability_id: str, before: str | None = None
+    ) -> str | None:
+        if before is None:
+            row = self._conn.execute(
+                "SELECT run_id FROM capability_runs WHERE capability_id = ? "
+                "ORDER BY run_id DESC LIMIT 1",
+                (capability_id,),
+            ).fetchone()
+        else:
+            row = self._conn.execute(
+                "SELECT run_id FROM capability_runs WHERE capability_id = ? "
+                "AND run_id < ? ORDER BY run_id DESC LIMIT 1",
+                (capability_id, before),
+            ).fetchone()
+        return row["run_id"] if row else None
+
+    def capability_run_snapshot_frame(
+        self, capability_id: str, run_id: str | None
+    ) -> pd.DataFrame:
+        if run_id is None:
+            return pd.DataFrame(columns=_CAP_SNAPSHOT_COLUMNS)
+        return pd.read_sql_query(
+            "SELECT * FROM capability_cluster_snapshots "
+            "WHERE capability_id = ? AND run_id = ? ORDER BY count DESC",
+            self._conn, params=[capability_id, run_id],
+        )
+
+    def capability_cluster_members_frame(
+        self, capability_id: str, run_id: str
+    ) -> pd.DataFrame:
+        return pd.read_sql_query(
+            "SELECT cluster_id, span_id FROM capability_cluster_members "
+            "WHERE capability_id = ? AND run_id = ?",
+            self._conn, params=[capability_id, run_id],
+        )
+
+    def latest_capability_run_id_on_day(
+        self, capability_id: str, day: str
+    ) -> str | None:
+        row = self._conn.execute(
+            "SELECT run_id FROM capability_runs WHERE capability_id = ? "
+            "AND run_id LIKE ? ORDER BY run_id DESC LIMIT 1",
+            (capability_id, f"{day}%"),
+        ).fetchone()
+        return row["run_id"] if row else None
+
+    def _prune_capability_runs(self, capability_id: str, history_limit: int) -> None:
+        keep = max(1, history_limit)
+        stale = [
+            row["run_id"]
+            for row in self._conn.execute(
+                "SELECT run_id FROM capability_runs WHERE capability_id = ? "
+                "ORDER BY run_id DESC LIMIT -1 OFFSET ?",
+                (capability_id, keep),
+            ).fetchall()
+        ]
+        if not stale:
+            return
+        placeholders = ",".join("?" * len(stale))
+        for table in (
+            "capability_runs",
+            "capability_cluster_snapshots",
+            "capability_cluster_members",
+        ):
+            self._conn.execute(
+                f"DELETE FROM {table} WHERE capability_id = ? "  # noqa: S608 — table name is a literal
+                f"AND run_id IN ({placeholders})",
+                [capability_id, *stale],
+            )
+
     # ---- internals -----------------------------------------------------------
     def _count(self, table: str) -> int:
         return self._conn.execute(f"SELECT COUNT(*) AS n FROM {table}").fetchone()["n"]
@@ -555,6 +730,12 @@ def _iso(dt: datetime | None) -> str | None:
 _SNAPSHOT_COLUMNS = [
     "run_id", "cluster_id", "representative", "count", "n_users", "skill_name",
     "first_seen", "last_seen",
+]
+
+_CAP_SNAPSHOT_COLUMNS = [
+    "capability_id", "run_id", "cluster_id", "signature", "representative",
+    "count", "n_users", "skill_name", "covered", "in_scope", "route_len_avg",
+    "long_route", "first_seen", "last_seen",
 ]
 
 

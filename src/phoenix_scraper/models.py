@@ -143,6 +143,35 @@ class SkillGapProposal(_Frozen):
     sample_span_ids: tuple[str, ...] = ()
 
 
+class CapabilityRun(_Frozen):
+    """One recorded scoped analysis run for a capability (mirrors capability_runs)."""
+
+    run_id: str  # ISO-8601 UTC timestamp
+    capability_id: str
+    started_at: datetime
+    finished_at: datetime | None = None
+    window_start: datetime
+    window_end: datetime
+    n_spans: int = 0  # total spans in the store at run time
+    n_in_scope_spans: int = 0
+    n_clusters: int = 0
+    n_rung1_candidates: int = 0  # written 0 until Phase C
+    n_rung2_candidates: int = 0  # written 0 until Phase D
+    status: Literal["ok", "partial", "failed"] = "ok"
+    notes: tuple[str, ...] = ()
+
+
+class CapabilityRunResult(_Frozen):
+    """The return value of run_capability_analysis — the run plus what a caller
+    needs to print or report without re-querying."""
+
+    run: CapabilityRun
+    clusters: tuple[PromptCluster, ...] = ()
+    matches: tuple[SkillMatch, ...] = ()
+    proposals: tuple[SkillGapProposal, ...] = ()
+    previous_run_id: str | None = None
+
+
 class SpanEvaluation(_Frozen):
     """One judgement about a span, in Phoenix's span-annotation shape.
 
