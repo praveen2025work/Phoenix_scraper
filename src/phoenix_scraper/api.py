@@ -101,9 +101,10 @@ def create_app(settings: Settings) -> FastAPI:
         session_id: str | None = None,
         user_id: str | None = None,
         search: str | None = None,
+        capability: str | None = None,
         limit: int = Query(default=1000, ge=1, le=100_000),
     ) -> QueryFilters:
-        return QueryFilters(
+        qf = QueryFilters(
             project=project,
             start=_utc(start),
             end=_utc(end),
@@ -115,6 +116,10 @@ def create_app(settings: Settings) -> FastAPI:
             search=search,
             limit=limit,
         )
+        if capability:
+            with open_store() as store:
+                qf = _merge_capability(qf, capability, store)
+        return qf
 
     FiltersDep = Annotated[QueryFilters, Depends(span_filters)]
 
@@ -128,13 +133,14 @@ def create_app(settings: Settings) -> FastAPI:
         session_id: str | None = None,
         user_id: str | None = None,
         search: str | None = None,
+        capability: str | None = None,
         # Analytics must see the same corpus the analysis ran over — a 1000-span
         # default here silently skews every panel above 1000 spans.
         limit: int = Query(default=ANALYSIS_SPAN_LIMIT, ge=1, le=1_000_000),
     ) -> QueryFilters:
         return span_filters(
             project, start, end, stage, asset_class, model_name, session_id,
-            user_id, search, limit,
+            user_id, search, capability, limit,
         )
 
     AnalysisFiltersDep = Annotated[QueryFilters, Depends(analysis_filters)]
@@ -149,6 +155,7 @@ def create_app(settings: Settings) -> FastAPI:
         session_id: str | None = None,
         user_id: str | None = None,
         search: str | None = None,
+        capability: str | None = None,
         # evaluations_frame counts CHECK ROWS, and one span yields a row per
         # applicable check — so the span-sized analysis limit would truncate
         # every quality rollup above ~8k spans while still looking complete.
@@ -156,7 +163,7 @@ def create_app(settings: Settings) -> FastAPI:
     ) -> QueryFilters:
         return span_filters(
             project, start, end, stage, asset_class, model_name, session_id,
-            user_id, search, limit,
+            user_id, search, capability, limit,
         )
 
     QualityFiltersDep = Annotated[QueryFilters, Depends(quality_filters)]
@@ -619,6 +626,30 @@ def _utc(dt: datetime | None) -> datetime | None:
     if dt is None:
         return None
     return dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt.astimezone(UTC)
+
+
+def _merge_capability(
+    qf: QueryFilters, capability_id: str | None, store: Store
+) -> QueryFilters:
+    """Seed a QueryFilters from a stored capability; explicit fields still win."""
+    if not capability_id:
+        return qf
+    cap = store.get_capability(capability_id)
+    if cap is None:
+        return qf
+    from datetime import timedelta
+
+    now = datetime.now(UTC)
+    f = cap.filter
+    return qf.model_copy(update={
+        "project": qf.project or f.project,
+        "workflow_stage": qf.workflow_stage or f.workflow_stage,
+        "asset_class": qf.asset_class or f.asset_class,
+        "model_name": qf.model_name or f.model_name,
+        "search": qf.search or f.search,
+        "start": qf.start or (now - timedelta(days=cap.window_days)),
+        "end": qf.end or now,
+    })
 
 
 def _frame_response(df: pd.DataFrame, fmt: Fmt, name: str) -> Response:
