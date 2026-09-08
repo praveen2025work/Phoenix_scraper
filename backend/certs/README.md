@@ -7,10 +7,11 @@ extra installs.
 
 - A bundle works too: concatenate several PEM blocks (root + intermediates) into
   the one file.
-- Pickup is relative to the directory you run `pheonix` from (normally the
-  project root) — run `pheonix doctor` to confirm the bundle was found, or set
-  `PHEONIX_CA_BUNDLE` to an absolute path in `.env`.
-- How to obtain the certificate: see "HTTPS endpoint" in the main README.
+- Pickup is relative to the directory you run `pheonix` from (normally
+  `backend/`, i.e. `backend/certs/phoenix-ca.pem`) — run `pheonix doctor` to
+  confirm the bundle was found, or set `PHEONIX_CA_BUNDLE` to an absolute path
+  in `.env`.
+- How to obtain the certificate: see "HTTPS" in `backend/README.md`.
 
 `*.pem` files in this directory are gitignored so a certificate never lands in
 the public repo by accident. CA certificates contain no secret material (they

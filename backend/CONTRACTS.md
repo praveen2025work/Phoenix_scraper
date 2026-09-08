@@ -460,4 +460,4 @@ silently describe a truncated corpus while presenting itself as complete.
 - TDD: write tests first in `tests/test_<module>.py`, then implement to green.
 - Use fixtures from `tests/conftest.py` (sample_spans, tmp_store, catalog paths).
 - No network, no live Phoenix in tests; PhoenixClientWrapper tested via monkeypatched module.
-- Run: `uv run pytest tests/test_<module>.py -q` from the repo root.
+- Run: `uv run pytest tests/test_<module>.py -q` from `backend/`.
