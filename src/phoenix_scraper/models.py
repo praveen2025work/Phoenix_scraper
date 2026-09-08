@@ -172,6 +172,68 @@ class CapabilityRunResult(_Frozen):
     previous_run_id: str | None = None
 
 
+Rung = Literal["skill", "deterministic"]
+CandidateStatus = Literal[
+    "new", "accumulating", "insufficient_data", "ready", "accepted",
+    "snoozed", "rejected", "promoted", "stale",
+]
+DecisionAction = Literal["accept", "reject", "snooze", "reopen", "promote"]
+
+
+class Candidate(_Frozen):
+    """The persistent ladder record for one in-scope cluster (mirrors `candidates`)."""
+
+    candidate_id: str  # "<cap>:s:<cluster_id>" (rung 1) | "<cap>:d:<cluster_id>" (rung 2)
+    capability_id: str
+    rung: Rung
+    subtype: str = ""  # rung "skill": "new_skill" | "strengthen_skill"
+    cluster_id: str
+    title: str  # representative prompt, trimmed
+    signature: str
+    matched_skill: str | None = None
+    status: CandidateStatus = "new"
+    first_seen_run_id: str
+    first_seen_at: datetime
+    last_seen_run_id: str
+    last_seen_at: datetime
+    ready_at: datetime | None = None
+    promoted_at: datetime | None = None
+    promoted_artifact_paths: tuple[str, ...] = ()
+    snooze_until_run: int | None = None  # run ordinal to unsnooze at
+    dismiss_reason: str | None = None
+    decided_by: str | None = None
+    decided_at: datetime | None = None
+    current_evidence: dict[str, Any] = Field(default_factory=dict)
+
+
+class CandidateObservation(_Frozen):
+    """One candidate's evidence for one run (mirrors `candidate_observations`)."""
+
+    candidate_id: str
+    run_id: str
+    observed_at: datetime
+    count: int = 0
+    n_users: int = 0
+    n_sessions: int = 0
+    total_cost_usd: float = 0.0
+    score: float | None = None  # rung 1: gap strength; rung 2: determinism_score
+    signals: dict[str, Any] = Field(default_factory=dict)
+    met_evidence_bar: bool = False
+    crossed_threshold: bool = False  # met the bar this run, had not last run
+
+
+class CandidateDecision(_Frozen):
+    """One row of the append-only decision log (mirrors `candidate_decisions`)."""
+
+    candidate_id: str
+    action: DecisionAction
+    actor: str
+    created_at: datetime
+    id: int | None = None  # AUTOINCREMENT — None until read back
+    run_id: str | None = None
+    note: str = ""
+
+
 class SpanEvaluation(_Frozen):
     """One judgement about a span, in Phoenix's span-annotation shape.
 

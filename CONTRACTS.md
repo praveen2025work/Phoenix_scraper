@@ -97,10 +97,11 @@ def run_capability_analysis(store, settings, capability, *, window_start=None,
     # NO scrape. window defaults to [now - capability.window_days, now].
     # in-scope = capability_query_filters(...); costs -> build_clusters ->
     # load_capability_skills -> match_clusters -> annotate_coverage ->
-    # cluster_efficiency. Records capability_runs + capability_cluster_snapshots
-    # + capability_cluster_members; prunes to settings.run_history_limit per
-    # capability. `notes` (e.g. a scrape failure) force status='partial'.
-    # n_rung1_candidates / n_rung2_candidates are written 0 (Phases C / D).
+    # cluster_efficiency -> ladder.detect_rung1 -> ladder_run.update_rung1.
+    # Records capability_runs + capability_cluster_snapshots +
+    # capability_cluster_members; prunes to settings.run_history_limit per
+    # capability. Only scrape `notes` force status='partial'; ladder notes are
+    # informational. n_rung1_candidates is set; n_rung2_candidates stays 0 (Phase D).
 def run_capabilities(store, settings, *, capability_ids=None, all_active=False,
         client=None, window_start=None, window_end=None, replace_today=False,
         now=None) -> list[CapabilityRunResult]
@@ -113,6 +114,56 @@ def run_capabilities(store, settings, *, capability_ids=None, all_active=False,
 New tables (Phase B): `capability_runs`, `capability_cluster_snapshots` (column
 `skill_name`, not `matched_skill`, for `cluster_deltas` compatibility),
 `capability_cluster_members`. Pruned per capability to `run_history_limit`.
+
+## ladder.py  (pure: threshold resolution, Rung-1 detection, §10.1 state machine)
+```python
+def resolve_thresholds(capability, settings) -> LadderThresholds
+    # Settings defaults, overridden by capability.thresholds for the rung1_* keys.
+def detect_rung1(clusters, matches, annotated, efficiency, *, thresholds) -> list[Rung1Signal]
+    # one signal per in-scope cluster at/above the creation floor
+    # (max(3, rung1_min_count//3)) that is new_skill (no match >= skill_match_threshold)
+    # or strengthen_skill (matched but coverage_score < skill_coverage_threshold).
+    # score = gap strength; met_evidence_bar = n_users>=rung1_min_users AND count>=rung1_min_count.
+def readiness_met(recent_observations, *, sustained_runs, capability_run_count) -> bool
+def is_material_change(candidate, observation, *, thresholds) -> bool
+def next_status(candidate, observation, recent_observations, *, run_ordinal,
+        capability_run_count, thresholds) -> LadderTransition        # observed this run
+def advance_unobserved(candidate, *, run_ordinal, last_seen_ordinal,
+        history_limit) -> LadderTransition | None                    # not observed this run
+```
+
+## ladder_run.py  (store-touching: persist a run's Rung-1 candidates)
+```python
+def update_rung1(store, capability, *, run_id, run_ordinal, capability_run_count,
+        observed_at, signals, thresholds, history_limit) -> Rung1RunOutcome
+    # upsert candidates (create at 'new'), one observation row each (crossed_threshold
+    # flag), run next_status, persist status/ready_at + auto 'reopen' decision, prune
+    # observations to history_limit; then advance_unobserved for every other
+    # rung-'skill' candidate.
+```
+
+## artifacts.py  (render / write the ladder's draft artifacts; never edits hand-authored files)
+```python
+def render_new_skill_md(candidate, *, capability, member_prompts, today) -> (filename, markdown)
+    # frontmatter: name (kebab from signature), description, level, capability,
+    # keywords, example_prompts, status: draft, source_candidate, evidence. Body:
+    # scaffold comment + "## When to use" + "## Procedure\n1. TODO".
+def render_strengthen_block(candidate, skill, *, member_prompts, member_signatures) -> (target_path, yaml_block)
+    # reuses skill_coverage._yaml_block / _suggested_keywords; writes nothing.
+def promote_candidate(store, capability, candidate, *, now, actor, settings,
+        dry_run=False) -> PromoteResult
+    # new_skill -> writes capabilities/<cap>/skills/<name>.md (dedup-collided);
+    # strengthen_skill -> returns the paste block + target path, no file.
+    # Records a 'promote' decision; sets status='promoted' + promoted_artifact_paths.
+```
+
+New Store methods (Phase C): `upsert_candidate` / `get_candidate` /
+`candidates_frame(cap, *, rung, status)`; `record_candidate_observation` /
+`candidate_observations_frame` / `recent_candidate_observations(cid, n)` /
+`prune_candidate_observations(cid, keep)`; `record_candidate_decision -> id` /
+`record_candidate_decision_now` / `candidate_decisions_frame`;
+`capability_run_ordinal(cap, run_id=None)`. New tables: `candidates`,
+`candidate_observations`, `candidate_decisions`.
 
 ## taxonomy.py
 ```python
@@ -280,7 +331,10 @@ evaluate (+ --pull-annotations / --push / --push-all / --user), coverage (+ --wr
 report, export (--what spans|clusters|matches|proposals|sessions|evaluations|
 coverage|uncovered --fmt csv|json|parquet + filter options), serve,
 run (--capability | --all, --from, --to, --replace-today),
-capability (new | list | show | sync | runs).
+capability (new | list | show | sync | runs),
+candidates (<id> --rung --status --all),
+decide (<cid> --action accept|reject|snooze|reopen --actor --note --snooze-runs),
+promote (<cid> --accept --dry-run).
 API routes: GET /health, POST /demo/seed, POST /scrape/run, POST /analyze/run,
 POST /report/run, GET /prompts/frequent, GET /skills/matches, GET /skills/gaps,
 GET /skills/{coverage,uncovered,updates,updates.md}, GET /runs, GET /runs/delta,

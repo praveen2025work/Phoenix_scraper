@@ -9,6 +9,9 @@ from pathlib import Path
 import pandas as pd
 
 from .models import (
+    Candidate,
+    CandidateDecision,
+    CandidateObservation,
     Capability,
     CapabilityFilter,
     CapabilityRun,
@@ -215,6 +218,58 @@ CREATE TABLE IF NOT EXISTS capability_cluster_members (
 );
 CREATE INDEX IF NOT EXISTS idx_cap_members_run
     ON capability_cluster_members (capability_id, run_id);
+
+CREATE TABLE IF NOT EXISTS candidates (
+    candidate_id        TEXT PRIMARY KEY,
+    capability_id       TEXT NOT NULL,
+    rung                TEXT NOT NULL,
+    subtype             TEXT NOT NULL DEFAULT '',
+    cluster_id          TEXT NOT NULL,
+    title               TEXT NOT NULL DEFAULT '',
+    signature           TEXT NOT NULL DEFAULT '',
+    matched_skill       TEXT,
+    status              TEXT NOT NULL DEFAULT 'new',
+    first_seen_run_id   TEXT NOT NULL,
+    first_seen_at       TEXT NOT NULL,
+    last_seen_run_id    TEXT NOT NULL,
+    last_seen_at        TEXT NOT NULL,
+    ready_at            TEXT,
+    promoted_at         TEXT,
+    promoted_artifact_paths_json TEXT NOT NULL DEFAULT '[]',
+    snooze_until_run    INTEGER,
+    dismiss_reason      TEXT,
+    decided_by          TEXT,
+    decided_at          TEXT,
+    current_evidence_json TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_candidates_capability
+    ON candidates (capability_id, rung, status);
+
+CREATE TABLE IF NOT EXISTS candidate_observations (
+    candidate_id       TEXT NOT NULL,
+    run_id             TEXT NOT NULL,
+    observed_at        TEXT NOT NULL,
+    count              INTEGER NOT NULL DEFAULT 0,
+    n_users            INTEGER NOT NULL DEFAULT 0,
+    n_sessions         INTEGER NOT NULL DEFAULT 0,
+    total_cost_usd     REAL NOT NULL DEFAULT 0,
+    score              REAL,
+    signals_json       TEXT NOT NULL DEFAULT '{}',
+    met_evidence_bar   INTEGER NOT NULL DEFAULT 0,
+    crossed_threshold  INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (candidate_id, run_id)
+);
+
+CREATE TABLE IF NOT EXISTS candidate_decisions (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    candidate_id TEXT NOT NULL,
+    run_id       TEXT,
+    action       TEXT NOT NULL,
+    actor        TEXT NOT NULL,
+    note         TEXT NOT NULL DEFAULT '',
+    created_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_cand_decisions ON candidate_decisions (candidate_id, id);
 """
 
 
@@ -718,6 +773,150 @@ class Store:
                 [capability_id, *stale],
             )
 
+    # ---- ladder candidates --------------------------------------------------
+    def upsert_candidate(self, candidate: Candidate) -> None:
+        c = self._conn
+        c.execute(
+            "INSERT OR REPLACE INTO candidates ("
+            "candidate_id, capability_id, rung, subtype, cluster_id, title, "
+            "signature, matched_skill, status, first_seen_run_id, first_seen_at, "
+            "last_seen_run_id, last_seen_at, ready_at, promoted_at, "
+            "promoted_artifact_paths_json, snooze_until_run, dismiss_reason, "
+            "decided_by, decided_at, current_evidence_json) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                candidate.candidate_id, candidate.capability_id, candidate.rung,
+                candidate.subtype, candidate.cluster_id, candidate.title,
+                candidate.signature, candidate.matched_skill, candidate.status,
+                candidate.first_seen_run_id, _iso(candidate.first_seen_at),
+                candidate.last_seen_run_id, _iso(candidate.last_seen_at),
+                _iso(candidate.ready_at), _iso(candidate.promoted_at),
+                json.dumps(list(candidate.promoted_artifact_paths)),
+                candidate.snooze_until_run, candidate.dismiss_reason,
+                candidate.decided_by, _iso(candidate.decided_at),
+                json.dumps(candidate.current_evidence),
+            ),
+        )
+        c.commit()
+
+    def get_candidate(self, candidate_id: str) -> Candidate | None:
+        row = self._conn.execute(
+            "SELECT * FROM candidates WHERE candidate_id = ?", (candidate_id,)
+        ).fetchone()
+        return _candidate_from_row(row) if row is not None else None
+
+    def candidates_frame(
+        self, capability_id: str, *, rung: str | None = None, status: str | None = None
+    ) -> pd.DataFrame:
+        clauses = ["capability_id = ?"]
+        params: list = [capability_id]
+        if rung is not None:
+            clauses.append("rung = ?")
+            params.append(rung)
+        if status is not None:
+            clauses.append("status = ?")
+            params.append(status)
+        return pd.read_sql_query(
+            f"SELECT * FROM candidates WHERE {' AND '.join(clauses)} "  # noqa: S608 — literal clauses
+            "ORDER BY status, last_seen_at DESC",
+            self._conn, params=params,
+        )
+
+    def record_candidate_observation(self, obs: CandidateObservation) -> None:
+        self._conn.execute(
+            "INSERT OR REPLACE INTO candidate_observations ("
+            "candidate_id, run_id, observed_at, count, n_users, n_sessions, "
+            "total_cost_usd, score, signals_json, met_evidence_bar, crossed_threshold"
+            ") VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                obs.candidate_id, obs.run_id, _iso(obs.observed_at), obs.count,
+                obs.n_users, obs.n_sessions, obs.total_cost_usd, obs.score,
+                json.dumps(obs.signals), int(obs.met_evidence_bar),
+                int(obs.crossed_threshold),
+            ),
+        )
+        self._conn.commit()
+
+    def candidate_observations_frame(self, candidate_id: str) -> pd.DataFrame:
+        return pd.read_sql_query(
+            "SELECT * FROM candidate_observations WHERE candidate_id = ? "
+            "ORDER BY run_id",
+            self._conn, params=[candidate_id],
+        )
+
+    def recent_candidate_observations(
+        self, candidate_id: str, n: int
+    ) -> list[CandidateObservation]:
+        rows = self._conn.execute(
+            "SELECT * FROM candidate_observations WHERE candidate_id = ? "
+            "ORDER BY run_id DESC LIMIT ?",
+            (candidate_id, n),
+        ).fetchall()
+        return [_observation_from_row(row) for row in rows]
+
+    def record_candidate_decision(self, decision: CandidateDecision) -> int:
+        cur = self._conn.execute(
+            "INSERT INTO candidate_decisions (candidate_id, run_id, action, actor, "
+            "note, created_at) VALUES (?,?,?,?,?,?)",
+            (
+                decision.candidate_id, decision.run_id, decision.action,
+                decision.actor, decision.note, _iso(decision.created_at),
+            ),
+        )
+        self._conn.commit()
+        return int(cur.lastrowid)
+
+    def candidate_decisions_frame(self, candidate_id: str) -> pd.DataFrame:
+        return pd.read_sql_query(
+            "SELECT * FROM candidate_decisions WHERE candidate_id = ? ORDER BY id",
+            self._conn, params=[candidate_id],
+        )
+
+    def record_candidate_decision_now(
+        self, candidate_id: str, action: str, actor: str, when: datetime,
+        *, note: str = "", run_id: str | None = None,
+    ) -> int:
+        """Convenience: build + record a CandidateDecision in one call."""
+        return self.record_candidate_decision(CandidateDecision(
+            candidate_id=candidate_id, run_id=run_id, action=action, actor=actor,
+            note=note, created_at=when,
+        ))
+
+    def capability_run_ordinal(
+        self, capability_id: str, run_id: str | None = None
+    ) -> int:
+        if run_id is None:
+            row = self._conn.execute(
+                "SELECT COUNT(*) AS n FROM capability_runs WHERE capability_id = ?",
+                (capability_id,),
+            ).fetchone()
+        else:
+            row = self._conn.execute(
+                "SELECT COUNT(*) AS n FROM capability_runs WHERE capability_id = ? "
+                "AND run_id <= ?",
+                (capability_id, run_id),
+            ).fetchone()
+        return int(row["n"])
+
+    def prune_candidate_observations(self, candidate_id: str, keep: int) -> None:
+        stale = [
+            row["run_id"]
+            for row in self._conn.execute(
+                "SELECT run_id FROM candidate_observations WHERE candidate_id = ? "
+                "ORDER BY run_id DESC LIMIT -1 OFFSET ?",
+                (candidate_id, max(1, keep)),
+            ).fetchall()
+        ]
+        if not stale:
+            return
+        placeholders = ",".join("?" * len(stale))
+        self._conn.execute(
+            "DELETE FROM candidate_observations WHERE candidate_id = ? "  # noqa: S608 — placeholders only
+            f"AND run_id IN ({placeholders})",
+            [candidate_id, *stale],
+        )
+        self._conn.commit()
+
     # ---- internals -----------------------------------------------------------
     def _count(self, table: str) -> int:
         return self._conn.execute(f"SELECT COUNT(*) AS n FROM {table}").fetchone()["n"]
@@ -762,6 +961,52 @@ def _capability_from_row(row: sqlite3.Row) -> Capability:
         window_days=row["window_days"],
         thresholds=json.loads(row["thresholds_json"]),
         status=row["status"],
+    )
+
+
+def _dt_or_none(value: str | None) -> datetime | None:
+    return datetime.fromisoformat(value) if value else None
+
+
+def _candidate_from_row(row: sqlite3.Row) -> Candidate:
+    return Candidate(
+        candidate_id=row["candidate_id"],
+        capability_id=row["capability_id"],
+        rung=row["rung"],
+        subtype=row["subtype"],
+        cluster_id=row["cluster_id"],
+        title=row["title"],
+        signature=row["signature"],
+        matched_skill=row["matched_skill"],
+        status=row["status"],
+        first_seen_run_id=row["first_seen_run_id"],
+        first_seen_at=datetime.fromisoformat(row["first_seen_at"]),
+        last_seen_run_id=row["last_seen_run_id"],
+        last_seen_at=datetime.fromisoformat(row["last_seen_at"]),
+        ready_at=_dt_or_none(row["ready_at"]),
+        promoted_at=_dt_or_none(row["promoted_at"]),
+        promoted_artifact_paths=tuple(json.loads(row["promoted_artifact_paths_json"])),
+        snooze_until_run=row["snooze_until_run"],
+        dismiss_reason=row["dismiss_reason"],
+        decided_by=row["decided_by"],
+        decided_at=_dt_or_none(row["decided_at"]),
+        current_evidence=json.loads(row["current_evidence_json"]),
+    )
+
+
+def _observation_from_row(row: sqlite3.Row) -> CandidateObservation:
+    return CandidateObservation(
+        candidate_id=row["candidate_id"],
+        run_id=row["run_id"],
+        observed_at=datetime.fromisoformat(row["observed_at"]),
+        count=row["count"],
+        n_users=row["n_users"],
+        n_sessions=row["n_sessions"],
+        total_cost_usd=row["total_cost_usd"],
+        score=row["score"],
+        signals=json.loads(row["signals_json"]),
+        met_evidence_bar=bool(row["met_evidence_bar"]),
+        crossed_threshold=bool(row["crossed_threshold"]),
     )
 
 

@@ -114,6 +114,45 @@ class TestRunCapabilityAnalysis:
         assert "recon-break-local" in names
         assert "glossary-explainer" in names  # catalog entries still present
 
+    def _seed_uncovered_cluster(self, store) -> None:
+        # A recurring fobo_recon question no catalog skill demonstrates -> a
+        # new_skill Rung-1 candidate. Distinct users so the evidence bar can be met.
+        from datetime import timedelta as _td
+
+        from phoenix_scraper.models import SpanRecord
+        base = datetime(2026, 7, 20, 9, tzinfo=UTC)
+        store.upsert_spans([
+            SpanRecord(
+                span_id=f"unc-{i:03d}", trace_id=f"unc-t{i}", session_id=f"unc-s{i}",
+                project="pnl-agent", span_kind="LLM",
+                start_time=base + _td(minutes=i),
+                workflow_stage="fobo_recon", asset_class="fx",
+                user_id=f"analyst-{i % 4}",
+                input_text="Walk me through the xyzzy quux adjustment posting workflow",
+                output_text="Steps ...",
+            )
+            for i in range(8)
+        ])
+
+    def test_rung1_candidates_created_by_a_run(self, seeded_store, fobo_capability) -> None:
+        settings, cap = fobo_capability
+        self._seed_uncovered_cluster(seeded_store)
+        run_capability_analysis(seeded_store, settings, cap, now=NOW)
+        runs = seeded_store.capability_runs_frame("fobo")
+        assert runs.iloc[0]["n_rung1_candidates"] >= 1
+        assert runs.iloc[0]["status"] == "ok"  # ladder notes do not force partial
+        cands = seeded_store.candidates_frame("fobo", rung="skill")
+        assert len(cands) >= 1
+        assert set(cands["status"]) <= {"new", "accumulating"}
+
+    def test_second_run_advances_candidate_status(self, seeded_store, fobo_capability) -> None:
+        settings, cap = fobo_capability
+        self._seed_uncovered_cluster(seeded_store)
+        run_capability_analysis(seeded_store, settings, cap, now=NOW - timedelta(days=1))
+        run_capability_analysis(seeded_store, settings, cap, now=NOW)
+        cands = seeded_store.candidates_frame("fobo", rung="skill")
+        assert "accumulating" in set(cands["status"])
+
 
 class _FakeClient:
     """Stand-in for PhoenixClientWrapper; never touches the network."""

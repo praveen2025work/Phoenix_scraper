@@ -30,6 +30,8 @@ from .cluster import build_clusters
 from .config import Settings
 from .costs import compute_span_costs, load_pricing
 from .insights import cluster_efficiency
+from .ladder import detect_rung1, resolve_thresholds
+from .ladder_run import update_rung1
 from .models import (
     Capability,
     CapabilityRun,
@@ -145,6 +147,7 @@ def run_capability_analysis(
     window_end = window_end or started_at
     window_start = window_start or (window_end - timedelta(days=capability.window_days))
     run_notes = list(notes or [])
+    scrape_partial = bool(notes)  # only scrape failures force status='partial'
 
     filters = capability_query_filters(
         capability, start=window_start, end=window_end, limit=ANALYSIS_SPAN_LIMIT
@@ -192,6 +195,30 @@ def run_capability_analysis(
         else store.previous_capability_run_id(capability.id)
     )
 
+    # Rung 1: detect candidates + run the lifecycle, before recording the run so
+    # capability_runs.n_rung1_candidates is accurate. For a fresh run this run's
+    # row is not written yet -> capability_run_ordinal(run_id) is 0 and the
+    # ordinal falls back to count + 1; on --replace-today the row exists.
+    existing_ordinal = store.capability_run_ordinal(capability.id, run_id)
+    this_ordinal = existing_ordinal or (store.capability_run_ordinal(capability.id) + 1)
+    run_count = max(this_ordinal, store.capability_run_ordinal(capability.id))
+
+    thresholds = resolve_thresholds(capability, settings)
+    rung1_signals = detect_rung1(
+        list(clusters), list(matches), annotated, efficiency, thresholds=thresholds
+    )
+    rung1 = update_rung1(
+        store, capability,
+        run_id=run_id,
+        run_ordinal=this_ordinal,
+        capability_run_count=run_count,
+        observed_at=started_at,
+        signals=rung1_signals,
+        thresholds=thresholds,
+        history_limit=settings.run_history_limit,
+    )
+    run_notes.extend(rung1.notes)
+
     run = CapabilityRun(
         run_id=run_id,
         capability_id=capability.id,
@@ -202,7 +229,8 @@ def run_capability_analysis(
         n_spans=store.span_count(),
         n_in_scope_spans=int(len(in_scope)),
         n_clusters=len(clusters),
-        status="partial" if run_notes else "ok",
+        n_rung1_candidates=rung1.n_candidates,
+        status="partial" if scrape_partial else "ok",
         notes=tuple(run_notes),
     )
     store.record_capability_run(

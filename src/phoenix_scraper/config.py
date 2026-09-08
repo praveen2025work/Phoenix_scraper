@@ -52,6 +52,13 @@ class Settings(BaseSettings):
     max_suggested_prompts: int = 8  # example_prompts proposed per skill per run
     run_history_limit: int = 20  # analysis runs kept for run-over-run diffing
 
+    # ladder — Rung 1 (see the ladder design spec §9.1, §14)
+    rung1_min_users: int = 3  # evidence bar: distinct users
+    rung1_min_count: int = 15  # evidence bar: asks
+    rung1_sustained_runs: int = 5  # consecutive runs meeting the bar -> ready
+    material_change_count_factor: float = 1.5  # reopen a rejected candidate
+    material_change_users_delta: int = 2  # ... or this many more users
+
     # validation knobs (see evaluations.py). Defaults are deliberately lenient:
     # a code check that cries wolf gets ignored, and then nothing gets validated.
     evaluate_on_analyze: bool = True  # run the CODE checks as part of `analyze`
