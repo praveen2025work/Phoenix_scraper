@@ -1,14 +1,15 @@
-"""update_rung1: candidates + observations + state machine across runs."""
+"""update_rung1 / update_rung2: candidates + observations + state machine across runs."""
 
 from datetime import UTC, datetime, timedelta
 
+import pandas as pd
 import pytest
 
 from phoenix_scraper import ladder
 from phoenix_scraper.config import Settings
-from phoenix_scraper.ladder import Rung1Signal
-from phoenix_scraper.ladder_run import update_rung1
-from phoenix_scraper.models import Capability, CapabilityFilter
+from phoenix_scraper.ladder import Rung1Signal, detect_rung2
+from phoenix_scraper.ladder_run import update_rung1, update_rung2
+from phoenix_scraper.models import Capability, CapabilityFilter, PromptCluster
 
 TS = datetime(2026, 9, 7, 12, tzinfo=UTC)
 
@@ -91,3 +92,67 @@ class TestUpdateRung1:
                    run_id="r1", ordinal=1, count=1, at=TS)
         assert out.n_candidates == 2
         assert any("Rung 1" in n for n in out.notes)
+
+
+def _r2_frame(cluster_id, answers):
+    return pd.DataFrame([
+        dict(span_id=f"{cluster_id}-{i}", trace_id=f"{cluster_id}-t{i}",
+             span_kind="LLM", input_text="why is there a break of 100k on BUND",
+             output_text=a, start_time=i)
+        for i, a in enumerate(answers)
+    ])
+
+
+def _r2_signals(cluster_id, answers, t):
+    frame = _r2_frame(cluster_id, answers)
+    cluster = PromptCluster(
+        cluster_id=cluster_id, signature=f"sig {cluster_id}",
+        representative="why is there a break", count=len(answers),
+        span_ids=tuple(frame["span_id"]),
+    )
+    return detect_rung2([cluster], [], frame, thresholds=t)
+
+
+def _run2(store, cap, t, signals, *, run_id, ordinal, count, at):
+    return update_rung2(
+        store, cap, run_id=run_id, run_ordinal=ordinal, capability_run_count=count,
+        observed_at=at, signals=signals, thresholds=t, history_limit=20,
+    )
+
+
+class TestUpdateRung2:
+    def test_deterministic_cluster_creates_candidate(self, tmp_store, t) -> None:
+        answers = [f"The break of {n}k on BUND is an unsettled trade." for n in range(14)]
+        out = _run2(tmp_store, _cap(), t, _r2_signals("ddd", answers, t),
+                    run_id="r1", ordinal=1, count=1, at=TS)
+        assert out.n_candidates == 1
+        c = tmp_store.get_candidate("fobo:d:ddd")
+        assert c is not None and c.rung == "deterministic"
+
+    def test_variable_cluster_below_floor_is_not_recorded(self, tmp_store, t) -> None:
+        stems = ["a timing mismatch on settlement drove the gap",
+                 "cash projections shifted after the treasury update",
+                 "the desk flagged unusual credit spread widening",
+                 "position limits were breached intraday then corrected"]
+        answers = [stems[i % len(stems)] + f" note {i}" for i in range(14)]
+        out = _run2(tmp_store, _cap(), t, _r2_signals("var", answers, t),
+                    run_id="r1", ordinal=1, count=1, at=TS)
+        assert out.n_candidates == 0
+        assert tmp_store.get_candidate("fobo:d:var") is None
+
+    def test_ineligible_existing_candidate_goes_insufficient_data(self, tmp_store, t) -> None:
+        good = [f"The break of {n}k on BUND is unsettled." for n in range(14)]
+        _run2(tmp_store, _cap(), t, _r2_signals("ddd", good, t),
+              run_id="r1", ordinal=1, count=1, at=TS)
+        thin = [f"The break of {n}k on BUND is unsettled." for n in range(4)]
+        out = _run2(tmp_store, _cap(), t, _r2_signals("ddd", thin, t),
+                    run_id="r2", ordinal=2, count=2, at=TS + timedelta(days=1))
+        assert tmp_store.get_candidate("fobo:d:ddd").status == "insufficient_data"
+        assert out.n_insufficient == 1
+
+    def test_sustained_reaches_ready(self, tmp_store, t) -> None:
+        answers = [f"The break of {n}k on BUND is an unsettled trade." for n in range(14)]
+        for i in range(1, 4):
+            _run2(tmp_store, _cap(), t, _r2_signals("ddd", answers, t),
+                  run_id=f"r{i}", ordinal=i, count=i, at=TS + timedelta(days=i))
+        assert tmp_store.get_candidate("fobo:d:ddd").status == "ready"

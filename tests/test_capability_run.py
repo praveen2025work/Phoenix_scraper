@@ -153,6 +153,33 @@ class TestRunCapabilityAnalysis:
         cands = seeded_store.candidates_frame("fobo", rung="skill")
         assert "accumulating" in set(cands["status"])
 
+    def test_rung2_candidate_from_a_deterministic_cluster(
+        self, seeded_store, fobo_capability
+    ) -> None:
+        settings, cap = fobo_capability
+        from datetime import timedelta as _td
+
+        from phoenix_scraper.models import SpanRecord
+        base = datetime(2026, 7, 20, 9, tzinfo=UTC)
+        seeded_store.upsert_spans([
+            SpanRecord(
+                span_id=f"det-{i:03d}", trace_id=f"det-t{i}", session_id=f"det-s{i}",
+                project="pnl-agent", span_kind="LLM",
+                start_time=base + _td(minutes=i),
+                workflow_stage="fobo_recon", asset_class="fx",
+                user_id=f"analyst-{i % 4}",
+                input_text=f"why is there a recon break of {100 + i}k on EURUSD",
+                output_text="The FX break is caused by an unsettled trade; post an adjustment.",
+            )
+            for i in range(14)
+        ])
+        run_capability_analysis(seeded_store, settings, cap, now=NOW)
+        runs = seeded_store.capability_runs_frame("fobo")
+        assert runs.iloc[0]["n_rung2_candidates"] >= 1
+        assert runs.iloc[0]["status"] == "ok"
+        d_cands = seeded_store.candidates_frame("fobo", rung="deterministic")
+        assert len(d_cands) >= 1
+
 
 class _FakeClient:
     """Stand-in for PhoenixClientWrapper; never touches the network."""

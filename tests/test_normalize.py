@@ -96,3 +96,19 @@ class TestPromptSignature:
         assert prompt_signature("") == ""
         assert prompt_signature("  \t \n ") == ""
         assert prompt_signature("?!.,") == ""
+
+
+def test_mask_volatile_is_the_canonical_masker() -> None:
+    from phoenix_scraper.normalize import mask_volatile, normalize_prompt
+    text = "Why is there a recon break of 100k on EQ_DELTA1_NY as of 2026-07-29?"
+    assert mask_volatile(text) == normalize_prompt(text)
+    masked = mask_volatile(text)
+    assert "<num>" in masked and "<book>" in masked and "<date>" in masked
+    assert "100k" not in masked
+
+
+def test_mask_volatile_masks_output_style_text() -> None:
+    from phoenix_scraper.normalize import mask_volatile
+    a = mask_volatile("The EUR break of 250k on BUND_FFT is an unsettled trade.")
+    b = mask_volatile("The USD break of 1.2m on GILT_LDN is an unsettled trade.")
+    assert a == b  # same template once the volatile bits are masked

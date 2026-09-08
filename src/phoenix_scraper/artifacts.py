@@ -119,6 +119,83 @@ def render_strengthen_block(
     return target, block
 
 
+def _mask(text: str) -> str:
+    from .normalize import mask_volatile
+    return mask_volatile(text)
+
+
+def render_rung2_stub(
+    candidate: Candidate,
+    *,
+    latest_observation_signals: dict,
+    pairs: list[tuple[str, str]],
+) -> list[tuple[str, str]]:
+    """Three (filename, body) tuples: <name>.py, test_<name>.py, <name>.md."""
+    stem = _skill_stem(candidate)
+    sig = latest_observation_signals
+    templates = sig.get("templates") or []
+    ev = candidate.current_evidence
+    score = ev.get("determinism_score", 0.0)
+
+    tmpl_lines = "\n".join(
+        f'    "template_{i + 1}": {rep!r},  # {n} answers'
+        for i, (rep, n) in enumerate(templates)
+    ) or "    # no templates observed"
+    decision_table = ""
+    if float(sig.get("slot_stability") or 0.0) >= 0.8 and pairs:
+        rows = "\n".join(f'    {_mask(p)!r}: "template_1",' for p, _a in pairs[:8])
+        decision_table = f"\n\nDECISION_TABLE: dict[str, str] = {{\n{rows}\n}}\n"
+
+    py = (
+        f'"""Deterministic replacement for the LLM step behind `{stem}`.\n\n'
+        f"Scaffolded by pheonix from candidate {candidate.candidate_id}.\n"
+        f"determinism_score {score} — template_concentration "
+        f"{sig.get('template_concentration')}, route_invariance "
+        f"{sig.get('route_invariance')}, output_self_similarity "
+        f"{sig.get('output_self_similarity')}, slot_stability "
+        f"{sig.get('slot_stability')}.\n"
+        f'"""\n'
+        f"from __future__ import annotations\n\n"
+        f"TEMPLATES: dict[str, str] = {{\n{tmpl_lines}\n}}\n"
+        f"{decision_table}\n"
+        f"def handle(prompt: str, context: list[dict]) -> str:\n"
+        f'    """TODO: extract the slots from `prompt`, classify from `context`,\n'
+        f'    return the filled TEMPLATES entry. test_{stem}.py has the real cases."""\n'
+        f"    raise NotImplementedError\n"
+    )
+
+    cases = ",\n".join(f"    ({p!r}, {a!r})" for p, a in pairs) or "    # none observed"
+    test = (
+        f'"""Real observed (prompt -> answer) pairs for `{stem}`. Ships red."""\n'
+        f"import pytest\n\n"
+        f"from .{stem} import handle\n\n"
+        f"CASES = [\n{cases}\n]\n\n\n"
+        f'@pytest.mark.parametrize("prompt, expected", CASES)\n'
+        f"def test_handle_matches_observed(prompt: str, expected: str) -> None:\n"
+        f'    assert " ".join(handle(prompt, []).split()) == " ".join(expected.split())\n'
+    )
+
+    tmpl_table = "\n".join(
+        f"| T{i + 1} | {n} | `{rep}` |" for i, (rep, n) in enumerate(templates)
+    ) or "| — | — | — |"
+    md = (
+        f"# {stem} — deterministic candidate\n\n"
+        f"Source candidate: `{candidate.candidate_id}`  ·  "
+        f"determinism_score **{score}**  ·  {ev.get('n_answer_spans', 0)} answer spans\n\n"
+        f"## Signals\n\n| signal | value |\n|---|---|\n"
+        f"| template_concentration | {sig.get('template_concentration')} |\n"
+        f"| route_invariance | {sig.get('route_invariance')} |\n"
+        f"| output_self_similarity | {sig.get('output_self_similarity')} |\n"
+        f"| slot_stability | {sig.get('slot_stability')} |\n\n"
+        f"## Observed templates\n\n| # | answers | masked text |\n|---|---|---|\n{tmpl_table}\n\n"
+        f"## Open decisions\n\n"
+        f"- Slot extraction: which fields does `handle` pull from the prompt?\n"
+        f"- Classifier input: what does `context` need to carry to pick the template?\n"
+        f"- Error handling: what does `handle` do when no template fits?\n"
+    )
+    return [(f"{stem}.py", py), (f"test_{stem}.py", test), (f"{stem}.md", md)]
+
+
 def _member_prompts(store: Store, capability: Capability, candidate: Candidate) -> list[str]:
     f = capability.filter
     frame = store.spans_frame(QueryFilters(
@@ -151,6 +228,30 @@ def promote_candidate(
     prompts = _member_prompts(store, capability, candidate)
     cap_dir = Path(settings.capabilities_dir) / capability.id
 
+    if candidate.rung == "deterministic":
+        det_dir = cap_dir / "deterministic"
+        det_dir.mkdir(parents=True, exist_ok=True)
+        recent = store.recent_candidate_observations(candidate.candidate_id, 1)
+        obs_signals = recent[0].signals if recent else {}
+        files = render_rung2_stub(
+            candidate, latest_observation_signals=obs_signals,
+            pairs=[(p, p) for p in prompts[:20]],
+        )
+        base_stem = files[0][0][:-3]
+        final_stem = dedupe_path(det_dir, base_stem, ".py").stem
+        contents_list: list[tuple[str, str]] = []
+        written: list[str] = []
+        for name, body in files:
+            out = det_dir / name.replace(base_stem, final_stem, 1)
+            contents_list.append((str(out), body))
+            if not dry_run:
+                out.write_text(body, encoding="utf-8")
+            written.append(str(out))
+        return _finish_promote(
+            store, candidate, now, actor, tuple(written), tuple(contents_list),
+            wrote=not dry_run, dry_run=dry_run,
+        )
+
     if candidate.subtype == "strengthen_skill":
         from .skills import load_all_skills
         skills = {s.name: s for s in load_all_skills(settings)}
@@ -178,10 +279,24 @@ def promote_candidate(
         paths = (str(out_path),)
         wrote = not dry_run
 
+    return _finish_promote(
+        store, candidate, now, actor, paths, contents, wrote=wrote, dry_run=dry_run,
+    )
+
+
+def _finish_promote(
+    store: Store,
+    candidate: Candidate,
+    now: datetime,
+    actor: str,
+    paths: tuple[str, ...],
+    contents: tuple[tuple[str, str], ...],
+    *,
+    wrote: bool,
+    dry_run: bool,
+) -> PromoteResult:
     if not dry_run:
-        store.record_candidate_decision_now(
-            candidate.candidate_id, "promote", actor, now,
-        )
+        store.record_candidate_decision_now(candidate.candidate_id, "promote", actor, now)
         store.upsert_candidate(candidate.model_copy(update={
             "status": "promoted",
             "promoted_at": now,

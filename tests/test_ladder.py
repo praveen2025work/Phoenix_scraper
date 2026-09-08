@@ -236,3 +236,71 @@ class TestAdvanceUnobserved:
         for st in ("promoted", "rejected", "accepted"):
             assert ladder.advance_unobserved(_cand2(st), run_ordinal=99,
                                              last_seen_ordinal=1, history_limit=20) is None
+
+
+class TestRung2Thresholds:
+    def test_rung2_defaults_and_overrides(self) -> None:
+        t = ladder.resolve_thresholds(_capability(), _settings())
+        assert t.rung2_min_answer_spans == 10 and t.rung2_determinism_score == 0.8
+        assert t.rung2_sustained_runs == 3
+        assert t.cluster_fuzz_threshold == 90
+        t2 = ladder.resolve_thresholds(
+            _capability({"rung2_determinism_score": 0.6, "rung2_sustained_runs": 2}),
+            _settings(),
+        )
+        assert t2.rung2_determinism_score == 0.6 and t2.rung2_sustained_runs == 2
+
+
+class TestDetectRung2:
+    def _in_scope(self, cluster_id, answers, prompts=None):
+        prompts = prompts or ["why is there a break of 100k on BUND"] * len(answers)
+        return pd.DataFrame([
+            dict(span_id=f"{cluster_id}-{i}", trace_id=f"{cluster_id}-t{i}",
+                 span_kind="LLM", input_text=p, output_text=a, start_time=i)
+            for i, (a, p) in enumerate(zip(answers, prompts, strict=False))
+        ])
+
+    def test_eligible_deterministic_cluster_signal(self) -> None:
+        answers = [f"The break of {n}k on BUND is an unsettled trade." for n in range(14)]
+        frame = self._in_scope("ddd", answers)
+        cluster = _cluster("ddd", count=14).model_copy(
+            update={"span_ids": tuple(frame["span_id"])}
+        )
+        t = ladder.resolve_thresholds(_capability(), _settings())
+        signals = ladder.detect_rung2([cluster], [], frame, thresholds=t)
+        assert len(signals) == 1
+        assert signals[0].eligible is True
+        assert signals[0].met_evidence_bar is True  # score > 0.8
+
+    def test_ineligible_cluster_signal_not_met(self) -> None:
+        answers = [f"answer {n}" for n in range(4)]
+        frame = self._in_scope("eee", answers)
+        cluster = _cluster("eee", count=4).model_copy(
+            update={"span_ids": tuple(frame["span_id"])}
+        )
+        t = ladder.resolve_thresholds(_capability(), _settings())
+        signals = ladder.detect_rung2([cluster], [], frame, thresholds=t)
+        assert signals[0].eligible is False and signals[0].met_evidence_bar is False
+
+
+class TestNextStatusRung2:
+    def _t(self):
+        return ladder.resolve_thresholds(_capability(), _settings())
+
+    def test_ineligible_new_becomes_insufficient_data(self) -> None:
+        tr = ladder.next_status(_cand2("new"), _o(False), [_o(False)],
+                                run_ordinal=1, capability_run_count=1,
+                                thresholds=self._t(), eligible=False)
+        assert tr.status == "insufficient_data"
+
+    def test_insufficient_data_resumes_when_eligible(self) -> None:
+        tr = ladder.next_status(_cand2("insufficient_data"), _o(True), [_o(True), _o(True)],
+                                run_ordinal=3, capability_run_count=3,
+                                thresholds=self._t(), eligible=True)
+        assert tr.status == "accumulating"
+
+    def test_insufficient_data_stays_when_still_ineligible(self) -> None:
+        tr = ladder.next_status(_cand2("insufficient_data"), _o(False), [_o(False)],
+                                run_ordinal=3, capability_run_count=3,
+                                thresholds=self._t(), eligible=False)
+        assert tr.status == "insufficient_data"
