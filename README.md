@@ -614,9 +614,20 @@ uv run pheonix export --what spans|clusters|matches|proposals|sessions|evaluatio
 | `GET /costs/summary` | cost rollup (`group_by=model_name\|workflow_stage\|asset_class\|user_id`) |
 | `GET /spans` | raw filtered spans |
 | `POST /demo/seed`, `POST /scrape/run` | seed fixtures / trigger live scrape |
+| `GET/POST /capabilities`, `GET/PATCH/DELETE /capabilities/{id}` | capability CRUD (`?purge=` also deletes the dir) |
+| `POST /capabilities/{id}/runs` | trigger a scoped run; `{from?, to?, replace_today?}` |
+| `GET /capabilities/{id}/runs`, `.../{run_id}`, `.../runs/delta` | run history, one run, run-over-run diff |
+| `GET /capabilities/{id}/candidates` | the ladder board (`?rung=`, `?status=`) |
+| `GET /candidates/{cid}` | one candidate: evidence trend, signals, decisions |
+| `POST /candidates/{cid}/decision` | `{action: accept\|reject\|snooze\|reopen, actor?, note?}` (409 on invalid) |
+| `POST /candidates/{cid}/promote` | write the artifact (`?accept=` allows ready → promoted) |
+| `GET /candidates/{cid}/artifact/preview` | what promote would write, without writing |
 
 Every list endpoint accepts filter query params; `fmt=csv` returns a download
-(`Content-Disposition: attachment`).
+(`Content-Disposition: attachment`). Every analytics route also takes
+`?capability=<id>` to scope it to that capability's filter and window. Set
+`PHEONIX_CORS_ORIGINS=http://localhost:5173` (comma-separated) to let a separate
+frontend dev server call the API.
 
 ## Layout
 
