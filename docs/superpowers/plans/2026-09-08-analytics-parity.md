@@ -72,7 +72,7 @@ Analytics tab reaches parity; drop `GET /` HTML").
 `frontend/src/components/Panel.tsx`, `frontend/src/components/DataTable.tsx`,
 `frontend/src/components/ui/chart.tsx`, tests.
 
-- [ ] **Step 1: `recharts` + failing tests**
+- [x] **Step 1: `recharts` + failing tests**
 
 ```bash
 cd frontend && npm install recharts@^3.10.1
@@ -115,12 +115,12 @@ test("renders an svg for non-empty data", () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `cd frontend && npm test -- DataTable chart`
 Expected: FAIL — modules not found.
 
-- [ ] **Step 3: `useScoped` hook**
+- [x] **Step 3: `useScoped` hook**
 
 Append to `frontend/src/api/hooks.ts`:
 ```ts
@@ -136,7 +136,7 @@ export function useScoped<T = Row[]>(key: string, path: string, capabilityId: st
 }
 ```
 
-- [ ] **Step 4: `Panel.tsx`**
+- [x] **Step 4: `Panel.tsx`**
 
 ```tsx
 import type { ReactNode } from "react";
@@ -175,7 +175,7 @@ export function Panel({
 }
 ```
 
-- [ ] **Step 5: `DataTable.tsx`**
+- [x] **Step 5: `DataTable.tsx`**
 
 ```tsx
 import type { ReactNode } from "react";
@@ -227,7 +227,7 @@ export function DataTable<R extends Record<string, unknown>>({
 }
 ```
 
-- [ ] **Step 6: `ui/chart.tsx`**
+- [x] **Step 6: `ui/chart.tsx`**
 
 ```tsx
 import {
@@ -304,7 +304,7 @@ export function AreaSeriesChart({
 }
 ```
 
-- [ ] **Step 7: Run tests + typecheck + build**
+- [x] **Step 7: Run tests + typecheck + build**
 
 Run: `cd frontend && npm run typecheck && npm test && npm run build`
 Expected: green. (Recharts renders in jsdom — `ResponsiveContainer` needs a
@@ -312,7 +312,7 @@ width; if the `svg` query is flaky, wrap the test render in a fixed-size
 `<div style={{ width: 300, height: 200 }}>` and assert on
 `container.querySelector("svg, .recharts-wrapper")`.)
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add frontend/package.json frontend/package-lock.json frontend/src/api/hooks.ts \
@@ -329,7 +329,7 @@ git commit -m "feat(frontend): DataTable, Chart (recharts), Panel, useScoped"
 **Files:** `frontend/src/routes/Analytics.tsx` (rebuild),
 `frontend/src/routes/analytics/Headline.tsx`, tests.
 
-- [ ] **Step 1: Failing test**
+- [x] **Step 1: Failing test**
 
 `frontend/src/routes/Analytics.test.tsx` (replace the Phase F test with a
 broader one):
@@ -374,12 +374,12 @@ test("headline: KPIs + activity chart + run deltas render scoped", async () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `cd frontend && npm test -- Analytics`
 Expected: FAIL (old Analytics has no pass-rate / activity).
 
-- [ ] **Step 3: `analytics/Headline.tsx`**
+- [x] **Step 3: `analytics/Headline.tsx`**
 
 `useOverview` + `useScoped("qoverview", "/quality/overview", id)` +
 `useScoped("activity", "/insights/activity", id)` + `useRunDeltas(id)`.
@@ -391,7 +391,7 @@ Expected: FAIL (old Analytics has no pass-rate / activity).
   deltas (status · `count_prev → count` · representative). (Keep the existing
   logic — this replaces the current bottom table.)
 
-- [ ] **Step 4: `Analytics.tsx` shell**
+- [x] **Step 4: `Analytics.tsx` shell**
 
 ```tsx
 import { Link, useParams } from "react-router-dom";
@@ -421,7 +421,7 @@ export function Analytics() {
 `export function X({ id }: { id: string }) { return null; }` stubs (filled in
 Tasks 3–5), so the route typechecks now.
 
-- [ ] **Step 5: Verify + commit**
+- [x] **Step 5: Verify + commit**
 
 ```bash
 cd frontend && npm run typecheck && npm test && npm run build && npm run lint
@@ -445,13 +445,13 @@ paste block):
 | Proposed new skills | `useScoped("gaps", "/skills/gaps", id)` | proposed_name · level · capability · `evidence_count` · representative_prompt |
 | Skill health | `useScoped("health", "/insights/skill-health", id)` | skill_name · `n_asks` · `avg_route_len` (2dp) · `error_rate` (%) · status (Badge: `effective`→ready, `review`→warn) |
 
-- [ ] **Step 1: Failing test** — mock the four routes, assert one row from each
+- [x] **Step 1: Failing test** — mock the four routes, assert one row from each
   panel renders and the yaml_block expander shows on click. Run `npm test --
   CoverageSection`, watch it fail.
-- [ ] **Step 2: Implement** `CoverageSection.tsx` (~180 lines; split a panel out
+- [x] **Step 2: Implement** `CoverageSection.tsx` (~180 lines; split a panel out
   if it passes 220).
-- [ ] **Step 3: Verify** `npm run typecheck && npm test && npm run build && npm run lint`.
-- [ ] **Step 4: Commit** `feat(frontend): analytics — coverage & skills panels`.
+- [x] **Step 3: Verify** `npm run typecheck && npm test && npm run build && npm run lint`.
+- [x] **Step 4: Commit** `feat(frontend): analytics — coverage & skills panels`.
 
 ---
 
@@ -467,13 +467,13 @@ paste block):
 | Prompt patterns answered badly | `useScoped("qbyprompt", "/quality/by-prompt", id)` | DataTable: representative (truncate) · asks (`count`) · fail rate (`span_fail_rate` %) · `top_issues` · priority — sorted by priority desc |
 | Failed spans | `useScoped("fails", "/quality/failures?top=25", id)` | DataTable: span_id (last 12) · user · model · stage · `failed_checks` |
 
-- [ ] **Step 1: Failing test** — mock the routes, assert a scoreboard row + a
+- [x] **Step 1: Failing test** — mock the routes, assert a scoreboard row + a
   chart `svg` + a failed-span row. Run `npm test -- QualitySection`, watch fail.
-- [ ] **Step 2: Implement** `QualitySection.tsx` (split the by-user / by-model
+- [x] **Step 2: Implement** `QualitySection.tsx` (split the by-user / by-model
   pair into `QualityByDimension.tsx` — a `{ dimension, label }` component reused
   twice — to stay under 220 lines).
-- [ ] **Step 3: Verify.**
-- [ ] **Step 4: Commit** `feat(frontend): analytics — answer quality panels + charts`.
+- [x] **Step 3: Verify.**
+- [x] **Step 4: Commit** `feat(frontend): analytics — answer quality panels + charts`.
 
 ---
 
@@ -490,13 +490,13 @@ paste block):
 | Model usage | `useScoped("models", "/insights/models", id)` | model (last segment) · `n_calls` · `total_tokens` · cost ($) · `avg_latency_ms` · error rate (%) |
 | Users — who asks what | `useScoped("users", "/users", id)` | user_id · `n_asks` · `n_sessions` · `n_errors` · `avg_route_len` (2dp) · cost ($) · `top_intents` |
 
-- [ ] **Step 1: Failing test** — mock, assert one row from three of the panels.
+- [x] **Step 1: Failing test** — mock, assert one row from three of the panels.
   `npm test -- BehaviourSection`, watch fail.
-- [ ] **Step 2: Implement** `BehaviourSection.tsx` (a `formatters.ts` helper —
+- [x] **Step 2: Implement** `BehaviourSection.tsx` (a `formatters.ts` helper —
   `pct`, `usd`, `num`, `truncate`, `modelShort` — shared by all sections; put it
   in `frontend/src/routes/analytics/format.ts` and use it from Tasks 3–5).
-- [ ] **Step 3: Verify.**
-- [ ] **Step 4: Commit** `feat(frontend): analytics — agent behaviour panels`.
+- [x] **Step 3: Verify.**
+- [x] **Step 4: Commit** `feat(frontend): analytics — agent behaviour panels`.
 
 ---
 
@@ -506,7 +506,7 @@ paste block):
 (delete), `tests/test_api.py`, `tests/test_insights_api.py`, `CONTRACTS.md`,
 `README.md`, `MANIFEST`/`pyproject` (check for a static-file include).
 
-- [ ] **Step 1: Update the tests**
+- [x] **Step 1: Update the tests**
 
 In `tests/test_api.py` — change `test_root_is_a_json_notice_not_html` to drop
 the `legacy_dashboard` assertion, add `assert "legacy_dashboard" not in body`;
@@ -518,12 +518,12 @@ def test_legacy_dashboard_is_gone(client: TestClient) -> None:
 In `tests/test_insights_api.py` — delete
 `test_legacy_dashboard_served_at_slash_legacy`.
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `uv run pytest tests/test_api.py -q -k legacy`
 Expected: FAIL — `/legacy` still 200.
 
-- [ ] **Step 3: Remove it**
+- [x] **Step 3: Remove it**
 
 In `src/phoenix_scraper/api.py`:
 - delete the `@app.get("/legacy")` route and the `legacy_dashboard` function;
@@ -537,12 +537,12 @@ rmdir src/phoenix_scraper/static 2>/dev/null || true
 Check `pyproject.toml` / `MANIFEST.in` for a `static/` package-data include and
 remove it if present (`grep -rn "static" pyproject.toml MANIFEST.in 2>/dev/null`).
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `uv run pytest -q`
 Expected: PASS (765 → ~764: one legacy test removed, one added).
 
-- [ ] **Step 5: Lint + docs**
+- [x] **Step 5: Lint + docs**
 
 Run: `uv run ruff check src tests`.
 - `CONTRACTS.md`: the `GET /` line loses `legacy_dashboard`; drop the
@@ -553,12 +553,12 @@ Run: `uv run ruff check src tests`.
   Remove the old `## Dashboard UI` panel table entirely (it now lives in the
   SPA).
 
-- [ ] **Step 6: Full frontend + backend green**
+- [x] **Step 6: Full frontend + backend green**
 
 Run: `uv run pytest -q && cd frontend && npm run typecheck && npm test && npm run build`
 Expected: all green.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add -A
