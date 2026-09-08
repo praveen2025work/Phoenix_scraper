@@ -53,8 +53,13 @@ _WHITESPACE = re.compile(r"\s+")
 _SIGNATURE_PUNCT = re.compile(r"[^\w<>\s]|_")
 
 
-def normalize_prompt(text: str) -> str:
-    """Casefold, collapse whitespace, and mask volatile tokens with placeholders."""
+def mask_volatile(text: str) -> str:
+    """Casefold, collapse whitespace, and mask volatile tokens with placeholders.
+
+    The one masker shared by prompt_signature (input) and Rung-2's answer masking
+    (output) — same token classes (<num> <date> <ccy> <id> <book> <desk>),
+    lexical only.
+    """
     result = _BOOK_PATTERN.sub("<book>", text)
     result = result.casefold()
     result = _DESK_PATTERN.sub("<desk> desk", result)
@@ -66,6 +71,11 @@ def normalize_prompt(text: str) -> str:
     result = _LEADING_SYMBOL_NUMBER.sub("<num>", result)
     result = _NUMBER_PATTERN.sub("<num>", result)
     return _WHITESPACE.sub(" ", result).strip()
+
+
+def normalize_prompt(text: str) -> str:
+    """Backwards-compatible alias for :func:`mask_volatile`."""
+    return mask_volatile(text)
 
 
 def prompt_signature(text: str) -> str:
