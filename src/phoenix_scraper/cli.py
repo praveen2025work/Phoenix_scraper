@@ -1,5 +1,6 @@
 """Typer CLI: demo, seed, scrape, ingest, analyze, report, export, serve, doctor."""
 
+import json
 import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -10,6 +11,7 @@ from pathlib import Path
 import typer
 
 from . import annotations as annotations_mod
+from . import artifacts as artifacts_mod
 from . import capability as capability_mod
 from . import capability_run as capability_run_mod
 from . import evaluations as evaluations_mod
@@ -144,6 +146,16 @@ RunToOpt = typer.Option(None, "--to", help="Window end (UTC); default now.")
 ReplaceTodayOpt = typer.Option(
     False, "--replace-today", help="Reuse today's run_id instead of adding a new run."
 )
+CandidateRungOpt = typer.Option(None, "--rung", help="skill | deterministic")
+CandidateStatusOpt = typer.Option(None, "--status", help="Filter to one status.")
+CandidateAllOpt = typer.Option(False, "--all", help="Include rejected + snoozed + stale.")
+DecisionActionOpt = typer.Option(..., "--action", help="accept | reject | snooze | reopen")
+ActorOpt = typer.Option(None, "--actor", help="Who is deciding (default: PHEONIX_OPERATOR_NAME).")
+DecisionNoteOpt = typer.Option("", "--note", help="Why.")
+SnoozeRunsOpt = typer.Option(3, "--snooze-runs", help="Runs to snooze for.")
+PromoteAcceptOpt = typer.Option(False, "--accept", help="Allow ready -> promoted in one step.")
+DryRunOpt = typer.Option(False, "--dry-run", help="Render without writing.")
+CandidateIdArg = typer.Argument(..., help="Candidate id, e.g. fobo:s:abc123.")
 
 
 @app.command()
@@ -488,6 +500,141 @@ def _echo_capability_run(store: Store, result: CapabilityRunResult) -> None:
         typer.echo("    no movement")
     else:
         typer.echo("    (no earlier run to compare against)")
+
+
+_HIDDEN_BY_DEFAULT = frozenset({"rejected", "snoozed", "stale"})
+_DECISION_TRANSITIONS: dict[str, tuple[frozenset[str], str]] = {
+    "accept": (frozenset({"ready"}), "accepted"),
+    "reject": (frozenset({"accumulating", "ready", "new"}), "rejected"),
+    "snooze": (frozenset({"accumulating", "ready", "new"}), "snoozed"),
+    "reopen": (frozenset({"rejected", "snoozed", "stale"}), "accumulating"),
+}
+
+
+@app.command()
+def candidates(
+    cap_id: str = CapIdArg,
+    rung: str | None = CandidateRungOpt,
+    status: str | None = CandidateStatusOpt,
+    show_all: bool = CandidateAllOpt,
+    db: Path | None = DbOpt,
+    capabilities_dir: Path | None = CapabilitiesDirOpt,
+) -> None:
+    """The ladder board for a capability: candidates grouped by status."""
+    settings = _settings(db=db, capabilities_dir=capabilities_dir)
+    with _open_store(settings) as store:
+        frame = store.candidates_frame(cap_id, rung=rung, status=status)
+    if not len(frame):
+        typer.echo(f"No candidates for '{cap_id}'.")
+        return
+    rows = frame.to_dict("records")
+    if status is None and not show_all:
+        rows = [r for r in rows if r["status"] not in _HIDDEN_BY_DEFAULT]
+    if not rows:
+        typer.echo("No active candidates (rejected/snoozed/stale hidden — use --all).")
+        return
+    by_status: dict[str, list[dict]] = {}
+    for r in rows:
+        by_status.setdefault(r["status"], []).append(r)
+    for st, group in by_status.items():
+        typer.echo(f"\n{st.upper()}  ({len(group)})")
+        for r in group:
+            ev = json.loads(r["current_evidence_json"] or "{}")
+            typer.echo(
+                f"  {r['candidate_id']:<28} {r['subtype']:<16} "
+                f"{ev.get('count', 0):>4} asks / {ev.get('n_users', 0)} users  "
+                f"{str(r['title'])[:60]}"
+            )
+
+
+@app.command()
+def decide(
+    candidate_id: str = CandidateIdArg,
+    action: str = DecisionActionOpt,
+    actor: str | None = ActorOpt,
+    note: str = DecisionNoteOpt,
+    snooze_runs: int = SnoozeRunsOpt,
+    db: Path | None = DbOpt,
+    capabilities_dir: Path | None = CapabilitiesDirOpt,
+) -> None:
+    """Record a human decision on a candidate and apply the transition."""
+    settings = _settings(db=db, capabilities_dir=capabilities_dir)
+    who = actor or settings.operator_name or "unknown"
+    if action not in _DECISION_TRANSITIONS:
+        typer.secho(f"Unknown action {action!r}.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1)
+    allowed, target = _DECISION_TRANSITIONS[action]
+    now = datetime.now(UTC)
+    with _open_store(settings) as store:
+        candidate = store.get_candidate(candidate_id)
+        if candidate is None:
+            typer.secho(f"No candidate {candidate_id!r}.", fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=1)
+        if candidate.status not in allowed:
+            typer.secho(
+                f"Cannot {action} a candidate in status {candidate.status!r} "
+                f"(allowed from: {', '.join(sorted(allowed))}).",
+                fg=typer.colors.RED, err=True,
+            )
+            raise typer.Exit(code=1)
+        store.record_candidate_decision_now(candidate_id, action, who, now, note=note)
+        updates: dict = {"status": target, "decided_by": who, "decided_at": now}
+        if action == "reject":
+            updates["dismiss_reason"] = note
+            updates["current_evidence"] = {
+                **candidate.current_evidence,
+                "count_at_rejection": candidate.current_evidence.get("count", 0),
+                "n_users_at_rejection": candidate.current_evidence.get("n_users", 0),
+            }
+        if action == "snooze":
+            ordinal = store.capability_run_ordinal(candidate.capability_id)
+            updates["snooze_until_run"] = ordinal + snooze_runs
+        store.upsert_candidate(candidate.model_copy(update=updates))
+    typer.echo(f"{candidate_id}: {candidate.status} -> {target}  (by {who})")
+
+
+@app.command()
+def promote(
+    candidate_id: str = CandidateIdArg,
+    accept: bool = PromoteAcceptOpt,
+    actor: str | None = ActorOpt,
+    dry_run: bool = DryRunOpt,
+    db: Path | None = DbOpt,
+    capabilities_dir: Path | None = CapabilitiesDirOpt,
+) -> None:
+    """Write the draft artifact for an accepted (or --accept a ready) candidate."""
+    settings = _settings(db=db, capabilities_dir=capabilities_dir)
+    who = actor or settings.operator_name or "unknown"
+    now = datetime.now(UTC)
+    with _open_store(settings) as store:
+        candidate = store.get_candidate(candidate_id)
+        if candidate is None:
+            typer.secho(f"No candidate {candidate_id!r}.", fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=1)
+        if candidate.status == "ready" and accept and not dry_run:
+            candidate = candidate.model_copy(update={"status": "accepted"})
+            store.upsert_candidate(candidate)
+        if candidate.status != "accepted" and not dry_run:
+            typer.secho(
+                f"Candidate is {candidate.status!r}; accept it first "
+                f"(or pass --accept for a ready candidate).",
+                fg=typer.colors.RED, err=True,
+            )
+            raise typer.Exit(code=1)
+        try:
+            cap = capability_mod.load_capability(
+                settings.capabilities_dir, candidate.capability_id
+            )
+        except (ValueError, FileNotFoundError) as exc:
+            typer.secho(str(exc), fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=1) from exc
+        result = artifacts_mod.promote_candidate(
+            store, cap, candidate, now=now, actor=who, settings=settings, dry_run=dry_run,
+        )
+    for path, body in result.contents:
+        typer.echo(f"\n--- {path} ---")
+        typer.echo(body)
+    typer.echo("" if dry_run else f"\nWrote {len(result.paths)} artifact(s).")
 
 
 @capability_app.command("new")
