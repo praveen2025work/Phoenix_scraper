@@ -536,50 +536,19 @@ pheonix candidates fobo --rung deterministic
 pheonix candidate fobo:d:abc123          # signals, templates, trend, decisions
 ```
 
-## Legacy dashboard
+The analytics live in the **[React SPA](#frontend-react-spa)**'s Analytics tab
+(`/c/<id>/analytics`), scoped to one capability — KPI row (`% of spans passing
+validation` included), an activity chart, skill coverage / what-to-add /
+proposed skills / skill health, the validation scoreboard, answer quality by
+user & model (bar charts), prompt patterns answered badly, failed spans, agent
+flows, where-the-agent-works-too-hard, stage × asset class, tool / model usage,
+and per-user breakdown. Every panel is also a plain endpoint (`/overview`,
+`/insights/*`, `/quality/*`, `/skills/*`), filterable and `fmt=csv`-downloadable,
+and takes `?capability=<id>`.
 
-The **[React SPA](#frontend-react-spa)** is the primary frontend. `pheonix serve`
-still serves the pre-SPA self-contained dashboard (no CDN, works offline) at
-**http://127.0.0.1:8000/legacy** — `GET /` is now a JSON notice. The legacy
-dashboard stays until the SPA's Analytics tab reaches panel parity.
-
-- **Scrape / Analyze / Report buttons** — run the pipeline from the page. Each
-  runs synchronously, reports what it did in the status line, and repaints every
-  panel. Scrape needs a live Phoenix connection; the other two work offline.
-- **Filter bar** — project, user, stage, asset class, model, date range, and
-  prompt-text search; every panel refetches with the active filters (options are
-  populated from your actual data via `/filters/options`).
-- **CSV on every panel** — exports exactly what the panel shows, honoring the
-  active filters.
-- **Spans explorer** — the raw filtered spans at the bottom, for validating what
-  the analytics are computed from; its CSV carries up to 100k rows.
-- The **X-API-Key** field applies when `PHEONIX_API_KEY` is set (kept in
-  sessionStorage only).
-
-| Panel | What it answers |
-| --- | --- |
-| KPI row | volume, sessions, users, tokens, cost, error rate, **% of spans passing validation** |
-| **Skill coverage** | per skill file: asks routed to it vs asks its examples demonstrate |
-| **What to add to each skill** | the exact `example_prompts` / `keywords` to paste, with evidence |
-| **What changed since the last run** | patterns that are new, growing, shrinking, or gone |
-| **Validation** | every check, how often it applied and failed, with a failing example |
-| **Answer quality by user / model** | who is getting bad answers; whether one model refuses or truncates more |
-| **Prompt patterns answered badly** | frequency × failure — the strongest case for a new skill |
-| **Failed spans** | each failing span with its prompt, answer, and the reason, to confirm or dismiss |
-| What users are asking | every user turn classified by intent (why/what/how/check/request/…) |
-| Activity by day | asks per day with sessions and cost |
-| Users — who asks what | per-user asks, re-asks, errors, route length, spend, top intents and prompt patterns |
-| Agent flows | the step sequences the agent runs per ask (`LLM → TOOL ×3 → LLM`) |
-| Tool / model usage | which tools the agent calls (failure rate, latency); tokens and cost per model |
-| Workflow stage × asset class | where asks come from, when spans carry those metadata attributes |
-| Where the agent works too hard | prompt patterns ranked by opportunity; **long route** = far more steps than the median trace — build/fix a skill here first |
-| High-friction sessions | users re-asking the same question, errors, empty answers |
-| Skill health | matched skills whose clusters still take long routes are flagged **review** |
-| Proposed new skills | frequent asks no existing skill covers |
-
-Every panel's data is also an endpoint (`/overview`, `/users`, `/insights/...`),
-all filterable (`user_id`, `stage`, `asset_class`, `model_name`, `start`, `end`)
-and downloadable with `fmt=csv`.
+The pre-SPA bundled HTML dashboard was removed once the Analytics tab reached
+parity; `GET /` is a JSON notice. Its last version is in git history
+(`git log -- src/phoenix_scraper/static/dashboard.html`).
 
 ## Frontend (React SPA)
 
