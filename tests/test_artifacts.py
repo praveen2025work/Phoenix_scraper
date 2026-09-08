@@ -158,6 +158,26 @@ class TestRung2Artifacts:
         md = next(b for n, b in files if n.endswith(".md"))
         assert "Open decisions" in md
 
+    def test_stub_files_are_valid_importable_python(self) -> None:
+        files = artifacts.render_rung2_stub(
+            self._r2_cand(),  # signature -> stem "recon-break" (kebab)
+            latest_observation_signals={"templates": [["t", 5]]},
+            pairs=[("why is there a recon break of 100k on BUND",
+                    "the break is an unsettled trade")],
+        )
+        by_name = dict(files)
+        impl_name = next(
+            n for n in by_name if n.endswith(".py") and not n.startswith("test_")
+        )
+        test_name = next(n for n in by_name if n.startswith("test_"))
+        # the module names the generated code imports must be real identifiers
+        assert impl_name[:-3].isidentifier(), impl_name
+        assert test_name[:-3].isidentifier(), test_name
+        for name, body in files:
+            if name.endswith(".py"):
+                compile(body, name, "exec")  # raises SyntaxError on a kebab import
+        assert f"from .{impl_name[:-3]} import handle" in by_name[test_name]
+
     def test_promote_deterministic_writes_three_files(
         self, seeded_store, tmp_path, settings
     ) -> None:

@@ -53,6 +53,12 @@ def _skill_stem(candidate: Candidate) -> str:
     return "-".join(words[:4]) or slugify(candidate.title) or f"skill-{candidate.cluster_id}"
 
 
+def _module_name(stem: str) -> str:
+    """A valid Python module name for a kebab-case stem: `recon-break` -> `recon_break`."""
+    name = re.sub(r"[^0-9a-z_]+", "_", stem.casefold()).strip("_") or "handler"
+    return f"m_{name}" if name[0].isdigit() else name
+
+
 def _keywords(candidate: Candidate) -> list[str]:
     name_words = set(distinctive_words(candidate.title))
     words = [
@@ -130,8 +136,13 @@ def render_rung2_stub(
     latest_observation_signals: dict,
     pairs: list[tuple[str, str]],
 ) -> list[tuple[str, str]]:
-    """Three (filename, body) tuples: <name>.py, test_<name>.py, <name>.md."""
+    """Three (filename, body) tuples: <name>.py, test_<name>.py, <name>.md.
+
+    ``<name>`` is the snake_case module name so the generated ``.py`` files are
+    importable and ``test_<name>.py``'s ``from .<name> import handle`` parses.
+    """
     stem = _skill_stem(candidate)
+    module = _module_name(stem)
     sig = latest_observation_signals
     templates = sig.get("templates") or []
     ev = candidate.current_evidence
@@ -160,7 +171,7 @@ def render_rung2_stub(
         f"{decision_table}\n"
         f"def handle(prompt: str, context: list[dict]) -> str:\n"
         f'    """TODO: extract the slots from `prompt`, classify from `context`,\n'
-        f'    return the filled TEMPLATES entry. test_{stem}.py has the real cases."""\n'
+        f'    return the filled TEMPLATES entry. test_{module}.py has the real cases."""\n'
         f"    raise NotImplementedError\n"
     )
 
@@ -168,7 +179,7 @@ def render_rung2_stub(
     test = (
         f'"""Real observed (prompt -> answer) pairs for `{stem}`. Ships red."""\n'
         f"import pytest\n\n"
-        f"from .{stem} import handle\n\n"
+        f"from .{module} import handle\n\n"
         f"CASES = [\n{cases}\n]\n\n\n"
         f'@pytest.mark.parametrize("prompt, expected", CASES)\n'
         f"def test_handle_matches_observed(prompt: str, expected: str) -> None:\n"
@@ -193,7 +204,7 @@ def render_rung2_stub(
         f"- Classifier input: what does `context` need to carry to pick the template?\n"
         f"- Error handling: what does `handle` do when no template fits?\n"
     )
-    return [(f"{stem}.py", py), (f"test_{stem}.py", test), (f"{stem}.md", md)]
+    return [(f"{module}.py", py), (f"test_{module}.py", test), (f"{module}.md", md)]
 
 
 def _member_prompts(store: Store, capability: Capability, candidate: Candidate) -> list[str]:
@@ -274,7 +285,7 @@ def promote_candidate(
             candidate, latest_observation_signals=obs_signals, pairs=pairs,
         )
         base_stem = files[0][0][:-3]
-        final_stem = dedupe_path(det_dir, base_stem, ".py").stem
+        final_stem = _module_name(dedupe_path(det_dir, base_stem, ".py").stem)
         contents_list: list[tuple[str, str]] = []
         written: list[str] = []
         for name, body in files:
