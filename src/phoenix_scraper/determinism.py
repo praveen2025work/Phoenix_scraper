@@ -10,8 +10,10 @@ the same template (`slot_stability`). `score_cluster` blends them and gates on
 
 from itertools import combinations
 
+import pandas as pd
 from rapidfuzz import fuzz
 
+from .insights_llm import _flow_signature
 from .models import _Frozen
 from .normalize import mask_volatile
 
@@ -131,3 +133,110 @@ def slot_stability(
         weighted += modal_share * len(tmpls)
         total += len(tmpls)
     return weighted / total if total else 0.0
+
+
+class Rung2Signal(_Frozen):
+    cluster_id: str
+    title: str
+    signature: str
+    matched_skill: str | None
+    determinism_score: float
+    n_answer_spans: int
+    eligible: bool
+    signals: DeterminismSignals
+    templates: tuple[tuple[str, int], ...] = ()
+    met_evidence_bar: bool = False
+
+
+def blend_determinism(signals: DeterminismSignals) -> float:
+    """Weighted mean over available signals (route dropped + renormalised N/A)."""
+    available = {
+        "template_concentration": signals.template_concentration,
+        "slot_stability": signals.slot_stability,
+        "output_self_similarity": signals.output_self_similarity,
+    }
+    if signals.route_applicable and signals.route_invariance is not None:
+        available["route_invariance"] = signals.route_invariance
+    num = sum(_WEIGHTS[k] * v for k, v in available.items())
+    den = sum(_WEIGHTS[k] for k in available)
+    return round(num / den, 4) if den else 0.0
+
+
+def _flows_for(member_spans: pd.DataFrame) -> tuple[list[str], bool]:
+    if member_spans.empty or "trace_id" not in member_spans.columns:
+        return [], False
+    flows: list[str] = []
+    applicable = False
+    for _tid, group in member_spans.groupby("trace_id", sort=False):
+        ordered = group.sort_values("start_time")
+        kinds = list(ordered["span_kind"].fillna("UNKNOWN"))
+        flows.append(_flow_signature(kinds))
+        if _ROUTE_KINDS.intersection(kinds):
+            applicable = True
+    return flows, applicable
+
+
+def score_cluster(
+    cluster_id: str,
+    title: str,
+    signature: str,
+    matched_skill: str | None,
+    member_spans: pd.DataFrame,
+    *,
+    min_answer_spans: int,
+    fuzz_threshold: int,
+) -> Rung2Signal:
+    if member_spans.empty:
+        answer_rows = member_spans
+    else:
+        answer_rows = member_spans[
+            (member_spans["span_kind"] == "LLM")
+            & (member_spans["output_text"].fillna("").astype(str).str.strip() != "")
+        ]
+    answers = (
+        [str(t) for t in answer_rows["output_text"].tolist()]
+        if not answer_rows.empty
+        else []
+    )
+    prompts = (
+        [str(t) for t in answer_rows["input_text"].fillna("").tolist()]
+        if not answer_rows.empty
+        else []
+    )
+    n_answer_spans = len(answers)
+
+    if answers:
+        templates = build_templates(answers, fuzz_threshold=fuzz_threshold)
+        conc, k = template_concentration(answers, fuzz_threshold=fuzz_threshold)
+        self_sim = output_self_similarity(answers)
+        slots = slot_stability(
+            list(zip(prompts, answers, strict=False)), templates,
+            fuzz_threshold=fuzz_threshold,
+        )
+    else:
+        templates, conc, k, self_sim, slots = [], 0.0, 0, 0.0, 0.0
+    flows, route_applicable = _flows_for(member_spans)
+    route_inv = route_invariance(flows) if flows else None
+
+    signals = DeterminismSignals(
+        template_concentration=round(conc, 4),
+        route_invariance=round(route_inv, 4) if route_inv is not None else None,
+        output_self_similarity=round(self_sim, 4),
+        slot_stability=round(slots, 4),
+        n_templates=k,
+        n_answer_spans=n_answer_spans,
+        route_applicable=route_applicable,
+    )
+    eligible = n_answer_spans >= min_answer_spans
+    score = blend_determinism(signals) if eligible else 0.0
+    return Rung2Signal(
+        cluster_id=cluster_id,
+        title=title,
+        signature=signature,
+        matched_skill=matched_skill,
+        determinism_score=score,
+        n_answer_spans=n_answer_spans,
+        eligible=eligible,
+        signals=signals,
+        templates=tuple(templates[:10]),
+    )
