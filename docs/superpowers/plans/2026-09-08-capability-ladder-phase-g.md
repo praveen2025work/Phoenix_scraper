@@ -34,7 +34,7 @@ release" applies, and Analytics parity is not yet reached. Docs + `.env.example`
 
 **Files:** `src/phoenix_scraper/api.py`, `tests/test_api.py`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `tests/test_api.py`:
 ```python
@@ -53,12 +53,12 @@ def test_legacy_dashboard_still_serves_html(client: TestClient) -> None:
     assert r.text.lstrip().lower().startswith("<!doctype html")
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_api.py -q -k "json_notice or legacy_dashboard"`
 Expected: FAIL — `GET /` returns HTML; `GET /legacy` is 404.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `src/phoenix_scraper/api.py`, replace the `@app.get("/", ...)` route:
 ```python
@@ -80,18 +80,18 @@ In `src/phoenix_scraper/api.py`, replace the `@app.get("/", ...)` route:
         return HTMLResponse(_DASHBOARD_PATH.read_text(encoding="utf-8"))
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/test_api.py -q`
 Expected: PASS.
 
-- [ ] **Step 5: Lint + full suite**
+- [x] **Step 5: Lint + full suite**
 
 Run: `uv run ruff check src tests && uv run pytest -q`
 Expected: clean; green (763 → 765). The dashboard.html's own `fetch("/...")`
 calls are all absolute-from-root, so it works unchanged at `/legacy`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/phoenix_scraper/api.py tests/test_api.py
@@ -104,7 +104,7 @@ git commit -m "feat: GET / is a JSON notice; legacy dashboard moves to /legacy"
 
 **Files:** `.env.example`.
 
-- [ ] **Step 1: Add the fields**
+- [x] **Step 1: Add the fields**
 
 After the existing `PHEONIX_RUN_HISTORY_LIMIT` line (or the capabilities block),
 add:
@@ -122,13 +122,13 @@ PHEONIX_RUNG2_SUSTAINED_RUNS=3
 ```
 (`PHEONIX_CORS_ORIGINS` was added in Phase E — verify it is present.)
 
-- [ ] **Step 2: Sanity — the file still parses**
+- [x] **Step 2: Sanity — the file still parses**
 
 Run: `uv run python -c "from phoenix_scraper.config import load_settings; load_settings()"`
 Expected: no error (blank/absent .env is fine; this just confirms no typo breaks
 `Settings`).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add .env.example
@@ -141,7 +141,7 @@ git commit -m "docs: .env.example — ladder rung1 / rung2 / material-change set
 
 **Files:** `README.md`, `CONTRACTS.md`.
 
-- [ ] **Step 1: README**
+- [x] **Step 1: README**
 
 - Rename `## Dashboard UI` → `## Legacy dashboard`, and open it with:
   > `pheonix serve` still serves the pre-SPA bundled dashboard at
@@ -150,18 +150,18 @@ git commit -m "docs: .env.example — ladder rung1 / rung2 / material-change set
   > dashboard stays until the SPA's Analytics tab reaches panel parity.
 - In `## Quick start`, add a line pointing at `## Frontend (React SPA)`.
 
-- [ ] **Step 2: CONTRACTS**
+- [x] **Step 2: CONTRACTS**
 
 In the `## cli.py ... + api.py` block, change the `GET /health` line's context:
 > `GET /` → JSON notice (service, docs, health, frontend, legacy_dashboard);
 > `GET /legacy` → the bundled dashboard HTML; `GET /health`.
 
-- [ ] **Step 3: Lint + full suite (docs — sanity only)**
+- [x] **Step 3: Lint + full suite (docs — sanity only)**
 
 Run: `uv run ruff check src tests && uv run pytest -q`
 Expected: clean; green.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add README.md CONTRACTS.md

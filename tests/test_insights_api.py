@@ -27,8 +27,8 @@ def client(tmp_path_factory: pytest.TempPathFactory) -> TestClient:
         yield c
 
 
-def test_dashboard_served_at_root(client: TestClient) -> None:
-    response = client.get("/")
+def test_legacy_dashboard_served_at_slash_legacy(client: TestClient) -> None:
+    response = client.get("/legacy")
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/html")
     assert "Pheonix" in response.text
