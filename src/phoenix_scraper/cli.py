@@ -548,6 +548,53 @@ def candidates(
 
 
 @app.command()
+def candidate(
+    candidate_id: str = CandidateIdArg,
+    db: Path | None = DbOpt,
+    capabilities_dir: Path | None = CapabilitiesDirOpt,
+) -> None:
+    """One candidate's evidence trend, signals, and decision log."""
+    settings = _settings(db=db, capabilities_dir=capabilities_dir)
+    with _open_store(settings) as store:
+        c = store.get_candidate(candidate_id)
+        if c is None:
+            typer.secho(f"No candidate {candidate_id!r}.", fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=1)
+        obs = store.candidate_observations_frame(candidate_id)
+        decisions = store.candidate_decisions_frame(candidate_id)
+    typer.echo(
+        f"{c.candidate_id}\n  rung={c.rung} subtype={c.subtype or '-'} "
+        f"status={c.status} matched_skill={c.matched_skill or '-'}"
+    )
+    typer.echo(f"  title: {c.title}")
+    if c.current_evidence:
+        typer.echo(f"  evidence: {c.current_evidence}")
+    typer.echo("\n  trend:")
+    for row in obs.to_dict("records"):
+        score = row["score"]
+        score_s = f"{score:.2f}" if score is not None else "-"
+        typer.echo(
+            f"    {row['run_id']:<27} count={row['count']:<4} score={score_s:<5} "
+            f"{'met' if row['met_evidence_bar'] else '   '}"
+        )
+    if len(obs) and c.rung == "deterministic":
+        last = json.loads(obs.iloc[-1]["signals_json"] or "{}")
+        typer.echo("\n  signals (latest run):")
+        for key in ("template_concentration", "route_invariance",
+                    "output_self_similarity", "slot_stability"):
+            typer.echo(f"    {key:<24} {last.get(key)}")
+        for rep, n in last.get("templates", []):
+            typer.echo(f"    template ({n})  {str(rep)[:70]}")
+    typer.echo("\n  decisions:")
+    for row in decisions.to_dict("records"):
+        typer.echo(
+            f"    {row['created_at']}  {row['action']:<8} by {row['actor']}  {row['note']}"
+        )
+    if not len(decisions):
+        typer.echo("    (none)")
+
+
+@app.command()
 def decide(
     candidate_id: str = CandidateIdArg,
     action: str = DecisionActionOpt,

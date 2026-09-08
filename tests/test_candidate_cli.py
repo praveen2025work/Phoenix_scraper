@@ -87,3 +87,21 @@ class TestPromote:
             assert store.get_candidate(cid).status == "accepted"
         finally:
             store.close()
+
+
+class TestCandidateDetail:
+    def test_shows_trend_and_decisions(self, tmp_path: Path) -> None:
+        db, common = _seed(tmp_path)
+        cid = _first_candidate(db)
+        _invoke("decide", cid, "--action", "snooze", "--snooze-runs", "2",
+                "--actor", "a", *common)
+        r = _invoke("candidate", cid, *common)
+        assert r.exit_code == 0, r.output
+        assert cid in r.output
+        assert "snooze" in r.output.lower()
+        assert "run" in r.output.lower() or "score" in r.output.lower()
+
+    def test_unknown_candidate_exits_1(self, tmp_path: Path) -> None:
+        db, common = _seed(tmp_path)
+        r = _invoke("candidate", "nope:s:x", *common)
+        assert r.exit_code == 1
