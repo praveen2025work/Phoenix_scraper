@@ -128,7 +128,7 @@ the existing `cluster_snapshots` column. Phase C maps `snapshot.skill_name` →
   - `Store.latest_capability_run_id_on_day(self, capability_id: str, day: str) ->
     str | None` — `day` is `YYYY-MM-DD`; matches `run_id` starting with it.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/test_capability_run_storage.py`:
 
@@ -261,12 +261,12 @@ class TestRecordAndRead:
         assert tmp_store.span_count() == len(sample_spans)
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_capability_run_storage.py -q`
 Expected: FAIL — `ImportError: cannot import name 'CapabilityRun' from 'phoenix_scraper.models'`.
 
-- [ ] **Step 3: Add the models**
+- [x] **Step 3: Add the models**
 
 In `src/phoenix_scraper/models.py`, after the `Capability` class, add:
 
@@ -305,7 +305,7 @@ references `PromptCluster`, `SkillMatch`, `SkillGapProposal`, so place both new
 classes **immediately before the `SpanEvaluation` class** (after
 `SkillGapProposal`, which is where those three are defined).
 
-- [ ] **Step 4: Add the schema**
+- [x] **Step 4: Add the schema**
 
 In `src/phoenix_scraper/storage.py`, inside `_SCHEMA`, after the `capabilities`
 table (added in Phase A) and before the closing `"""`, add:
@@ -358,12 +358,12 @@ CREATE INDEX IF NOT EXISTS idx_cap_members_run
     ON capability_cluster_members (capability_id, run_id);
 ```
 
-- [ ] **Step 5: Extend the storage imports**
+- [x] **Step 5: Extend the storage imports**
 
 Add `CapabilityRun` to the `from .models import (...)` block in `storage.py`
 (alphabetical — after `Capability`, `CapabilityFilter`).
 
-- [ ] **Step 6: Add `span_count` and the capability-run methods**
+- [x] **Step 6: Add `span_count` and the capability-run methods**
 
 In `storage.py`, in the `# ---- capabilities` section (added in Phase A), after
 `delete_capability`, add:
@@ -515,19 +515,19 @@ normally read it top-to-bottom; import `CapabilityRun` at module top (Step 5)
 and you may drop the quotes — either is fine, keep it consistent with the file
 (the file imports its models, so **unquote it**: `run: CapabilityRun`).
 
-- [ ] **Step 7: Run the tests to verify they pass**
+- [x] **Step 7: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/test_capability_run_storage.py -q`
 Expected: PASS.
 
-- [ ] **Step 8: Backward-compat + lint + full suite**
+- [x] **Step 8: Backward-compat + lint + full suite**
 
 Run: `uv run pytest tests/test_capability_storage.py tests/test_scraper.py tests/test_pipeline.py -q && uv run ruff check src tests && uv run pytest -q`
 Expected: all green (609 → 619); ruff clean. The schema additions are
 `CREATE TABLE IF NOT EXISTS` under the existing `executescript`, so existing DBs
 gain the tables on next open.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add src/phoenix_scraper/models.py src/phoenix_scraper/storage.py tests/test_capability_run_storage.py
