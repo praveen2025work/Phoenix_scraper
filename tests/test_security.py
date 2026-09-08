@@ -92,3 +92,14 @@ class TestServeGuard:
         monkeypatch.delenv("PHEONIX_API_KEY", raising=False)
         result = CliRunner().invoke(cli_app, ["serve", "--host", "0.0.0.0"])
         assert result.exit_code == 1
+
+    def test_serve_starts_the_background_job_worker(self, tmp_path, monkeypatch):
+        import uvicorn
+
+        captured = {}
+        monkeypatch.setattr(uvicorn, "run", lambda app, **kw: captured.setdefault("app", app))
+        result = CliRunner().invoke(
+            cli_app, ["serve", "--host", "127.0.0.1", "--db", str(tmp_path / "s.db")]
+        )
+        assert result.exit_code == 0, result.output
+        assert captured["app"].state.job_worker is not None
