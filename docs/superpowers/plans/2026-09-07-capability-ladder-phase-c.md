@@ -135,7 +135,7 @@ the `rung1_*` keys by bare name (`rung1_min_users`, `rung1_min_count`,
   - `CandidateObservation(_Frozen)` — fields exactly as listed in Step 3.
   - `CandidateDecision(_Frozen)` — fields exactly as listed in Step 3.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/test_models_candidate.py`:
 
@@ -210,12 +210,12 @@ def test_decision_round_trip() -> None:
         )
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_models_candidate.py -q`
 Expected: FAIL — `ImportError: cannot import name 'Candidate' from 'phoenix_scraper.models'`.
 
-- [ ] **Step 3: Add the models**
+- [x] **Step 3: Add the models**
 
 In `src/phoenix_scraper/models.py`, immediately after the `CapabilityRunResult`
 class (added in Phase B), add:
@@ -285,17 +285,17 @@ class CandidateDecision(_Frozen):
 
 `Any`, `Literal`, `Field` are already imported in `models.py`.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/test_models_candidate.py -q`
 Expected: PASS.
 
-- [ ] **Step 5: Lint + full suite**
+- [x] **Step 5: Lint + full suite**
 
 Run: `uv run ruff check src tests && uv run pytest -q`
 Expected: clean; green (642 → 647).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/phoenix_scraper/models.py tests/test_models_candidate.py
@@ -338,7 +338,7 @@ git commit -m "feat: Candidate / CandidateObservation / CandidateDecision models
   - `Store.prune_candidate_observations(self, candidate_id: str, keep: int) ->
     None` — drop all but the newest `keep` observation rows.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/test_candidate_storage.py`:
 
@@ -471,12 +471,12 @@ class TestRunOrdinal:
         assert seeded_store.capability_run_ordinal("other") == 0
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_candidate_storage.py -q`
 Expected: FAIL — `AttributeError: 'Store' object has no attribute 'upsert_candidate'`.
 
-- [ ] **Step 3: Add the schema**
+- [x] **Step 3: Add the schema**
 
 In `src/phoenix_scraper/storage.py`, inside `_SCHEMA`, after the
 `capability_cluster_members` block (+ its index) added in Phase B and before the
@@ -537,13 +537,13 @@ CREATE TABLE IF NOT EXISTS candidate_decisions (
 CREATE INDEX IF NOT EXISTS idx_cand_decisions ON candidate_decisions (candidate_id, id);
 ```
 
-- [ ] **Step 4: Extend the storage imports**
+- [x] **Step 4: Extend the storage imports**
 
 Add `Candidate`, `CandidateDecision`, `CandidateObservation` to the
 `from .models import (...)` block in `storage.py` (alphabetical — after
 `CapabilityRun`).
 
-- [ ] **Step 5: Add the module-level column list + `_json` / `_bool` helpers check**
+- [x] **Step 5: Add the module-level column list + `_json` / `_bool` helpers check**
 
 Near `_CAP_SNAPSHOT_COLUMNS` (added Phase B) add:
 
@@ -557,7 +557,7 @@ _CANDIDATE_COLUMNS = [
 ]
 ```
 
-- [ ] **Step 6: Add the methods**
+- [x] **Step 6: Add the methods**
 
 In `storage.py`, after the Phase B `# ---- capability runs` section (after
 `_prune_capability_runs`) and before `# ---- span evaluations`, add a
@@ -750,17 +750,17 @@ def _dt_or_none(value: str | None) -> datetime | None:
 
 `datetime` and `sqlite3` are already imported in `storage.py`.
 
-- [ ] **Step 7: Run the tests to verify they pass**
+- [x] **Step 7: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/test_candidate_storage.py -q`
 Expected: PASS.
 
-- [ ] **Step 8: Lint + full suite**
+- [x] **Step 8: Lint + full suite**
 
 Run: `uv run ruff check src tests && uv run pytest -q`
 Expected: clean; green (647 → ~659).
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add src/phoenix_scraper/storage.py tests/test_candidate_storage.py
@@ -806,7 +806,7 @@ git commit -m "feat: candidates / observations / decisions tables and Store meth
     `new_skill` or `strengthen_skill`. Covered clusters (matched AND
     `coverage_score >= skill_coverage_threshold`) produce **no** signal.
 
-- [ ] **Step 1: Add the Settings fields**
+- [x] **Step 1: Add the Settings fields**
 
 In `src/phoenix_scraper/config.py`, in the `# analysis knobs` / validation-knobs
 region (after `run_history_limit`), add:
@@ -820,7 +820,7 @@ region (after `run_history_limit`), add:
     material_change_users_delta: int = 2  # ... or this many more users
 ```
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 Create `tests/test_ladder.py`:
 
@@ -940,12 +940,12 @@ class TestDetectRung1:
         assert len(signals) == 1 and signals[0].met_evidence_bar is False
 ```
 
-- [ ] **Step 3: Run test to verify it fails**
+- [x] **Step 3: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_ladder.py -q`
 Expected: FAIL — `ModuleNotFoundError: No module named 'phoenix_scraper.ladder'`.
 
-- [ ] **Step 4: Create `ladder.py` (thresholds + detection only)**
+- [x] **Step 4: Create `ladder.py` (thresholds + detection only)**
 
 Create `src/phoenix_scraper/ladder.py`:
 
@@ -1095,17 +1095,17 @@ def detect_rung1(
 `_Frozen` is exported from `models.py` (it is the base class — importing it is
 fine; it is already used across the package).
 
-- [ ] **Step 5: Run the detection tests**
+- [x] **Step 5: Run the detection tests**
 
 Run: `uv run pytest tests/test_ladder.py -q`
 Expected: PASS (all `TestResolveThresholds` + `TestDetectRung1`).
 
-- [ ] **Step 6: File length + lint**
+- [x] **Step 6: File length + lint**
 
 Run: `wc -l src/phoenix_scraper/ladder.py && uv run ruff check src/phoenix_scraper/ladder.py src/phoenix_scraper/config.py tests/test_ladder.py`
 Expected: under 400 lines; ruff clean.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/phoenix_scraper/ladder.py src/phoenix_scraper/config.py tests/test_ladder.py
@@ -1145,7 +1145,7 @@ git commit -m "feat: ladder.py — threshold resolution + Rung-1 detection"
     transition when the candidate was **not** observed this run (auto-unsnooze,
     `stale`). `None` = no change.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `tests/test_ladder.py`:
 
@@ -1273,12 +1273,12 @@ class TestAdvanceUnobserved:
                                              last_seen_ordinal=1, history_limit=20) is None
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_ladder.py -q -k "Readiness or NextStatus or AdvanceUnobserved"`
 Expected: FAIL — `AttributeError: module 'phoenix_scraper.ladder' has no attribute 'next_status'`.
 
-- [ ] **Step 3: Implement the state machine**
+- [x] **Step 3: Implement the state machine**
 
 Append to `src/phoenix_scraper/ladder.py` (after `detect_rung1`). Add
 `Candidate`, `CandidateObservation`, `CandidateStatus` to the
@@ -1404,17 +1404,17 @@ def advance_unobserved(
     return None
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/test_ladder.py -q`
 Expected: PASS (whole file).
 
-- [ ] **Step 5: File length + lint**
+- [x] **Step 5: File length + lint**
 
 Run: `wc -l src/phoenix_scraper/ladder.py && uv run ruff check src/phoenix_scraper/ladder.py tests/test_ladder.py`
 Expected: under 400 lines; ruff clean.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/phoenix_scraper/ladder.py tests/test_ladder.py
@@ -1456,7 +1456,7 @@ git commit -m "feat: ladder.py — Rung-1 lifecycle state machine"
     already forced `partial` — ladder notes are informational, they do NOT force
     `partial`).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/test_ladder_run.py`:
 
@@ -1557,12 +1557,12 @@ class TestUpdateRung1:
         assert any("Rung 1" in n for n in out.notes)
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_ladder_run.py -q`
 Expected: FAIL — `ModuleNotFoundError: No module named 'phoenix_scraper.ladder_run'`.
 
-- [ ] **Step 3: Create `ladder_run.py`**
+- [x] **Step 3: Create `ladder_run.py`**
 
 Create `src/phoenix_scraper/ladder_run.py`:
 
@@ -1752,12 +1752,12 @@ Add `from .models import Capability` to the import block (the string annotation
 `"Capability"` can then be unquoted — keep it consistent with the file, so
 **unquote it**: `capability: Capability`).
 
-- [ ] **Step 4: Run the `ladder_run` tests**
+- [x] **Step 4: Run the `ladder_run` tests**
 
 Run: `uv run pytest tests/test_ladder_run.py -q`
 Expected: PASS.
 
-- [ ] **Step 5: Wire into `run_capability_analysis`**
+- [x] **Step 5: Wire into `run_capability_analysis`**
 
 Append to the test file `tests/test_capability_run.py` (inside
 `TestRunCapabilityAnalysis`):
@@ -1838,17 +1838,17 @@ from .ladder_run import update_rung1
    (leave `n_rung2_candidates` defaulting to 0. `notes=tuple(run_notes)` still
    carries both scrape and ladder notes.)
 
-- [ ] **Step 6: Run the wiring tests**
+- [x] **Step 6: Run the wiring tests**
 
 Run: `uv run pytest tests/test_capability_run.py tests/test_ladder_run.py -q`
 Expected: PASS.
 
-- [ ] **Step 7: Lint + full suite**
+- [x] **Step 7: Lint + full suite**
 
 Run: `uv run ruff check src tests && uv run pytest -q`
 Expected: clean; green (~659 → ~675).
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add src/phoenix_scraper/ladder_run.py src/phoenix_scraper/capability_run.py \
@@ -1893,7 +1893,7 @@ git commit -m "feat: ladder_run.update_rung1 — persist Rung-1 candidates in th
   - `PromoteResult(_Frozen)` — `paths: tuple[str, ...]`, `contents: tuple[tuple[str,
     str], ...]` (path, body), `wrote_files: bool`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/test_artifacts.py`:
 
@@ -2003,12 +2003,12 @@ class TestPromote:
         assert store.get_candidate(cand.candidate_id).status == "accepted"
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_artifacts.py -q`
 Expected: FAIL — `ModuleNotFoundError: No module named 'phoenix_scraper.artifacts'`.
 
-- [ ] **Step 3: Create `artifacts.py`**
+- [x] **Step 3: Create `artifacts.py`**
 
 Create `src/phoenix_scraper/artifacts.py`:
 
@@ -2207,12 +2207,12 @@ use so the `CandidateDecision` construction lives in one place:
         ))
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/test_artifacts.py -q`
 Expected: PASS.
 
-- [ ] **Step 5: File length + lint**
+- [x] **Step 5: File length + lint**
 
 Run: `wc -l src/phoenix_scraper/artifacts.py && uv run ruff check src/phoenix_scraper/artifacts.py src/phoenix_scraper/storage.py tests/test_artifacts.py`
 Expected: under 400 lines; ruff clean. (`_suggested_keywords` / `_yaml_block`
@@ -2220,7 +2220,7 @@ are underscore-imported from `skill_coverage` deliberately — if ruff flags the
 private import, add `# noqa: PLC2701` — but `PLC` is not in the selected rules,
 so it will not.)
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/phoenix_scraper/artifacts.py src/phoenix_scraper/storage.py tests/test_artifacts.py
@@ -2253,7 +2253,7 @@ git commit -m "feat: artifacts.py — Rung-1 draft skill / strengthen block + pr
     (for strengthen / `--dry-run`) the block. `--accept` allows `ready → promoted`
     in one step.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/test_candidate_cli.py`:
 
@@ -2348,12 +2348,12 @@ class TestPromote:
             store.close()
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_candidate_cli.py -q`
 Expected: FAIL — `candidates` is not a command (`exit_code == 2`).
 
-- [ ] **Step 3: Add option singletons + imports**
+- [x] **Step 3: Add option singletons + imports**
 
 In `cli.py`, add to the package imports (next to `from . import capability_run as
 capability_run_mod`):
@@ -2378,7 +2378,7 @@ DryRunOpt = typer.Option(False, "--dry-run", help="Render without writing.")
 CandidateIdArg = typer.Argument(..., help="Candidate id, e.g. fobo:s:abc123.")
 ```
 
-- [ ] **Step 4: Implement `pheonix candidates`**
+- [x] **Step 4: Implement `pheonix candidates`**
 
 Append after the Phase B `capability_runs` command (inside the `capability_app`?
 No — `candidates` is a top-level verb per the spec, like `run`). Add after the
@@ -2427,7 +2427,7 @@ def candidates(
 `json` is already imported in `cli.py`? Check — it is **not**. Add `import json`
 to `cli.py`'s stdlib imports (top of file, after `import logging`).
 
-- [ ] **Step 5: Implement `pheonix decide`**
+- [x] **Step 5: Implement `pheonix decide`**
 
 The decision transition table (§10.1) as a helper, then the command:
 
@@ -2488,7 +2488,7 @@ def decide(
     typer.echo(f"{candidate_id}: {candidate.status} -> {target}  (by {who})")
 ```
 
-- [ ] **Step 6: Implement `pheonix promote`**
+- [x] **Step 6: Implement `pheonix promote`**
 
 ```python
 @app.command()
@@ -2534,17 +2534,17 @@ def promote(
     typer.echo("" if dry_run else f"\nWrote {len(result.paths)} artifact(s).")
 ```
 
-- [ ] **Step 7: Run the tests to verify they pass**
+- [x] **Step 7: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/test_candidate_cli.py -q`
 Expected: PASS.
 
-- [ ] **Step 8: Lint + full suite**
+- [x] **Step 8: Lint + full suite**
 
 Run: `uv run ruff check src tests && uv run pytest -q`
 Expected: clean; green (~675 → ~685).
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add src/phoenix_scraper/cli.py tests/test_candidate_cli.py
@@ -2559,7 +2559,7 @@ git commit -m "feat: pheonix candidates / decide / promote"
 - Modify: `CONTRACTS.md`
 - Modify: `README.md`
 
-- [ ] **Step 1: CONTRACTS.md — `ladder.py` + `ladder_run.py` + `artifacts.py` + new Store methods**
+- [x] **Step 1: CONTRACTS.md — `ladder.py` + `ladder_run.py` + `artifacts.py` + new Store methods**
 
 After the `## capability_run.py` block (Phase B), add three blocks in the file's
 existing style (`## name` + a ```python signature block + a short paragraph):
@@ -2609,7 +2609,7 @@ Update the `## cli.py` command line: append `, candidates (<id> --rung --status
 --all), decide (<cid> --action --actor --note --snooze-runs), promote (<cid>
 --accept --dry-run)`.
 
-- [ ] **Step 2: README.md — "The promotion ladder" section**
+- [x] **Step 2: README.md — "The promotion ladder" section**
 
 After the `## Daily runs` section (Phase B) and before `## Dashboard UI`, insert
 `## The promotion ladder` (a heading, two short paragraphs, one fenced `bash`
@@ -2643,12 +2643,12 @@ block — no nested fences):
 
 (Strip the leading `> `.)
 
-- [ ] **Step 3: Lint + full suite (docs — sanity only)**
+- [x] **Step 3: Lint + full suite (docs — sanity only)**
 
 Run: `uv run ruff check src tests && uv run pytest -q`
 Expected: clean; green.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add CONTRACTS.md README.md
