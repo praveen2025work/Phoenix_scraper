@@ -483,7 +483,8 @@ pheonix capability sync            # re-read every capability.yaml into the DB
 Once a capability exists, `pheonix run` scrapes its Phoenix project (once, even
 for `--all`), restricts to the capability's filter and a `[from, to]` window
 (default: the last `window_days`), runs the mining pipeline over just those
-spans, and records the run so consecutive runs can be diffed.
+spans, runs the CODE validators over them so the quality panels reflect this
+capability, and records the run so consecutive runs can be diffed.
 
 ```bash
 pheonix run --capability fobo                 # last window_days
@@ -529,9 +530,10 @@ the answers collapse to a few templates, does the agent take the same route, are
 the answers similar, does each input phrasing map to one template — blended into
 a `determinism_score`. At `rung2_determinism_score` (0.8) sustained over
 `rung2_sustained_runs` (3) runs the `<cap>:d:<cluster>` candidate is `ready`;
-`promote` writes a `deterministic/<name>.py` stub + a red `test_<name>.py` with
-the observed cases + a `<name>.md` write-up. A low score is a real "keep the
-model" answer, not a failure.
+`promote` writes a `deterministic/<name>.py` stub (`<name>` is a snake_case
+module) + a red, importable `test_<name>.py` parametrized over the real observed
+`(prompt, answer)` pairs + a `<name>.md` write-up. A low score is a real "keep
+the model" answer, not a failure.
 
 ```bash
 pheonix candidates fobo --rung deterministic
