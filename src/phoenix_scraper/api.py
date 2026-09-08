@@ -26,6 +26,7 @@ from . import (
     annotations as annotations_mod,
 )
 from .api_capabilities import capability_router
+from .api_ladder import ladder_router
 from .config import Settings, load_settings
 from .costs import cost_summary
 from .evaluations import check_names
@@ -601,6 +602,7 @@ def create_app(settings: Settings) -> FastAPI:
         return _frame_response(df, fmt, "spans")
 
     protected.include_router(capability_router(settings))
+    protected.include_router(ladder_router(settings))
     app.include_router(protected)
     return app
 
