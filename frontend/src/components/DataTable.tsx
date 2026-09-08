@@ -12,20 +12,23 @@ export function DataTable<R extends Record<string, unknown>>({
   columns,
   rows,
   max = 25,
+  label,
 }: {
   columns: Column<R>[];
   rows: R[] | undefined;
   max?: number;
+  label?: string;
 }) {
   if (!rows || rows.length === 0) {
     return <p className="text-sm text-muted-foreground">No rows.</p>;
   }
   return (
     <Table>
+      {label ? <caption className="sr-only">{label}</caption> : null}
       <THead>
         <TR>
           {columns.map((c) => (
-            <TH key={c.key} className={c.align === "right" ? "text-right" : ""}>
+            <TH key={c.key} scope="col" className={c.align === "right" ? "text-right" : ""}>
               {c.header}
             </TH>
           ))}

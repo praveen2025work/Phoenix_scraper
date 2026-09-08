@@ -76,6 +76,7 @@ def config_path(root: Path, cap_id: str) -> Path        # <root>/<id>/capability
 def load_capability(root: Path, cap_id: str) -> Capability
     # FileNotFoundError if absent; ValueError if not a mapping / bad YAML / bad section / bad id.
     # Unknown status -> "active". Blank filter values -> None.
+    # window_days: absent/blank -> 30; <= 0 -> ValueError.
 def dump_capability(capability: Capability) -> str      # yaml text; load round-trips
 def write_capability(root: Path, capability: Capability) -> Path
     # mkdir <id>/skills, <id>/deterministic; write capability.yaml; return its path
@@ -97,13 +98,17 @@ def load_capability_skills(settings, capability) -> list[SkillEntry]
 def run_capability_analysis(store, settings, capability, *, window_start=None,
         window_end=None, replace_today=False, notes=None, now=None) -> CapabilityRunResult
     # NO scrape. window defaults to [now - capability.window_days, now].
-    # in-scope = capability_query_filters(...); costs -> build_clusters ->
+    # in-scope = capability_query_filters(...); costs ->
+    # evaluate_spans + store.upsert_evaluations (when settings.evaluate_on_analyze
+    # and in-scope non-empty; idempotent; a broken checker logs + adds a
+    # "validation skipped" note, never aborts) -> build_clusters ->
     # load_capability_skills -> match_clusters -> annotate_coverage ->
-    # cluster_efficiency -> ladder.detect_rung1 -> ladder_run.update_rung1.
+    # cluster_efficiency -> ladder.detect_rung1/detect_rung2 ->
+    # ladder_run.update_rung1/update_rung2.
     # Records capability_runs + capability_cluster_snapshots +
     # capability_cluster_members; prunes to settings.run_history_limit per
     # capability. Only scrape `notes` force status='partial'; ladder notes are
-    # informational. n_rung1_candidates is set; n_rung2_candidates stays 0 (Phase D).
+    # informational. n_rung1_candidates and n_rung2_candidates are both set.
 def run_capabilities(store, settings, *, capability_ids=None, all_active=False,
         client=None, window_start=None, window_end=None, replace_today=False,
         now=None) -> list[CapabilityRunResult]
@@ -178,13 +183,18 @@ def render_new_skill_md(candidate, *, capability, member_prompts, today) -> (fil
 def render_strengthen_block(candidate, skill, *, member_prompts, member_signatures) -> (target_path, yaml_block)
     # reuses skill_coverage._yaml_block / _suggested_keywords; writes nothing.
 def render_rung2_stub(candidate, *, latest_observation_signals, pairs) -> [(filename, body) x3]
+    # <name> = _module_name(_skill_stem(candidate)) — a valid snake_case module,
+    # so test_<name>.py's `from .<name> import handle` imports. Files:
     # <name>.py (TEMPLATES, DECISION_TABLE when slot_stability>=0.8, handle raises
-    # NotImplementedError), test_<name>.py (parametrized over pairs, ships red), <name>.md.
+    # NotImplementedError), test_<name>.py (parametrized over the real observed
+    # (input_text, output_text) pairs, ships red), <name>.md.
 def promote_candidate(store, capability, candidate, *, now, actor, settings,
         dry_run=False) -> PromoteResult
     # rung 'skill' new_skill -> writes capabilities/<cap>/skills/<name>.md (dedup);
     # strengthen_skill -> returns the paste block + target path, no file;
-    # rung 'deterministic' -> writes deterministic/<name>.{py,md} + test_<name>.py.
+    # rung 'deterministic' -> writes deterministic/<name>.{py,md} + test_<name>.py
+    #   (<name> snake_case; pairs are real member (input,output) via _member_pairs,
+    #    falling back to (prompt, prompt) only when a cluster has no recorded members).
     # Records a 'promote' decision; sets status='promoted' + promoted_artifact_paths.
 ```
 

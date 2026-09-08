@@ -59,3 +59,53 @@ class TestCapabilityCrud:
     def test_null_filter_fields_survive(self, tmp_store) -> None:
         tmp_store.upsert_capability(_cap(filter=CapabilityFilter()))
         assert tmp_store.get_capability("fobo").filter == CapabilityFilter()
+
+
+class TestCapabilitySchemaGuards:
+    def test_schema_rejects_nonpositive_window_days(self, tmp_store) -> None:
+        import sqlite3
+
+        import pytest
+        with pytest.raises(sqlite3.IntegrityError):
+            tmp_store._conn.execute(
+                "INSERT INTO capabilities "
+                "(capability_id, created_at, updated_at, window_days) "
+                "VALUES ('bad', '2026-01-01', '2026-01-01', 0)"
+            )
+
+    def test_schema_rejects_unknown_status(self, tmp_store) -> None:
+        import sqlite3
+
+        import pytest
+        with pytest.raises(sqlite3.IntegrityError):
+            tmp_store._conn.execute(
+                "INSERT INTO capabilities "
+                "(capability_id, created_at, updated_at, status) "
+                "VALUES ('bad', '2026-01-01', '2026-01-01', 'wobbly')"
+            )
+
+    def test_capability_from_row_coerces_bad_values(self) -> None:
+        from phoenix_scraper.storage import _capability_from_row
+        row = {
+            "capability_id": "x", "name": "X", "description": "",
+            "filter_project": None, "filter_workflow_stage": None,
+            "filter_asset_class": None, "filter_model_name": None,
+            "filter_search": None, "window_days": 0,
+            "thresholds_json": "{}", "status": "wobbly",
+        }
+        cap = _capability_from_row(row)
+        assert cap.window_days == 30
+        assert cap.status == "active"
+
+    def test_capability_from_row_keeps_good_values(self) -> None:
+        from phoenix_scraper.storage import _capability_from_row
+        row = {
+            "capability_id": "x", "name": "X", "description": "",
+            "filter_project": None, "filter_workflow_stage": None,
+            "filter_asset_class": None, "filter_model_name": None,
+            "filter_search": None, "window_days": 14,
+            "thresholds_json": "{}", "status": "paused",
+        }
+        cap = _capability_from_row(row)
+        assert cap.window_days == 14
+        assert cap.status == "paused"
