@@ -296,7 +296,7 @@ git commit -m "feat: Rung-2 promote writes real (prompt, answer) test cases"
 - `capability.load_capability` raises `ValueError` when `window_days` parses to
   `<= 0`. A blank / absent value still defaults to `30` (unchanged).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `tests/test_capability.py` (the load-tests class — match the existing
 `self._write` helper):
@@ -313,13 +313,13 @@ Append to `tests/test_capability.py` (the load-tests class — match the existin
 ```
 (`pytest` is already imported in the test file.)
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run pytest tests/test_capability.py -q -k "window_days_zero or window_days_negative"`
 Expected: FAIL — `0` coerces to `30`, no error; `-5` builds a model that
 `Field(gt=0)` rejects with a `pydantic.ValidationError` (not a `ValueError`).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `src/phoenix_scraper/capability.py`, `load_capability`, replace:
 ```python
@@ -334,18 +334,18 @@ with a computed local above the `return Capability(...)`:
 ```
 and use `window_days=window_days,` in the constructor.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/test_capability.py -q`
 Expected: PASS — including `test_load_minimal_fills_defaults` (absent → 30) and
 the blank-value test (`window_days:` → 30).
 
-- [ ] **Step 5: Lint + full suite**
+- [x] **Step 5: Lint + full suite**
 
 Run: `uv run ruff check src tests && uv run pytest -q`
 Expected: clean; green (767 → 769).
 
-- [ ] **Step 6: Commit + memory note**
+- [x] **Step 6: Commit + memory note**
 
 ```bash
 git add src/phoenix_scraper/capability.py tests/test_capability.py
