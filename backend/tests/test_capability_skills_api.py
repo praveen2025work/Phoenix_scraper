@@ -100,6 +100,58 @@ def test_delete(ctx) -> None:
     assert c.delete("/capabilities/fobo/skills/a.md").status_code == 404
 
 
+def test_uploading_the_suggested_skill_closes_the_gap(ctx) -> None:
+    """The whole loop: coverage names a gap -> upload a skill file demonstrating it
+    -> re-run -> that gap is gone. Scoped to the capability, not the global tables."""
+    c, _ = ctx
+    c.post("/demo/seed")
+    c.post("/capabilities/fobo/runs", json={})
+
+    before = c.get("/skills/coverage?capability=fobo").json()
+    gapped = [r for r in before if float(r["coverage"] or 0) < 1.0]
+    assert gapped, "expected at least one partially-covered skill to fix"
+    target, gap = gapped[0]["skill_name"], gapped[0]["top_gap"]
+    n_uncovered_before = len(c.get("/skills/uncovered?capability=fobo").json())
+    assert n_uncovered_before > 0
+
+    # the fix the tool itself prints, applied as a capability-local skill file
+    c.post("/capabilities/fobo/skills", json={
+        "filename": f"{target}.md",
+        "content": f'---\nname: {target}\ndescription: local\n'
+                   f'example_prompts:\n  - "{gap}"\n---\n',
+    })
+    c.post("/capabilities/fobo/runs", json={"replace_today": True})
+
+    after = {r["skill_name"]: float(r["coverage"] or 0) for r
+             in c.get("/skills/coverage?capability=fobo").json()}
+    assert after[target] == 1.0, f"{target} should be fully covered after the upload"
+    assert len(c.get("/skills/uncovered?capability=fobo").json()) < n_uncovered_before
+
+
+def test_coverage_without_capability_stays_global(ctx) -> None:
+    """?capability= scopes; omitting it must still answer from the global tables."""
+    c, _ = ctx
+    c.post("/demo/seed")
+    c.post("/analyze/run")
+    c.post("/capabilities/fobo/runs", json={})
+    glob = c.get("/skills/coverage").json()
+    scoped = c.get("/skills/coverage?capability=fobo").json()
+    assert len(glob) > len(scoped)  # the capability filter is narrower than everything
+
+
+def test_scoped_coverage_before_any_run_is_empty(ctx) -> None:
+    c, _ = ctx
+    assert c.get("/skills/coverage?capability=fobo").json() == []
+    assert c.get("/skills/uncovered?capability=fobo").json() == []
+
+
+def test_scoped_coverage_unknown_capability_404(ctx) -> None:
+    c, _ = ctx
+    c.post("/demo/seed")
+    c.post("/capabilities/fobo/runs", json={})
+    assert c.get("/skills/coverage?capability=ghost").status_code == 404
+
+
 def test_uploaded_skill_is_loaded_by_a_run(ctx) -> None:
     """The whole point: an uploaded file joins the skill set the miner matches against."""
     from phoenix_scraper.capability import load_capability

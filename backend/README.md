@@ -267,11 +267,31 @@ Three sources, merged (catalog wins on name collisions):
    with YAML frontmatter. `example_prompts` in frontmatter is what coverage
    measures against — a file that declares none shows 0%.
 3. **The capability's own `capabilities/<id>/skills/*.md`** — loose markdown files,
-   read fresh on every run. Add them by dropping a file in that directory, by
+   read fresh on every run, and they **override a catalog entry of the same name
+   for that capability**. Add them by dropping a file in that directory, by
    `pheonix promote`-ing a ready Rung-1 candidate, or from the SPA's **Skills**
    tab (upload or paste — `POST /capabilities/<id>/skills`). A file without
    usable YAML frontmatter is rejected by the API and skipped by a run, so the
    upload tells you instead of silently doing nothing.
+
+### Closing a gap
+
+The loop, end to end:
+
+```bash
+pheonix run --capability fobo
+# GET /skills/coverage?capability=fobo   ->  fobo-break-triage  asks=6  covered=0%
+# GET /skills/updates?capability=fobo    ->  the paste-ready example_prompts block
+#   ... drop that block into capabilities/fobo/skills/fobo-break-triage.md
+#       (or upload it from the SPA's Skills tab)
+pheonix run --capability fobo --replace-today
+# GET /skills/coverage?capability=fobo   ->  fobo-break-triage  asks=6  covered=100%
+```
+
+`?capability=<id>` on `/skills/{coverage,uncovered,updates}` scopes the answer to
+that capability's latest run **and its own skill set** — without it you get the
+global `pheonix analyze` picture, which never sees a capability's `skills/`
+directory. (`/skills/gaps` — proposed *new* skills — is still global only.)
 
 Replace the sample `config/skills_catalog.yaml` with your catalog and update
 `config/pricing.yaml` with your Bedrock token rates so cost numbers are real.
