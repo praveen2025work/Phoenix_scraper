@@ -455,8 +455,61 @@ def create_app(
             )
         return client
 
-    def _coverage_inputs(store: Store) -> tuple[pd.DataFrame, pd.DataFrame]:
-        """(annotated clusters, deltas vs the previous run) — the coverage basis."""
+    def _capability_skills(capability_id: str) -> list:
+        """Catalog + skills_dirs + capabilities/<id>/skills/*.md (local wins)."""
+        from .capability import load_capability
+        from .capability_run import load_capability_skills
+
+        try:
+            cap = load_capability(settings.capabilities_dir, capability_id)
+        except (ValueError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return load_capability_skills(settings, cap)
+
+    def _capability_coverage_inputs(
+        store: Store, capability_id: str
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+        """Coverage basis for ONE capability: its latest run's clusters, scored
+        against its OWN skill set. The global tables come from `pheonix analyze`
+        and know nothing about a capability's skills/ directory, so a scoped
+        request has to be answered from the run snapshot instead."""
+        # Resolve the capability first: an unknown id is a 404, not "no runs yet".
+        skills = _capability_skills(capability_id)
+        latest = store.previous_capability_run_id(capability_id)
+        if latest is None:
+            empty = pd.DataFrame()
+            return empty, empty
+        snap = store.capability_run_snapshot_frame(capability_id, latest)
+        if snap.empty:
+            return snap, pd.DataFrame()
+        clusters_df = snap.loc[
+            :, ["cluster_id", "signature", "representative", "count", "n_users",
+                "first_seen", "last_seen"]
+        ]
+        # The snapshot does not persist the match score; annotate_coverage only
+        # needs the pairing, and match_score is not surfaced in these rollups.
+        matched = snap.loc[snap["skill_name"].notna() & (snap["skill_name"] != "")]
+        matches_df = matched.loc[:, ["cluster_id", "skill_name"]].assign(score=0.0)
+        annotated = skill_coverage.annotate_coverage(
+            clusters_df, matches_df, skills,
+            threshold=settings.skill_coverage_threshold,
+        )
+        previous = store.previous_capability_run_id(capability_id, before=latest)
+        deltas = skill_coverage.cluster_deltas(
+            snap, store.capability_run_snapshot_frame(capability_id, previous)
+        )
+        return annotated, deltas
+
+    def _coverage_inputs(
+        store: Store, capability: str | None = None
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+        """(annotated clusters, deltas vs the previous run) — the coverage basis.
+
+        With `capability`, scope to that capability's latest run and its own
+        skills; otherwise the global `pheonix analyze` tables and the catalog.
+        """
+        if capability:
+            return _capability_coverage_inputs(store, capability)
         skills = load_all_skills(settings)
         annotated = skill_coverage.annotate_coverage(
             store.clusters_frame(limit=100_000),
@@ -472,29 +525,29 @@ def create_app(
         return annotated, deltas
 
     @protected.get("/skills/coverage")
-    def skills_coverage(fmt: Fmt = "json") -> Response:
+    def skills_coverage(capability: str | None = None, fmt: Fmt = "json") -> Response:
         """Per skill file: how much of what it is asked does it demonstrate?"""
         with open_store() as store:
-            annotated, _ = _coverage_inputs(store)
+            annotated, _ = _coverage_inputs(store, capability)
             df = skill_coverage.skill_coverage(annotated)
         return _frame_response(df, fmt, "skill_coverage")
 
     @protected.get("/skills/uncovered")
-    def skills_uncovered(fmt: Fmt = "json") -> Response:
+    def skills_uncovered(capability: str | None = None, fmt: Fmt = "json") -> Response:
         """The blind spots: real questions the matched skill file does not show."""
         with open_store() as store:
-            annotated, deltas = _coverage_inputs(store)
+            annotated, deltas = _coverage_inputs(store, capability)
             df = skill_coverage.uncovered_queries(annotated, deltas)
         return _frame_response(df, fmt, "skill_uncovered")
 
     @protected.get("/skills/updates")
-    def skills_updates(fmt: Fmt = "json") -> Response:
+    def skills_updates(capability: str | None = None, fmt: Fmt = "json") -> Response:
         """Paste-ready example_prompts/keywords additions, per skill file."""
         with open_store() as store:
-            annotated, deltas = _coverage_inputs(store)
+            annotated, deltas = _coverage_inputs(store, capability)
             df = skill_coverage.suggested_updates(
                 skill_coverage.uncovered_queries(annotated, deltas),
-                load_all_skills(settings),
+                _capability_skills(capability) if capability else load_all_skills(settings),
                 max_prompts=settings.max_suggested_prompts,
             )
         if fmt == "csv":
@@ -506,13 +559,13 @@ def create_app(
         return _frame_response(df, fmt, "skill_updates")
 
     @protected.get("/skills/updates.md", response_class=Response)
-    def skills_updates_markdown() -> Response:
+    def skills_updates_markdown(capability: str | None = None) -> Response:
         """The same suggestions as one paste-ready markdown document."""
         with open_store() as store:
-            annotated, deltas = _coverage_inputs(store)
+            annotated, deltas = _coverage_inputs(store, capability)
             df = skill_coverage.suggested_updates(
                 skill_coverage.uncovered_queries(annotated, deltas),
-                load_all_skills(settings),
+                _capability_skills(capability) if capability else load_all_skills(settings),
                 max_prompts=settings.max_suggested_prompts,
             )
         return Response(

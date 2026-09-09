@@ -2055,6 +2055,7 @@ export interface operations {
     skills_coverage_skills_coverage_get: {
         parameters: {
             query?: {
+                capability?: string | null;
                 fmt?: "json" | "csv";
             };
             header?: never;
@@ -2086,6 +2087,7 @@ export interface operations {
     skills_uncovered_skills_uncovered_get: {
         parameters: {
             query?: {
+                capability?: string | null;
                 fmt?: "json" | "csv";
             };
             header?: never;
@@ -2117,6 +2119,7 @@ export interface operations {
     skills_updates_skills_updates_get: {
         parameters: {
             query?: {
+                capability?: string | null;
                 fmt?: "json" | "csv";
             };
             header?: never;
@@ -2147,7 +2150,9 @@ export interface operations {
     };
     skills_updates_markdown_skills_updates_md_get: {
         parameters: {
-            query?: never;
+            query?: {
+                capability?: string | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2160,6 +2165,15 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
             };
         };
     };

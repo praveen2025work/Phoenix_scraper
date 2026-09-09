@@ -4375,6 +4375,22 @@
         ],
         "parameters": [
           {
+            "name": "capability",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Capability"
+            }
+          },
+          {
             "name": "fmt",
             "in": "query",
             "required": false,
@@ -4422,6 +4438,22 @@
           }
         ],
         "parameters": [
+          {
+            "name": "capability",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Capability"
+            }
+          },
           {
             "name": "fmt",
             "in": "query",
@@ -4471,6 +4503,22 @@
         ],
         "parameters": [
           {
+            "name": "capability",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Capability"
+            }
+          },
+          {
             "name": "fmt",
             "in": "query",
             "required": false,
@@ -4512,16 +4560,44 @@
         "summary": "Skills Updates Markdown",
         "description": "The same suggestions as one paste-ready markdown document.",
         "operationId": "skills_updates_markdown_skills_updates_md_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response"
-          }
-        },
         "security": [
           {
             "APIKeyHeader": []
           }
-        ]
+        ],
+        "parameters": [
+          {
+            "name": "capability",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Capability"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/runs": {

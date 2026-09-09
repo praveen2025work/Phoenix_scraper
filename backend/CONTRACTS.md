@@ -407,10 +407,22 @@ load_capability_skills reads them on the next run.
 Ladder: GET /capabilities/{id}/candidates?rung=&status=, GET /candidates/{cid},
 POST /candidates/{cid}/decision {action,actor?,note?,snooze_runs?} (409 on
 invalid transition), POST /candidates/{cid}/promote?accept=, GET
-/candidates/{cid}/artifact/preview. Every analytics route takes an optional
-`?capability=<id>` that seeds the filter + [now-window_days, now] window
-(explicit params win). `PHEONIX_CORS_ORIGINS` (comma-separated) adds
-`CORSMiddleware` + a CSRF-guard allowance for those origins.
+/candidates/{cid}/artifact/preview. Every span/analysis/quality route takes an
+optional `?capability=<id>` that seeds the filter + [now-window_days, now]
+window (explicit params win).
+
+`/skills/{coverage,uncovered,updates,updates.md}` scope differently: with
+`?capability=<id>` the basis is that capability's LATEST RUN SNAPSHOT scored
+against `load_capability_skills` (catalog + skills_dirs + its own
+`skills/*.md`, local wins), so an uploaded skill file changes the numbers;
+without it, the global `pheonix analyze` tables + `load_all_skills`. Unknown
+capability -> 404; no run yet -> empty. `match_score` is 0.0 on the scoped path
+(the snapshot does not persist it). **`/skills/gaps` is still global only** —
+proposals need `cluster.asset_classes` for level inference and the snapshot
+does not record it; scoping it requires persisting proposals per run.
+
+`PHEONIX_CORS_ORIGINS` (comma-separated) adds `CORSMiddleware` + a CSRF-guard
+allowance for those origins.
 
 ## api_capabilities.py / api_ladder.py
 ```python
