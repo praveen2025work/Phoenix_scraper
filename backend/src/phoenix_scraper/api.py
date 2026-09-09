@@ -53,6 +53,12 @@ _QUALITY_DIMENSIONS = frozenset(
 # truncated corpus while presenting itself as the whole picture.
 EVALUATION_ROW_LIMIT = ANALYSIS_SPAN_LIMIT * 20
 
+# Mirrors the skill_proposals table, so scoped and global /skills/gaps agree.
+_PROPOSAL_COLUMNS = [
+    "cluster_id", "proposed_name", "level", "asset_class", "capability",
+    "description", "evidence_count", "representative_prompt", "sample_span_ids",
+]
+
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 logger = logging.getLogger(__name__)
@@ -668,10 +674,70 @@ def create_app(
             df = store.matches_frame()
         return _frame_response(df, fmt, "skill_matches")
 
+    def _capability_proposals(store: Store, capability_id: str) -> pd.DataFrame:
+        """Proposed NEW skills for one capability, rebuilt from its latest run.
+
+        Runs the real `match_clusters` over PromptClusters reconstructed from the
+        run snapshot, so level inference sees `asset_classes` (a pattern asked
+        across several of them is not an asset-class skill) and `span_ids`.
+        """
+        from .models import PromptCluster
+        from .skills_mapper import match_clusters
+
+        skills = _capability_skills(capability_id)
+        latest = store.previous_capability_run_id(capability_id)
+        if latest is None:
+            return pd.DataFrame(columns=_PROPOSAL_COLUMNS)
+        snap = store.capability_run_snapshot_frame(capability_id, latest)
+        if snap.empty:
+            return pd.DataFrame(columns=_PROPOSAL_COLUMNS)
+        members = store.capability_cluster_members_frame(capability_id, latest)
+        spans_by_cluster: dict[str, list[str]] = {}
+        if not members.empty:
+            for row in members.to_dict("records"):
+                spans_by_cluster.setdefault(row["cluster_id"], []).append(row["span_id"])
+        clusters = [
+            PromptCluster(
+                cluster_id=r["cluster_id"],
+                signature=str(r.get("signature") or ""),
+                representative=str(r.get("representative") or ""),
+                count=int(r.get("count") or 0),
+                n_users=int(r.get("n_users") or 0),
+                asset_classes=tuple(json.loads(r.get("asset_classes") or "[]")),
+                span_ids=tuple(spans_by_cluster.get(r["cluster_id"], [])),
+            )
+            for r in snap.to_dict("records")
+        ]
+        _, proposals = match_clusters(
+            clusters, skills, threshold=settings.skill_match_threshold
+        )
+        rows = [
+            {
+                "cluster_id": p.cluster_id,
+                "proposed_name": p.proposed_name,
+                "level": p.level,
+                "asset_class": p.asset_class,
+                "capability": p.capability,
+                "description": p.description,
+                "evidence_count": p.evidence_count,
+                "representative_prompt": p.representative_prompt,
+                "sample_span_ids": json.dumps(list(p.sample_span_ids)),
+            }
+            for p in proposals
+        ]
+        return pd.DataFrame(rows, columns=_PROPOSAL_COLUMNS).sort_values(
+            "evidence_count", ascending=False, ignore_index=True
+        ) if rows else pd.DataFrame(columns=_PROPOSAL_COLUMNS)
+
     @protected.get("/skills/gaps")
-    def skills_gaps(fmt: Fmt = "json") -> Response:
+    def skills_gaps(capability: str | None = None, fmt: Fmt = "json") -> Response:
+        """Proposed new skills — asks no skill file covers at all."""
         with open_store() as store:
-            df = store.proposals_frame()
+            df = (
+                _capability_proposals(store, capability)
+                if capability
+                else store.proposals_frame()
+            )
         return _frame_response(df, fmt, "skill_gaps")
 
     @protected.get("/sessions")

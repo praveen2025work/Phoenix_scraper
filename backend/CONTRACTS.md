@@ -411,15 +411,16 @@ invalid transition), POST /candidates/{cid}/promote?accept=, GET
 optional `?capability=<id>` that seeds the filter + [now-window_days, now]
 window (explicit params win).
 
-`/skills/{coverage,uncovered,updates,updates.md}` scope differently: with
+`/skills/{coverage,uncovered,updates,updates.md,gaps}` scope differently: with
 `?capability=<id>` the basis is that capability's LATEST RUN SNAPSHOT scored
 against `load_capability_skills` (catalog + skills_dirs + its own
 `skills/*.md`, local wins), so an uploaded skill file changes the numbers;
 without it, the global `pheonix analyze` tables + `load_all_skills`. Unknown
 capability -> 404; no run yet -> empty. `match_score` is 0.0 on the scoped path
-(the snapshot does not persist it). **`/skills/gaps` is still global only** —
-proposals need `cluster.asset_classes` for level inference and the snapshot
-does not record it; scoping it requires persisting proposals per run.
+(the snapshot does not persist it). Scoped `/skills/gaps` rebuilds
+`PromptCluster`s from the snapshot + `capability_cluster_members` and runs the
+real `match_clusters`, so level inference still sees `asset_classes` (a pattern
+asked across several is NOT an asset-class skill) and `span_ids`.
 
 `PHEONIX_CORS_ORIGINS` (comma-separated) adds `CORSMiddleware` + a CSRF-guard
 allowance for those origins.
@@ -453,6 +454,12 @@ dict), `capability_jobs_frame(capability_id, limit=50)` (newest first),
 `finish_job(job_id, *, run_id, state, error=None)`, `reset_orphaned_jobs() ->
 int`. `Store` is a context manager; its connection opens with
 `journal_mode=WAL` + `busy_timeout=5000`.
+
+**Schema upgrades:** a new TABLE rides `CREATE TABLE IF NOT EXISTS` in `_SCHEMA`.
+A new COLUMN on an existing table cannot — it goes in `_ADDED_COLUMNS` and
+`_add_missing_columns()` `ALTER`s it in idempotently on every open.
+`capability_cluster_snapshots.asset_classes` (JSON list) is the first;
+`record_capability_run` defaults it to `'[]'` so hand-built rows still insert.
 
 ## frontend/  (separate npm package — React 19 + Vite + TS + Tailwind v4 + shadcn/ui)
 - Runs on its own dev server (`:5173`); talks to the API by absolute URL

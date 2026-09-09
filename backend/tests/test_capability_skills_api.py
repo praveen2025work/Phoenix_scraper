@@ -1,5 +1,7 @@
-"""API tests for uploading / listing / deleting a capability's own skill files."""
+"""API tests for a capability's own skill files: upload, and the gap loop they close."""
 
+import json
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -150,6 +152,93 @@ def test_scoped_coverage_unknown_capability_404(ctx) -> None:
     c.post("/demo/seed")
     c.post("/capabilities/fobo/runs", json={})
     assert c.get("/skills/coverage?capability=ghost").status_code == 404
+
+
+def test_scoped_gaps_are_narrower_than_global(ctx) -> None:
+    """Proposed NEW skills must come from this capability's run, not the whole DB."""
+    c, _ = ctx
+    c.post("/demo/seed")
+    c.post("/analyze/run")
+    c.post("/capabilities/fobo/runs", json={})
+    glob = c.get("/skills/gaps").json()
+    scoped = c.get("/skills/gaps?capability=fobo").json()
+    assert glob, "the demo corpus should propose something globally"
+    assert len(scoped) < len(glob)
+    # and every scoped proposal has the columns the global one has
+    if scoped:
+        assert set(scoped[0]) == set(glob[0])
+
+
+def test_scoped_gaps_edge_cases(ctx) -> None:
+    c, _ = ctx
+    assert c.get("/skills/gaps?capability=fobo").json() == []      # no run yet
+    c.post("/demo/seed")
+    c.post("/capabilities/fobo/runs", json={})
+    assert c.get("/skills/gaps?capability=ghost").status_code == 404
+
+
+def test_multi_asset_cluster_is_not_proposed_as_an_asset_class_skill(ctx) -> None:
+    """The guard `asset_classes` exists for: one pattern asked on FX and rates and
+    credit is a capability/global skill, not an FX one. It only works because the
+    run snapshot persists the asset classes."""
+    from phoenix_scraper.models import SpanRecord
+    from phoenix_scraper.storage import Store
+
+    c, settings = ctx
+    base = datetime(2026, 9, 1, 9, tzinfo=UTC)
+    with Store(settings.db_path) as store:
+        store.upsert_spans([
+            SpanRecord(
+                span_id=f"ma-{i:03d}", trace_id=f"ma-t{i}", session_id=f"ma-s{i}",
+                project="pnl-agent", span_kind="LLM",
+                start_time=base + timedelta(minutes=i),
+                workflow_stage="fobo_recon",
+                asset_class=["fx", "rates", "credit"][i % 3],
+                user_id=f"analyst-{i % 5}",
+                input_text="explain the zzz widget variance for the desk",
+                output_text="Because of a zzz widget.",
+            )
+            for i in range(12)
+        ])
+    c.post("/capabilities/fobo/runs", json={})
+
+    with Store(settings.db_path) as store:
+        run_id = store.previous_capability_run_id("fobo")
+        snap = store.capability_run_snapshot_frame("fobo", run_id)
+    row = snap[snap["representative"].str.contains("zzz widget", na=False)]
+    assert not row.empty, "the multi-asset cluster should be in the snapshot"
+    assert set(json.loads(row.iloc[0]["asset_classes"])) == {"fx", "rates", "credit"}
+
+    proposals = c.get("/skills/gaps?capability=fobo").json()
+    zzz = [p for p in proposals if "zzz widget" in str(p["representative_prompt"])]
+    if zzz:  # only asserted when it did surface as a proposal
+        assert zzz[0]["level"] != "asset_class", (
+            "asked across fx/rates/credit — must not be labelled an asset-class skill"
+        )
+
+
+def test_asset_classes_column_is_added_to_an_existing_db(tmp_path: Path) -> None:
+    """Existing DBs predate the column; CREATE TABLE IF NOT EXISTS won't add it."""
+    import sqlite3
+
+    from phoenix_scraper.storage import Store
+
+    db = tmp_path / "old.db"
+    with Store(db):
+        pass
+    raw = sqlite3.connect(db)
+    raw.execute("ALTER TABLE capability_cluster_snapshots DROP COLUMN asset_classes")
+    raw.commit()
+    cols = {r[1] for r in raw.execute("PRAGMA table_info(capability_cluster_snapshots)")}
+    assert "asset_classes" not in cols
+    raw.close()
+
+    with Store(db) as store:  # reopening migrates it
+        cols = {
+            r["name"] for r in
+            store._conn.execute("PRAGMA table_info(capability_cluster_snapshots)")
+        }
+    assert "asset_classes" in cols
 
 
 def test_uploaded_skill_is_loaded_by_a_run(ctx) -> None:
