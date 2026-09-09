@@ -348,9 +348,14 @@ def _scrape_projects(
             problems.setdefault(project, []).append(f"scrape failed for {project}: {exc}")
             continue
         info.setdefault(project, []).append(
-            f"scraped {project}: pulled {report.pulled}, "
-            f"inserted {report.inserted}, skipped {report.skipped}"
+            f"scraped {project}: pulled {report.pulled}, inserted {report.inserted}, "
+            f"already had {report.duplicates}"
         )
+        if report.dropped:
+            problems.setdefault(project, []).append(
+                f"{report.dropped} of {report.pulled} rows from {project} were "
+                "unreadable (no span_id/trace_id/start_time) and were discarded"
+            )
         if report.truncated:
             problems.setdefault(project, []).append(
                 f"scrape of {project} hit the {settings.scrape_limit}-span limit and "

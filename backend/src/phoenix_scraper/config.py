@@ -90,6 +90,9 @@ class Settings(BaseSettings):
 
     scrape_overlap_minutes: int = 15  # watermark lookback to catch late-arriving spans
     scrape_limit: int = 5000
+    # How many times a full page may halve its window before the scrape gives up
+    # and reports truncation. 10 = up to 1024 slices; only busy slices recurse.
+    scrape_max_subdivisions: int = 10
     # Read timeout (seconds) for Phoenix API calls. The first scrape scans the
     # project's full history and can exceed the 30s default on large projects.
     http_timeout: float = 30.0

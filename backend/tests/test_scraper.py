@@ -589,6 +589,49 @@ class TestScrapeOnce:
         assert len(client.calls) == 1
         assert report.truncated is True
 
+    def test_subdivision_depth_is_configurable(self, tmp_store: Store, tmp_path: Path) -> None:
+        """A fixed depth cap is wrong for every project.
+
+        6 halvings of a month is ~11h per slice; a project doing thousands of spans
+        a day still overflows that and loses the remainder.
+        """
+        settings = make_settings(
+            tmp_path, project=PROJECT, scrape_limit=2, scrape_max_subdivisions=2
+        )
+        always_full = [pd.DataFrame([flat_row(0), flat_row(1)]) for _ in range(64)]
+        client = FakeWrapper(always_full)
+        since, until = BASE_TS, BASE_TS + timedelta(days=8)
+
+        report = scrape_once(
+            tmp_store, client, settings, since=since, until=until, ignore_watermark=True
+        )
+
+        assert len(client.calls) == 1 + 2 + 4  # depths 0, 1, 2 then stop
+        assert report.truncated is True
+
+    def test_unparseable_rows_are_counted_apart_from_duplicates(
+        self, tmp_store: Store, tmp_path: Path
+    ) -> None:
+        """"skipped" conflates two unrelated things.
+
+        A duplicate is a healthy re-scrape; a row Phoenix sent that we could not
+        read is data loss, and the two need different reactions.
+        """
+        settings = make_settings(tmp_path, project=PROJECT)
+        good = [flat_row(0), flat_row(1)]
+        bad = [flat_row(2, **{"context.span_id": None})]  # unreadable: no span id
+        client = FakeWrapper([pd.DataFrame(good + bad), pd.DataFrame(good)])
+
+        first = scrape_once(tmp_store, client, settings)
+        second = scrape_once(tmp_store, client, settings)
+
+        assert (first.pulled, first.inserted) == (3, 2)
+        assert first.dropped == 1  # unreadable
+        assert first.duplicates == 0
+        assert second.dropped == 0
+        assert second.duplicates == 2  # already stored
+        assert second.skipped == 2  # total, unchanged meaning
+
     def test_empty_pull_leaves_watermark_untouched(self, tmp_store: Store, tmp_path: Path) -> None:
         settings = make_settings(tmp_path, project=PROJECT)
         client = FakeWrapper([pd.DataFrame()])

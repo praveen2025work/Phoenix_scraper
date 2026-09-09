@@ -271,7 +271,11 @@ class ScrapeReport(_Frozen):
     source: str  # live | fixtures | jsonl
     pulled: int = 0
     inserted: int = 0
-    skipped: int = 0
+    skipped: int = 0  # dropped + duplicates, kept as the headline number
+    # A duplicate is a healthy re-scrape of a span we already hold; a dropped row
+    # is one Phoenix sent that we could not read at all. Only the second is loss.
+    dropped: int = 0
+    duplicates: int = 0
     watermark_before: datetime | None = None
     watermark_after: datetime | None = None
     # True when a pull came back full and could not be split any further, so

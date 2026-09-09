@@ -98,25 +98,34 @@ def scrape_once(
     else:
         start = watermark_before - timedelta(minutes=settings.scrape_overlap_minutes)
     rows, truncated = _fetch_window(client, settings, start, _ensure_utc(until))
-    records = [
-        record
-        for record in (
-            flatten_phoenix_row(
-                row, settings.project,
-                stage_keys=settings.stage_attr_keys(),
-                asset_keys=settings.asset_attr_keys(),
-            )
-            for row in rows
+    records = []
+    dropped = 0
+    for row in rows:
+        record = flatten_phoenix_row(
+            row, settings.project,
+            stage_keys=settings.stage_attr_keys(),
+            asset_keys=settings.asset_attr_keys(),
         )
-        if record is not None
-    ]
+        if record is None:
+            # Unreadable, not a duplicate: no span_id, trace_id or start_time.
+            dropped += 1
+            logger.debug("dropped an unreadable Phoenix row: %.200s", row)
+        else:
+            records.append(record)
     inserted = store.upsert_spans(records)
+    duplicates = len(records) - inserted
 
     logger.info(
-        "scrape %s: pulled %d, inserted %d, skipped %d%s",
-        settings.project, len(rows), inserted, len(rows) - inserted,
+        "scrape %s: pulled %d, inserted %d, duplicates %d, unreadable %d%s",
+        settings.project, len(rows), inserted, duplicates, dropped,
         " (TRUNCATED — Phoenix holds more)" if truncated else "",
     )
+    if dropped:
+        logger.warning(
+            "%d of %d rows from %s had no span_id/trace_id/start_time and were "
+            "discarded — run at DEBUG to see them",
+            dropped, len(rows), settings.project,
+        )
 
     latest = max((r.start_time for r in records), default=None)
     watermark_after = watermark_before
@@ -128,15 +137,12 @@ def scrape_once(
         pulled=len(rows),
         inserted=inserted,
         skipped=len(rows) - inserted,
+        dropped=dropped,
+        duplicates=duplicates,
         watermark_before=watermark_before,
         watermark_after=watermark_after,
         truncated=truncated,
     )
-
-
-# How many times a window may be halved before we give up and report truncation.
-# 2**6 = 64 slices, i.e. ~11 minutes of granularity across a half-day window.
-_MAX_SUBDIVISIONS = 6
 
 
 def _fetch_window(
@@ -164,11 +170,14 @@ def _fetch_window(
     )
     if len(rows) < settings.scrape_limit:
         return rows, False
-    if start is None or end is None or depth >= _MAX_SUBDIVISIONS:
+    if start is None or end is None or depth >= settings.scrape_max_subdivisions:
         logger.warning(
             "Phoenix returned a full page of %d spans for %s..%s and it cannot be "
-            "narrowed further; some spans were not scraped",
-            len(rows), start, end,
+            "narrowed further (depth %d/%d); some spans were NOT scraped. Raise "
+            "PHEONIX_SCRAPE_LIMIT (currently %d) — one bigger page beats many small "
+            "ones — or PHEONIX_SCRAPE_MAX_SUBDIVISIONS, or run a shorter window.",
+            len(rows), start, end, depth, settings.scrape_max_subdivisions,
+            settings.scrape_limit,
         )
         return rows, True
     mid = start + (end - start) / 2
