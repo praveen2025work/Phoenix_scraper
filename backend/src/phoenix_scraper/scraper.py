@@ -158,6 +158,10 @@ def _fetch_window(
         project=settings.project, start=start, end=end, limit=settings.scrape_limit
     )
     rows = _frame_rows(frame)
+    logger.debug(
+        "slice depth=%d %s..%s -> %d rows (limit %d)",
+        depth, start, end, len(rows), settings.scrape_limit,
+    )
     if len(rows) < settings.scrape_limit:
         return rows, False
     if start is None or end is None or depth >= _MAX_SUBDIVISIONS:

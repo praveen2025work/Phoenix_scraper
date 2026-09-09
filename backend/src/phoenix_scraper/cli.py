@@ -1,7 +1,6 @@
 """Typer CLI: demo, seed, scrape, ingest, analyze, report, export, serve, doctor."""
 
 import json
-import os
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
@@ -44,7 +43,10 @@ def _init_logging() -> None:
     """Surface this package's logs (Phoenix calls, scrape counts, TLS trust)."""
     from .logging_setup import configure_logging
 
-    configure_logging(os.environ.get("PHEONIX_LOG_LEVEL", "INFO"))
+    # Via Settings, not os.environ: pydantic-settings reads backend/.env itself and
+    # never exports into the process environment, so an os.environ lookup here would
+    # silently ignore PHEONIX_LOG_LEVEL set in .env.
+    configure_logging(load_settings().log_level)
 
 
 capability_app = typer.Typer(

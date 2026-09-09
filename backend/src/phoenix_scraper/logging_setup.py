@@ -8,10 +8,26 @@ import logging
 
 _PACKAGE = "phoenix_scraper"
 _FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
+# Only at DEBUG: httpx logs one line per request ("HTTP Request: POST ... 200 OK"),
+# which is the only direct evidence that a call actually left the machine.
+_HTTP_LOGGER = "httpx"
+
+
+def _attach(name: str, level: int) -> logging.Logger:
+    logger = logging.getLogger(name)
+    if not logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter(_FORMAT))
+        logger.addHandler(handler)
+    logger.setLevel(level)
+    return logger
 
 
 def configure_logging(level: str = "INFO") -> logging.Logger:
     """Attach a stderr handler to the `phoenix_scraper` logger at `level`.
+
+    At DEBUG the http client is wired up too, so "is it pulling?" can be answered
+    from the wire rather than inferred from our own log lines.
 
     An unrecognised level falls back to INFO rather than raising: a typo in
     PHEONIX_LOG_LEVEL should not stop the server from starting.
@@ -19,10 +35,6 @@ def configure_logging(level: str = "INFO") -> logging.Logger:
     resolved = getattr(logging, str(level).upper(), None)
     if not isinstance(resolved, int):
         resolved = logging.INFO
-    package_logger = logging.getLogger(_PACKAGE)
-    if not package_logger.handlers:
-        handler = logging.StreamHandler()
-        handler.setFormatter(logging.Formatter(_FORMAT))
-        package_logger.addHandler(handler)
-    package_logger.setLevel(resolved)
-    return package_logger
+    if resolved <= logging.DEBUG:
+        _attach(_HTTP_LOGGER, resolved)
+    return _attach(_PACKAGE, resolved)

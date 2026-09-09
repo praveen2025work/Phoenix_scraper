@@ -82,13 +82,17 @@ class TestScrapeLogging:
 class TestConfigureLogging:
     @pytest.fixture(autouse=True)
     def _reset(self):
-        pkg = logging.getLogger("phoenix_scraper")
-        saved = list(pkg.handlers), pkg.level
-        pkg.handlers.clear()
+        names = ("phoenix_scraper", "httpx")
+        saved = {n: (list(logging.getLogger(n).handlers), logging.getLogger(n).level)
+                 for n in names}
+        for n in names:
+            logging.getLogger(n).handlers.clear()
         yield
-        pkg.handlers.clear()
-        pkg.handlers.extend(saved[0])
-        pkg.setLevel(saved[1])
+        for n, (handlers, level) in saved.items():
+            logger = logging.getLogger(n)
+            logger.handlers.clear()
+            logger.handlers.extend(handlers)
+            logger.setLevel(level)
 
     def test_installs_a_handler_at_the_configured_level(self) -> None:
         configure_logging("DEBUG")
@@ -105,3 +109,32 @@ class TestConfigureLogging:
     def test_unknown_level_falls_back_to_info(self) -> None:
         configure_logging("not-a-level")
         assert logging.getLogger("phoenix_scraper").level == logging.INFO
+
+    def test_debug_also_surfaces_the_http_client(self) -> None:
+        """At DEBUG the question is "did the request leave the box?" — only httpx
+        can answer that, and it is silent under our package logger alone."""
+        configure_logging("DEBUG")
+        assert logging.getLogger("httpx").handlers
+
+    def test_info_leaves_the_http_client_alone(self) -> None:
+        configure_logging("INFO")
+        assert not logging.getLogger("httpx").handlers
+
+
+class TestLogLevelFromEnvFile:
+    def test_pheonix_log_level_is_a_setting(self, tmp_path: Path, monkeypatch) -> None:
+        """It has to come from Settings, not os.environ.
+
+        pydantic-settings reads .env itself and never exports into the process
+        environment, so an os.environ lookup silently ignores backend/.env.
+        """
+        env_file = tmp_path / ".env"
+        env_file.write_text("PHEONIX_LOG_LEVEL=DEBUG\n", encoding="utf-8")
+
+        settings = Settings(_env_file=env_file, db_path=tmp_path / "t.db")
+
+        assert settings.log_level == "DEBUG"
+        monkeypatch.delenv("PHEONIX_LOG_LEVEL", raising=False)
+        import os
+
+        assert os.environ.get("PHEONIX_LOG_LEVEL") is None  # .env never reaches here
