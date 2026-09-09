@@ -194,3 +194,20 @@ class TestCapabilityJobs:
         )
         assert result.exit_code == 0
         assert "No jobs" in result.output
+
+
+class TestAttrsCommand:
+    def test_lists_attribute_keys_and_resolution_counts(self, tmp_path: Path) -> None:
+        db = tmp_path / "c.db"
+        _invoke("demo", "--db", str(db), "--export-dir", str(tmp_path / "e"),
+                "--sessions", "10")
+        result = _invoke("attrs", "--db", str(db))
+        assert result.exit_code == 0, result.output
+        assert "spans stored" in result.output
+        assert "workflow_stage resolved on" in result.output
+        assert "tool.name" in result.output  # a key the fixtures really carry
+
+    def test_empty_store_says_so(self, tmp_path: Path) -> None:
+        result = _invoke("attrs", "--db", str(tmp_path / "empty.db"))
+        assert result.exit_code == 0
+        assert "No spans stored yet" in result.output

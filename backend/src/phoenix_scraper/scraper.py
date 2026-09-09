@@ -3,6 +3,7 @@
 import json
 import logging
 import math
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -19,10 +20,19 @@ logger = logging.getLogger(__name__)
 _ATTR_PREFIX = "attributes."
 
 
-def flatten_phoenix_row(row: dict, project: str) -> SpanRecord | None:
+def flatten_phoenix_row(
+    row: dict,
+    project: str,
+    *,
+    stage_keys: Sequence[str] = (),
+    asset_keys: Sequence[str] = (),
+) -> SpanRecord | None:
     """Map one Phoenix row (flattened columns OR nested attribute dicts) to a SpanRecord.
 
-    Returns None when span_id, trace_id, or start_time is missing/unparseable.
+    `stage_keys` / `asset_keys` are checked before the built-in STAGE_KEYS /
+    ASSET_KEYS, so PHEONIX_STAGE_ATTR can point at a name this code never
+    guessed. Returns None when span_id, trace_id, or start_time is
+    missing/unparseable.
     """
     flat = _flatten_keys(row)
     span_id = _text(_first(flat, "context.span_id", "span_id"))
@@ -50,8 +60,8 @@ def flatten_phoenix_row(row: dict, project: str) -> SpanRecord | None:
         status_code=_text(_first(flat, "status_code")) or "OK",
         model_name=_text(_first(flat, "attributes.llm.model_name")),
         user_id=_text(_first(flat, "attributes.user.id")),
-        workflow_stage=_text(_first(flat, "attributes.metadata.workflow_stage")),
-        asset_class=_text(_first(flat, "attributes.metadata.asset_class")),
+        workflow_stage=_text(_first(flat, *stage_keys, *STAGE_KEYS)),
+        asset_class=_text(_first(flat, *asset_keys, *ASSET_KEYS)),
         input_text=_text_value(_first(flat, "attributes.input.value")),
         output_text=_text_value(_first(flat, "attributes.output.value")),
         prompt_template=_text(_first(flat, "attributes.llm.prompt_template.template")),
@@ -87,7 +97,14 @@ def scrape_once(
     rows = _frame_rows(frame)
     records = [
         record
-        for record in (flatten_phoenix_row(row, settings.project) for row in rows)
+        for record in (
+            flatten_phoenix_row(
+                row, settings.project,
+                stage_keys=settings.stage_attr_keys(),
+                asset_keys=settings.asset_attr_keys(),
+            )
+            for row in rows
+        )
         if record is not None
     ]
     inserted = store.upsert_spans(records)
@@ -107,7 +124,14 @@ def scrape_once(
     )
 
 
-def ingest_jsonl(store: Store, path: Path, project: str) -> ScrapeReport:
+def ingest_jsonl(
+    store: Store,
+    path: Path,
+    project: str,
+    *,
+    stage_keys: Sequence[str] = (),
+    asset_keys: Sequence[str] = (),
+) -> ScrapeReport:
     """Offline ingestion: one JSON span object per line -> flatten -> upsert."""
     records: list[SpanRecord] = []
     pulled = 0
@@ -124,7 +148,9 @@ def ingest_jsonl(store: Store, path: Path, project: str) -> ScrapeReport:
         if not isinstance(raw, dict):
             logger.warning("%s:%d skipped — expected a JSON object", path, line_no)
             continue
-        record = flatten_phoenix_row(raw, project)
+        record = flatten_phoenix_row(
+            raw, project, stage_keys=stage_keys, asset_keys=asset_keys
+        )
         if record is None:
             logger.warning("%s:%d skipped — missing span_id/trace_id/start_time", path, line_no)
             continue
@@ -136,6 +162,22 @@ def ingest_jsonl(store: Store, path: Path, project: str) -> ScrapeReport:
 
 
 # ---- helpers -----------------------------------------------------------------
+def _candidates(names: tuple[str, ...]) -> tuple[str, ...]:
+    """Every place a custom field realistically lands, canonical name first.
+
+    OpenInference puts user fields under `attributes.metadata.`; some SDKs set
+    them flat on `attributes.`; a JSONL export can carry a bare column. Reading
+    exactly one key silently drops data the agent already emits, so try them all
+    — this only ever finds a value that is really there, it never invents one.
+    """
+    return tuple(f"{prefix}{name}" for name in names for prefix in _ATTR_LOOKUP_PREFIXES)
+
+
+_ATTR_LOOKUP_PREFIXES = ("attributes.metadata.", "attributes.", "metadata.", "")
+STAGE_KEYS = _candidates(("workflow_stage", "workflowStage", "stage"))
+ASSET_KEYS = _candidates(("asset_class", "assetClass"))
+
+
 def _flatten_keys(data: dict, prefix: str = "") -> dict[str, Any]:
     """Dotted-key view of a possibly nested dict; dict values also kept whole."""
     out: dict[str, Any] = {}

@@ -245,7 +245,11 @@ def ingest(
     """Ingest spans offline from a JSONL file (one JSON span per line)."""
     settings = _settings(db=db)
     with _open_store(settings) as store:
-        report = scraper.ingest_jsonl(store, path, project)
+        report = scraper.ingest_jsonl(
+            store, path, project,
+            stage_keys=settings.stage_attr_keys(),
+            asset_keys=settings.asset_attr_keys(),
+        )
     _echo_scrape(report)
 
 
@@ -401,6 +405,71 @@ def export(
             df = store.sessions_frame()
     path = export_mod.export_frame(df, settings.export_dir, what.value, fmt.value)
     typer.echo(f"Exported {len(df)} {what.value} rows to {path}")
+
+
+AttrsLimitOpt = typer.Option(40, "--limit", help="Most common keys to show.")
+
+
+@app.command()
+def attrs(
+    limit: int = AttrsLimitOpt,
+    db: Path | None = DbOpt,
+) -> None:
+    """List the attribute keys your stored spans actually carry.
+
+    Use it to find where your agent puts the workflow stage / asset class, then
+    point PHEONIX_STAGE_ATTR / PHEONIX_ASSET_ATTR at it (or fix the emitter).
+    """
+    from collections import Counter
+
+    from .scraper import ASSET_KEYS, STAGE_KEYS, _flatten_keys
+
+    settings = _settings(db=db)
+    with _open_store(settings) as store:
+        frame = store.spans_frame(QueryFilters(limit=100_000))
+    if not len(frame):
+        typer.echo("No spans stored yet — run `pheonix scrape` or `pheonix demo` first.")
+        return
+
+    counts: Counter[str] = Counter()
+    samples: dict[str, str] = {}
+    for raw in frame["attributes"].dropna():
+        try:
+            data = json.loads(raw) if isinstance(raw, str) else raw
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        for key, value in _flatten_keys(data).items():
+            if isinstance(value, dict):
+                continue  # the container itself, not a leaf
+            counts[key] += 1
+            samples.setdefault(key, str(value)[:40])
+
+    if not counts:
+        typer.echo("Stored spans carry no attributes.")
+        return
+
+    stage_hits = int(frame["workflow_stage"].notna().sum())
+    asset_hits = int(frame["asset_class"].notna().sum())
+    total = len(frame)
+    typer.echo(f"{total} spans stored")
+    typer.echo(f"  workflow_stage resolved on {stage_hits}/{total}")
+    typer.echo(f"  asset_class    resolved on {asset_hits}/{total}")
+    if not stage_hits:
+        typer.secho(
+            "  none of the keys below matched " + ", ".join(STAGE_KEYS[:4]) + ", …\n"
+            "  set PHEONIX_STAGE_ATTR=<key from the list> if you see yours here.",
+            fg=typer.colors.YELLOW,
+        )
+    typer.echo()
+    typer.echo(f"{'attribute key':<52} {'spans':>7}  sample")
+    typer.echo("-" * 96)
+    known = set(STAGE_KEYS) | set(ASSET_KEYS)
+    for key, n in counts.most_common(limit):
+        mark = " *" if key in known else "  "
+        typer.echo(f"{key:<50}{mark} {n:>7}  {samples.get(key, '')}")
+    typer.echo("\n* = a key the scraper already checks for stage/asset class")
 
 
 @app.command()

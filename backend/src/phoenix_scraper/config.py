@@ -81,6 +81,13 @@ class Settings(BaseSettings):
     eval_outlier_quantile: float = 0.95  # latency / prompt-length outlier cut
     eval_outlier_factor: float = 2.0  # ... and it must also exceed factor x median
     annotation_batch_size: int = 100  # span_ids per Phoenix annotation request
+    # Where YOUR spans carry the workflow stage / asset class, when it isn't one
+    # of the conventional keys scraper.STAGE_KEYS already checks. Comma-separated
+    # dotted paths, tried FIRST, e.g. "attributes.metadata.desk_workflow".
+    # `pheonix attrs` lists the keys your stored spans actually have.
+    stage_attr: str = ""
+    asset_attr: str = ""
+
     scrape_overlap_minutes: int = 15  # watermark lookback to catch late-arriving spans
     scrape_limit: int = 5000
     # Read timeout (seconds) for Phoenix API calls. The first scrape scans the
@@ -112,6 +119,12 @@ class Settings(BaseSettings):
         if idx != -1:
             path = path[:idx]
         return urlunsplit((parts.scheme, parts.netloc, path.rstrip("/"), "", ""))
+
+    def stage_attr_keys(self) -> list[str]:
+        return [k.strip() for k in self.stage_attr.split(",") if k.strip()]
+
+    def asset_attr_keys(self) -> list[str]:
+        return [k.strip() for k in self.asset_attr.split(",") if k.strip()]
 
     def skills_dir_paths(self) -> list[Path]:
         return [Path(p.strip()) for p in self.skills_dirs.split(",") if p.strip()]
