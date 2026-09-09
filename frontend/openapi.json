@@ -4950,6 +4950,7 @@
     "/skills/gaps": {
       "get": {
         "summary": "Skills Gaps",
+        "description": "Proposed new skills \u2014 asks no skill file covers at all.",
         "operationId": "skills_gaps_skills_gaps_get",
         "security": [
           {
@@ -4957,6 +4958,22 @@
           }
         ],
         "parameters": [
+          {
+            "name": "capability",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Capability"
+            }
+          },
           {
             "name": "fmt",
             "in": "query",

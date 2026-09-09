@@ -15,6 +15,7 @@ Rung 1 / Rung 2 candidate detection is Phase C / D — the run rows carry
 `n_rung1_candidates` / `n_rung2_candidates`, written 0 here.
 """
 
+import json
 import logging
 from datetime import UTC, datetime, timedelta
 
@@ -130,6 +131,9 @@ def _snapshot_rows(
                 "long_route": long_route,
                 "first_seen": c.first_seen.isoformat() if c.first_seen else None,
                 "last_seen": c.last_seen.isoformat() if c.last_seen else None,
+                # Kept so gap proposals can be rebuilt per capability: a pattern
+                # asked across several asset classes is not an asset-class skill.
+                "asset_classes": json.dumps([a for a in c.asset_classes if a]),
             }
         )
     return rows

@@ -288,10 +288,17 @@ pheonix run --capability fobo --replace-today
 # GET /skills/coverage?capability=fobo   ->  fobo-break-triage  asks=6  covered=100%
 ```
 
-`?capability=<id>` on `/skills/{coverage,uncovered,updates}` scopes the answer to
-that capability's latest run **and its own skill set** — without it you get the
-global `pheonix analyze` picture, which never sees a capability's `skills/`
-directory. (`/skills/gaps` — proposed *new* skills — is still global only.)
+`?capability=<id>` on `/skills/{coverage,uncovered,updates,gaps}` scopes the
+answer to that capability's latest run **and its own skill set** — without it you
+get the global `pheonix analyze` picture, which never sees a capability's
+`skills/` directory.
+
+Two different gap questions, two panels:
+
+| Panel | Answers |
+| --- | --- |
+| coverage / uncovered / updates | "a skill file **owns** this ask but doesn't demonstrate it" — fix by adding an `example_prompt` |
+| gaps (*proposed new skills*) | "**no** skill covers this ask at all" — fix by creating a skill |
 
 Replace the sample `config/skills_catalog.yaml` with your catalog and update
 `config/pricing.yaml` with your Bedrock token rates so cost numbers are real.

@@ -671,7 +671,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Skills Gaps */
+        /**
+         * Skills Gaps
+         * @description Proposed new skills — asks no skill file covers at all.
+         */
         get: operations["skills_gaps_skills_gaps_get"];
         put?: never;
         post?: never;
@@ -2406,6 +2409,7 @@ export interface operations {
     skills_gaps_skills_gaps_get: {
         parameters: {
             query?: {
+                capability?: string | null;
                 fmt?: "json" | "csv";
             };
             header?: never;

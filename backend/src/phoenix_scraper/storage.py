@@ -206,6 +206,10 @@ CREATE TABLE IF NOT EXISTS capability_cluster_snapshots (
     long_route     INTEGER NOT NULL DEFAULT 0,
     first_seen     TEXT,
     last_seen      TEXT,
+    -- JSON list of the asset classes this cluster was seen in. Needed to rebuild
+    -- gap proposals per capability: a pattern asked across several asset classes
+    -- is NOT an asset-class skill, and level inference cannot tell without it.
+    asset_classes  TEXT NOT NULL DEFAULT '[]',
     PRIMARY KEY (capability_id, run_id, cluster_id)
 );
 
@@ -290,6 +294,21 @@ CREATE INDEX IF NOT EXISTS idx_capability_jobs_state
 """
 
 
+# `CREATE TABLE IF NOT EXISTS` upgrades a DB with a NEW table, but never adds a
+# column to one that already exists. Columns added after a table shipped go here
+# and are applied idempotently on every open.
+_ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
+    ("capability_cluster_snapshots", "asset_classes", "TEXT NOT NULL DEFAULT '[]'"),
+)
+
+
+def _add_missing_columns(conn: sqlite3.Connection) -> None:
+    for table, column, decl in _ADDED_COLUMNS:
+        existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+        if existing and column not in existing:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+
+
 class Store:
     """Thin wrapper over sqlite3 — every method opens/uses one connection owned by the store."""
 
@@ -301,6 +320,7 @@ class Store:
         self._conn.execute("PRAGMA journal_mode = WAL")
         self._conn.execute("PRAGMA busy_timeout = 5000")
         self._conn.executescript(_SCHEMA)
+        _add_missing_columns(self._conn)
         self._conn.commit()
 
     def close(self) -> None:
@@ -775,13 +795,17 @@ class Store:
             "DELETE FROM capability_cluster_members WHERE capability_id = ? AND run_id = ?",
             (run.capability_id, run.run_id),
         )
+        # asset_classes arrived after the table shipped; default it so a caller
+        # building rows by hand does not have to know about it.
+        snapshot_rows = [{"asset_classes": "[]", **row} for row in snapshot_rows]
         c.executemany(
             "INSERT INTO capability_cluster_snapshots (capability_id, run_id, "
             "cluster_id, signature, representative, count, n_users, skill_name, "
-            "covered, in_scope, route_len_avg, long_route, first_seen, last_seen) "
+            "covered, in_scope, route_len_avg, long_route, first_seen, last_seen, "
+            "asset_classes) "
             "VALUES (:capability_id,:run_id,:cluster_id,:signature,:representative,"
             ":count,:n_users,:skill_name,:covered,:in_scope,:route_len_avg,"
-            ":long_route,:first_seen,:last_seen)",
+            ":long_route,:first_seen,:last_seen,:asset_classes)",
             snapshot_rows,
         )
         c.executemany(
@@ -1031,7 +1055,7 @@ _SNAPSHOT_COLUMNS = [
 _CAP_SNAPSHOT_COLUMNS = [
     "capability_id", "run_id", "cluster_id", "signature", "representative",
     "count", "n_users", "skill_name", "covered", "in_scope", "route_len_avg",
-    "long_route", "first_seen", "last_seen",
+    "long_route", "first_seen", "last_seen", "asset_classes",
 ]
 
 
