@@ -802,9 +802,7 @@ def _merge_capability(
     cap = store.get_capability(capability_id)
     if cap is None:
         return qf
-    from datetime import timedelta
-
-    now = datetime.now(UTC)
+    window_start, window_end = _capability_window(store, cap)
     f = cap.filter
     return qf.model_copy(update={
         "project": qf.project or f.project,
@@ -812,9 +810,39 @@ def _merge_capability(
         "asset_class": qf.asset_class or f.asset_class,
         "model_name": qf.model_name or f.model_name,
         "search": qf.search or f.search,
-        "start": qf.start or (now - timedelta(days=cap.window_days)),
-        "end": qf.end or now,
+        "start": qf.start or window_start,
+        "end": qf.end or window_end,
     })
+
+
+def _capability_window(store: Store, capability) -> tuple[datetime, datetime]:  # noqa: ANN001
+    """The period the analytics should describe: whatever the last run analysed.
+
+    Defaulting to `now - window_days` describes a period nobody asked for. A run
+    over an explicit past range then rendered as an empty Analytics tab, because
+    every panel was quietly looking somewhere else.
+    """
+    from datetime import timedelta
+
+    runs = store.capability_runs_frame(capability.id, limit=1)
+    if not runs.empty:
+        row = runs.iloc[0]
+        start = _parse_stored_ts(row.get("window_start"))
+        end = _parse_stored_ts(row.get("window_end"))
+        if start is not None and end is not None:
+            return start, end
+    now = datetime.now(UTC)
+    return now - timedelta(days=capability.window_days), now
+
+
+def _parse_stored_ts(value: object) -> datetime | None:
+    """A capability_runs timestamp column back into an aware datetime, or None."""
+    if value is None or (not isinstance(value, str) and pd.isna(value)):
+        return None
+    try:
+        return _utc(pd.to_datetime(value).to_pydatetime())
+    except (ValueError, TypeError):
+        return None
 
 
 def _frame_response(df: pd.DataFrame, fmt: Fmt, name: str) -> Response:

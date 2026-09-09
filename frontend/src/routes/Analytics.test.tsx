@@ -44,3 +44,38 @@ test("headline: KPIs + activity chart + run deltas render scoped to the capabili
   });
   expect(scopedOk).toBe(true);
 });
+
+test("the period every panel describes is stated, not left to be guessed", async () => {
+  // These numbers are the last run's window, which is what the API now scopes to.
+  mock({
+    "/capabilities/fobo": {
+      summary: {
+        id: "fobo",
+        name: "FOBO",
+        window_days: 30,
+        last_run: {
+          run_id: "2026-09-09T10:00:00+00:00",
+          window_start: "2026-08-01T00:00:00+00:00",
+          window_end: "2026-09-05T00:00:00+00:00",
+        },
+      },
+    },
+    "/overview?capability=fobo": { n_spans: 388 },
+  });
+  renderWithProviders(<Analytics />, { route: "/c/fobo/analytics", path: "/c/:id/analytics" });
+
+  await waitFor(() =>
+    expect(screen.getByText(/2026-08-01.*2026-09-05/)).toBeInTheDocument(),
+  );
+});
+
+test("with no run yet, the fallback period is named as such", async () => {
+  mock({
+    "/capabilities/fobo": {
+      summary: { id: "fobo", name: "FOBO", window_days: 30, last_run: null },
+    },
+  });
+  renderWithProviders(<Analytics />, { route: "/c/fobo/analytics", path: "/c/:id/analytics" });
+
+  await waitFor(() => expect(screen.getByText(/last 30 days/i)).toBeInTheDocument());
+});
