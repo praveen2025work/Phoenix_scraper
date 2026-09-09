@@ -626,3 +626,74 @@ class TestIngestJsonl:
         assert second.inserted == 0
         assert second.skipped == 1
         assert len(tmp_store.spans_frame()) == 1
+
+
+class TestStageAndAssetLookup:
+    """The scraper must find a stage the agent already emits, wherever it put it —
+    and must never invent one that isn't there."""
+
+    def _row(self, **extra) -> dict:
+        return {
+            "context.span_id": "s1", "context.trace_id": "t1",
+            "start_time": BASE_TS.isoformat(), **extra,
+        }
+
+    @pytest.mark.parametrize(
+        "key",
+        [
+            "attributes.metadata.workflow_stage",
+            "attributes.workflow_stage",
+            "metadata.workflow_stage",
+            "workflow_stage",
+            "attributes.metadata.workflowStage",
+            "attributes.metadata.stage",
+        ],
+    )
+    def test_stage_found_under_each_conventional_key(self, key: str) -> None:
+        record = flatten_phoenix_row(self._row(**{key: "fobo_recon"}), PROJECT)
+        assert record is not None and record.workflow_stage == "fobo_recon"
+
+    @pytest.mark.parametrize(
+        "key",
+        ["attributes.metadata.asset_class", "attributes.asset_class", "asset_class"],
+    )
+    def test_asset_class_found_under_each_conventional_key(self, key: str) -> None:
+        record = flatten_phoenix_row(self._row(**{key: "fx"}), PROJECT)
+        assert record is not None and record.asset_class == "fx"
+
+    def test_nested_metadata_dict_is_reached(self) -> None:
+        row = self._row(attributes={"metadata": {"workflow_stage": "plex"}})
+        record = flatten_phoenix_row(row, PROJECT)
+        assert record is not None and record.workflow_stage == "plex"
+
+    def test_custom_key_wins_and_reaches_names_we_never_guessed(self) -> None:
+        # e.g. the demo fixtures' own `agent.stage`, which no built-in key covers
+        row = self._row(**{"attributes.agent.stage": "fobo_recon"})
+        assert flatten_phoenix_row(row, PROJECT).workflow_stage is None
+        record = flatten_phoenix_row(
+            row, PROJECT, stage_keys=["attributes.agent.stage"]
+        )
+        assert record.workflow_stage == "fobo_recon"
+
+    def test_custom_key_takes_precedence_over_a_builtin(self) -> None:
+        row = self._row(**{
+            "attributes.metadata.workflow_stage": "conventional",
+            "attributes.agent.stage": "mine",
+        })
+        record = flatten_phoenix_row(row, PROJECT, stage_keys=["attributes.agent.stage"])
+        assert record.workflow_stage == "mine"
+
+    def test_absent_stage_stays_none(self) -> None:
+        """No guessing: a span with no stage attribute gets no stage."""
+        record = flatten_phoenix_row(self._row(name="llm-call"), PROJECT)
+        assert record is not None
+        assert record.workflow_stage is None and record.asset_class is None
+
+    def test_settings_parse_comma_separated_overrides(self, tmp_path: Path) -> None:
+        s = make_settings(tmp_path, project=PROJECT).model_copy(
+            update={"stage_attr": " attributes.agent.stage , metadata.stage ,",
+                    "asset_attr": "attributes.book.asset"}
+        )
+        assert s.stage_attr_keys() == ["attributes.agent.stage", "metadata.stage"]
+        assert s.asset_attr_keys() == ["attributes.book.asset"]
+        assert make_settings(tmp_path, project=PROJECT).stage_attr_keys() == []

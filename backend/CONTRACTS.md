@@ -259,6 +259,17 @@ class PhoenixClientWrapper:
 
 ## scraper.py
 ```python
+STAGE_KEYS / ASSET_KEYS = _candidates(names)   # names x _ATTR_LOOKUP_PREFIXES
+    # prefixes: attributes.metadata. | attributes. | metadata. | ""
+    # stage names: workflow_stage, workflowStage, stage; asset: asset_class, assetClass
+def flatten_phoenix_row(row, project, *, stage_keys=(), asset_keys=()) -> SpanRecord | None
+def ingest_jsonl(store, path, project, *, stage_keys=(), asset_keys=()) -> ScrapeReport
+    # stage_keys/asset_keys (Settings.stage_attr_keys() / asset_attr_keys(), from
+    # PHEONIX_STAGE_ATTR / PHEONIX_ASSET_ATTR) are tried BEFORE the built-ins.
+    # Nothing is inferred: an absent stage stays None.
+```
+
+```python
 def flatten_phoenix_row(row: dict, project: str) -> SpanRecord | None
     # Map OpenInference columns/attributes -> SpanRecord. Handle both flattened column
     # names (context.span_id, attributes.llm.model_name) and nested attributes dicts:
@@ -376,7 +387,8 @@ def run_analysis(store: Store, settings: Settings) -> AnalysisResult
 ```
 
 ## cli.py (typer app named `app`) + api.py (fastapi app factory `create_app(settings)`)
-CLI commands: demo (seed fixtures + analyze + report), seed, scrape (--since, --reset), ingest, analyze,
+CLI commands: demo (seed fixtures + analyze + report), seed, scrape (--since, --reset), ingest,
+attrs (attribute keys present in stored spans + stage/asset resolution counts), analyze,
 evaluate (+ --pull-annotations / --push / --push-all / --user), coverage (+ --write),
 report, export (--what spans|clusters|matches|proposals|sessions|evaluations|
 coverage|uncovered --fmt csv|json|parquet + filter options), serve,

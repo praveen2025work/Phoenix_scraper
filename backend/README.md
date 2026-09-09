@@ -324,9 +324,36 @@ uv run pheonix capability sync            # re-read every capability.yaml into t
 
 ### Scoping by phrasing when spans carry no workflow_stage
 
-The scraper does **not** classify spans — it reads `attributes.metadata.workflow_stage`
-and `.asset_class` straight off the Phoenix span. If your agent never sets them,
-a `workflow_stage` filter matches nothing. Scope by phrasing instead:
+The scraper does **not** classify spans — it reads the stage and asset class
+straight off the Phoenix span. It checks the conventional places first:
+
+```
+attributes.metadata.workflow_stage · attributes.workflow_stage
+metadata.workflow_stage            · workflow_stage        (+ workflowStage, stage)
+attributes.metadata.asset_class    · attributes.asset_class · asset_class
+```
+
+**Find where yours actually lives:**
+
+```bash
+pheonix attrs                 # every attribute key your stored spans carry, + how
+                              # many spans resolved a stage/asset class
+```
+
+If it names something the list above misses (say `attributes.desk.pipeline_step`),
+point at it — no re-instrumentation needed:
+
+```ini
+# backend/.env
+PHEONIX_STAGE_ATTR=attributes.desk.pipeline_step
+PHEONIX_ASSET_ATTR=attributes.desk.book_asset
+```
+
+Comma-separated for several; these are tried before the built-ins. Re-scrape (or
+re-`ingest`) and the stage lands on the spans.
+
+If the stage genuinely isn't emitted anywhere, nothing is inferred — a
+`workflow_stage` filter will match nothing. Scope by phrasing instead:
 
 ```yaml
 filter:
