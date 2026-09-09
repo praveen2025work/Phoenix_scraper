@@ -51,6 +51,24 @@ class TestRunCapabilityAnalysis:
         )
         assert result.run.window_start == ws and result.run.window_end == we
 
+    def test_empty_window_is_explained_in_the_run_notes(
+        self, seeded_store, fobo_capability
+    ) -> None:
+        """A window that matched nothing must say so.
+
+        Otherwise `status='ok'` with zero clusters is indistinguishable from a
+        healthy run, and the UI just renders empty lanes with no reason given.
+        """
+        settings, cap = fobo_capability
+        result = run_capability_analysis(
+            seeded_store, settings, cap,
+            window_start=datetime(2020, 1, 1, tzinfo=UTC),
+            window_end=datetime(2020, 2, 1, tzinfo=UTC),
+            now=NOW,
+        )
+        assert result.run.n_in_scope_spans == 0
+        assert any("no spans matched" in n.lower() for n in result.run.notes)
+
     def test_records_the_run_and_snapshots(self, seeded_store, fobo_capability) -> None:
         settings, cap = fobo_capability
         result = run_capability_analysis(seeded_store, settings, cap, now=NOW)
@@ -230,12 +248,17 @@ class _FakeClient:
         self._available = available
         self._fail = set(fail_projects)
         self.scraped: list[str] = []
+        self.calls: list[dict] = []
 
     def available(self) -> bool:
         return self._available
 
+    def unavailable_reason(self) -> str | None:
+        return None if self._available else "PHOENIX_COLLECTOR_ENDPOINT is not set"
+
     def fetch_spans(self, *, project, start, end, limit):
         self.scraped.append(project)
+        self.calls.append({"project": project, "start": start, "end": end, "limit": limit})
         if project in self._fail:
             raise RuntimeError(f"boom for {project}")
         return pd.DataFrame()  # no new spans
@@ -284,6 +307,57 @@ class TestRunCapabilities:
         client = _FakeClient()
         run_capabilities(seeded_store, s, all_active=True, client=client, now=NOW)
         assert sorted(client.scraped) == ["proj-1", "proj-2"]
+
+    def test_run_window_is_pushed_down_to_the_scrape(
+        self, seeded_store, tmp_path, settings
+    ) -> None:
+        """An explicit from/to has to reach Phoenix.
+
+        Filtering the local store alone can never surface a window that was never
+        scraped, which reads in the UI as "the run found nothing".
+        """
+        s = self._two_caps(tmp_path, settings)
+        client = _FakeClient()
+        ws, we = datetime(2026, 6, 1, tzinfo=UTC), datetime(2026, 7, 11, tzinfo=UTC)
+
+        run_capabilities(
+            seeded_store, s, capability_ids=["fobo"], client=client,
+            window_start=ws, window_end=we, now=NOW,
+        )
+
+        assert client.calls[0]["start"] == ws
+        assert client.calls[0]["end"] == we
+
+    def test_scrape_without_a_window_still_uses_the_watermark(
+        self, seeded_store, tmp_path, settings
+    ) -> None:
+        """No explicit window -> unchanged incremental behaviour (start from watermark)."""
+        s = self._two_caps(tmp_path, settings)
+        client = _FakeClient()
+
+        run_capabilities(seeded_store, s, capability_ids=["fobo"], client=client, now=NOW)
+
+        assert client.calls[0]["start"] is None
+        assert client.calls[0]["end"] is None
+
+    def test_scrape_outcome_is_recorded_on_the_run(
+        self, seeded_store, tmp_path, settings
+    ) -> None:
+        """"Is it actually pulling?" must be answerable from the run itself.
+
+        A successful scrape was previously silent — indistinguishable from one
+        that never ran.
+        """
+        s = self._two_caps(tmp_path, settings)
+        client = _FakeClient()
+
+        results = run_capabilities(
+            seeded_store, s, capability_ids=["fobo"], client=client, now=NOW
+        )
+
+        assert any("pulled" in n for n in results[0].run.notes)
+        # A clean scrape is information, not a problem: it must not force 'partial'.
+        assert results[0].run.status == "ok"
 
     def test_scrape_failure_marks_partial_not_abort(self, seeded_store, tmp_path, settings) -> None:
         root = tmp_path / "caps"

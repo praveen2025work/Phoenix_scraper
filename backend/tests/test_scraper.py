@@ -254,6 +254,24 @@ class TestPhoenixClientWrapper:
 
         assert isinstance(call["query"], SpanQuery)
 
+    def test_fetch_spans_sends_the_configured_request_timeout(
+        self, tmp_path: Path, fake_phoenix
+    ) -> None:
+        """PHEONIX_HTTP_TIMEOUT must reach the SDK call itself.
+
+        get_spans_dataframe defaults to a 5s per-request timeout and passes it
+        straight to httpx, where it overrides the client-level timeout — so a big
+        project times out no matter what PHEONIX_HTTP_TIMEOUT says.
+        """
+        FakeClient.spans_api = FakeSpansAPI([pd.DataFrame([flat_row(0)])])
+        settings = make_settings(
+            tmp_path, PHOENIX_COLLECTOR_ENDPOINT="http://phx:6006", http_timeout=120.0
+        )
+
+        PhoenixClientWrapper(settings).fetch_spans(PROJECT, None, None, 10)
+
+        assert FakeClient.spans_api.calls[0]["timeout"] == 120
+
     def test_fetch_spans_retries_on_connection_error(self, tmp_path: Path, fake_phoenix) -> None:
         expected = pd.DataFrame([flat_row(0)])
         FakeClient.spans_api = FakeSpansAPI([expected], failures=2)
@@ -505,6 +523,71 @@ class TestScrapeOnce:
         watermark = BASE_TS + timedelta(minutes=4)
         assert report.watermark_after == watermark
         assert tmp_store.get_watermark(f"phoenix:{PROJECT}") == watermark
+
+    def test_explicit_window_backfills_past_the_watermark(
+        self, tmp_store: Store, tmp_path: Path
+    ) -> None:
+        """A bounded window is a deliberate back-fill and must reach Phoenix verbatim.
+
+        Without `ignore_watermark` the watermark pins every pull after the first to
+        "newer than what we already have", so older spans can never be recovered.
+        """
+        settings = make_settings(tmp_path, project=PROJECT)
+        recent = pd.DataFrame([flat_row(i) for i in range(5)])
+        older = datetime(2026, 6, 15, tzinfo=UTC)
+        history = pd.DataFrame(
+            [
+                flat_row(100 + i, start_time=(older + timedelta(minutes=i)).isoformat())
+                for i in range(3)
+            ]
+        )
+        client = FakeWrapper([recent, history])
+        since, until = datetime(2026, 6, 1, tzinfo=UTC), datetime(2026, 7, 11, tzinfo=UTC)
+
+        scrape_once(tmp_store, client, settings)  # sets the watermark
+        report = scrape_once(
+            tmp_store, client, settings, since=since, until=until, ignore_watermark=True
+        )
+
+        assert client.calls[1]["start"] == since
+        assert client.calls[1]["end"] == until
+        assert report.inserted == 3
+
+    def test_full_page_subdivides_the_window(self, tmp_store: Store, tmp_path: Path) -> None:
+        """A pull that comes back exactly at the limit was truncated.
+
+        get_spans_dataframe has no cursor, so the only way to reach the rest is to
+        ask for narrower windows — otherwise a busy project silently loses spans.
+        """
+        settings = make_settings(tmp_path, project=PROJECT, scrape_limit=2)
+        full = pd.DataFrame([flat_row(0), flat_row(1)])  # == limit -> truncated
+        left = pd.DataFrame([flat_row(0)])
+        right = pd.DataFrame([flat_row(1)])
+        client = FakeWrapper([full, left, right])
+        since, until = BASE_TS - timedelta(hours=1), BASE_TS + timedelta(hours=1)
+
+        report = scrape_once(
+            tmp_store, client, settings, since=since, until=until, ignore_watermark=True
+        )
+
+        mid = since + (until - since) / 2
+        assert len(client.calls) == 3
+        assert (client.calls[1]["start"], client.calls[1]["end"]) == (since, mid)
+        assert (client.calls[2]["start"], client.calls[2]["end"]) == (mid, until)
+        assert report.pulled == 2
+        assert report.truncated is False
+
+    def test_unbounded_full_page_reports_truncation_instead_of_recursing(
+        self, tmp_store: Store, tmp_path: Path
+    ) -> None:
+        """With no window there is nothing to halve, so say the pull was cut short."""
+        settings = make_settings(tmp_path, project=PROJECT, scrape_limit=2)
+        client = FakeWrapper([pd.DataFrame([flat_row(0), flat_row(1)])])
+
+        report = scrape_once(tmp_store, client, settings)
+
+        assert len(client.calls) == 1
+        assert report.truncated is True
 
     def test_empty_pull_leaves_watermark_untouched(self, tmp_store: Store, tmp_path: Path) -> None:
         settings = make_settings(tmp_path, project=PROJECT)

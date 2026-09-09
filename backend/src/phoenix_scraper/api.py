@@ -80,6 +80,12 @@ def create_app(
     out of the box. Ignored when CORS origins are set explicitly.
     """
     from .jobs import JobWorker
+    from .logging_setup import configure_logging
+
+    # Runs are triggered from the SPA and executed on the worker thread, so without
+    # this the whole scrape happens with nothing on stdout — `python run.py` never
+    # goes through the CLI callback that used to be the only place logging was set up.
+    configure_logging(settings.log_level)
 
     if dev_cors and not settings.cors_origin_list():
         settings = settings.model_copy(update={"cors_origins": _DEV_CORS_ORIGINS})

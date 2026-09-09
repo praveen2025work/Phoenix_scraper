@@ -7,6 +7,10 @@ import time
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from datetime import datetime
+
+# Bound directly: tests replace the `time` module here with a sleep-only fake to
+# capture retry backoff, and call timing must keep working under that.
+from time import monotonic
 from typing import Any, TypeVar
 
 import pandas as pd
@@ -58,12 +62,24 @@ class PhoenixClientWrapper:
 
     def available(self) -> bool:
         """True when an endpoint is configured AND arize-phoenix-client is importable."""
+        return self.unavailable_reason() is None
+
+    def unavailable_reason(self) -> str | None:
+        """Why a live scrape cannot run, or None when it can.
+
+        "Phoenix not available" on its own sends people hunting: a missing endpoint
+        and a missing client library need completely different fixes.
+        """
         if not self._settings.phoenix_endpoint:
-            return False
+            return (
+                "PHOENIX_COLLECTOR_ENDPOINT is not set, so no Phoenix server to call"
+            )
         try:
-            return importlib.util.find_spec("phoenix.client") is not None
+            if importlib.util.find_spec("phoenix.client") is None:
+                return "arize-phoenix-client is not installed (needs the 'live' extra)"
         except (ImportError, ValueError):
-            return False
+            return "arize-phoenix-client is not importable (needs the 'live' extra)"
+        return None
 
     @contextmanager
     def _client(self) -> Iterator[Any]:
@@ -121,6 +137,10 @@ class PhoenixClientWrapper:
             if http_client is not None:
                 http_client.close()
 
+    def _request_timeout(self) -> int:
+        """PHEONIX_HTTP_TIMEOUT as the SDK wants it — a whole number of seconds."""
+        return max(1, int(self._settings.http_timeout))
+
     def _with_retries(self, operation: Callable[[], T], description: str) -> T:
         """Run a Phoenix call, retrying transport failures with exponential backoff."""
         import httpx
@@ -153,17 +173,34 @@ class PhoenixClientWrapper:
     ) -> pd.DataFrame:
         from phoenix.client.types.spans import SpanQuery
 
+        logger.info(
+            "Phoenix GET spans: endpoint=%s project=%s window=%s..%s limit=%d timeout=%ds",
+            self._settings.phoenix_endpoint, project,
+            start.isoformat() if start else "(beginning)",
+            end.isoformat() if end else "(now)",
+            limit, self._request_timeout(),
+        )
+        started = monotonic()
         with self._client() as client:
-            return self._with_retries(
+            frame = self._with_retries(
                 lambda: client.spans.get_spans_dataframe(
                     query=SpanQuery(),
                     start_time=start,
                     end_time=end,
                     limit=limit,
                     project_identifier=project,
+                    # Without this the SDK's own 5s default applies and, because it
+                    # is forwarded straight to httpx per request, it overrides the
+                    # timeout on our http_client — a large pull can never finish.
+                    timeout=self._request_timeout(),
                 ),
                 "fetch spans",
             )
+        logger.info(
+            "Phoenix GET spans: project=%s returned %d rows in %.1fs",
+            project, len(frame), monotonic() - started,
+        )
+        return frame
 
     def fetch_span_annotations(
         self, project: str, span_ids: Sequence[str]
@@ -187,7 +224,8 @@ class PhoenixClientWrapper:
                 batch = list(span_ids[start : start + batch_size])
                 page = self._with_retries(
                     lambda batch=batch: client.spans.get_span_annotations(
-                        span_ids=batch, project_identifier=project
+                        span_ids=batch, project_identifier=project,
+                        timeout=self._request_timeout(),
                     ),
                     "fetch span annotations",
                 )
@@ -209,7 +247,8 @@ class PhoenixClientWrapper:
                 batch = list(annotations[start : start + batch_size])
                 self._with_retries(
                     lambda batch=batch: client.spans.log_span_annotations(
-                        span_annotations=batch, project_identifier=project
+                        span_annotations=batch, project_identifier=project,
+                        timeout=self._request_timeout(),
                     ),
                     "push span annotations",
                 )

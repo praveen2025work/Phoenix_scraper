@@ -274,6 +274,9 @@ class ScrapeReport(_Frozen):
     skipped: int = 0
     watermark_before: datetime | None = None
     watermark_after: datetime | None = None
+    # True when a pull came back full and could not be split any further, so
+    # Phoenix still holds spans this scrape never saw.
+    truncated: bool = False
 
 
 class QueryFilters(_Frozen):

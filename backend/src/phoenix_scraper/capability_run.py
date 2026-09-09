@@ -148,17 +148,19 @@ def run_capability_analysis(
     window_end: datetime | None = None,
     replace_today: bool = False,
     notes: list[str] | None = None,
+    info_notes: list[str] | None = None,
     now: datetime | None = None,
 ) -> CapabilityRunResult:
     """Analyse the capability's in-scope spans over its window and record the run.
 
     Does not scrape. ``notes`` (e.g. a scrape failure from the orchestrator) are
-    stored on the run and force ``status='partial'``.
+    stored on the run and force ``status='partial'``; ``info_notes`` (e.g. what a
+    successful scrape pulled) are stored without affecting status.
     """
     started_at = now or datetime.now(UTC)
     window_end = window_end or started_at
     window_start = window_start or (window_end - timedelta(days=capability.window_days))
-    run_notes = list(notes or [])
+    run_notes = list(notes or []) + list(info_notes or [])
     scrape_partial = bool(notes)  # only scrape failures force status='partial'
 
     filters = capability_query_filters(
@@ -172,6 +174,15 @@ def run_capability_analysis(
         if new_costs:
             store.update_span_costs(new_costs)
             in_scope = store.spans_frame(filters)
+    else:
+        # Without this the run records status='ok' with zero clusters, which the UI
+        # renders exactly like a healthy run that simply had nothing to promote.
+        run_notes.append(
+            f"no spans matched this capability between "
+            f"{window_start:%Y-%m-%d} and {window_end:%Y-%m-%d} — "
+            f"the store holds {store.span_count()} spans overall; "
+            "check the capability filter, or the window may predate what was scraped"
+        )
 
     if settings.evaluate_on_analyze and not in_scope.empty:
         try:
@@ -299,22 +310,54 @@ def _scrape_projects(
     settings: Settings,
     projects: set[str],
     client: PhoenixClientWrapper | None,
-) -> dict[str, list[str]]:
-    """Scrape each project once. Returns {project: [note, ...]} for problems."""
-    notes: dict[str, list[str]] = {}
-    if client is None or not client.available():
+    window_start: datetime | None = None,
+    window_end: datetime | None = None,
+) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
+    """Scrape each project once. Returns ({project: problems}, {project: info}).
+
+    An explicit run window is a back-fill request, so ask Phoenix for exactly that
+    window. The watermark's "everything newer than what we hold" only ever moves
+    forward, so on its own it can never recover spans older than the last pull —
+    the analysis would then filter an empty store and report a run that found nothing.
+
+    Problems force ``status='partial'``; info notes only make the run legible, so a
+    successful scrape stops being indistinguishable from one that never ran.
+    """
+    problems: dict[str, list[str]] = {}
+    info: dict[str, list[str]] = {}
+    reason = (
+        "no Phoenix client was supplied" if client is None else client.unavailable_reason()
+    )
+    if reason is not None:
+        logger.warning("skipping scrape, analysing stored spans only: %s", reason)
         for project in projects:
-            notes.setdefault(project, []).append(
-                "offline: Phoenix not available, analysed stored spans"
+            problems.setdefault(project, []).append(
+                f"offline: {reason} — analysed stored spans"
             )
-        return notes
+        return problems, info
     for project in sorted(projects):
         try:
-            scrape_once(store, client, settings.model_copy(update={"project": project}))
+            report = scrape_once(
+                store, client, settings.model_copy(update={"project": project}),
+                since=window_start,
+                until=window_end,
+                ignore_watermark=window_start is not None,
+            )
         except Exception as exc:  # noqa: BLE001 — any client/network error must not abort the run
             logger.warning("scrape failed for %s: %s", project, exc)
-            notes.setdefault(project, []).append(f"scrape failed for {project}: {exc}")
-    return notes
+            problems.setdefault(project, []).append(f"scrape failed for {project}: {exc}")
+            continue
+        info.setdefault(project, []).append(
+            f"scraped {project}: pulled {report.pulled}, "
+            f"inserted {report.inserted}, skipped {report.skipped}"
+        )
+        if report.truncated:
+            problems.setdefault(project, []).append(
+                f"scrape of {project} hit the {settings.scrape_limit}-span limit and "
+                "could not be narrowed further — Phoenix holds spans this run never "
+                "saw; raise PHEONIX_SCRAPE_LIMIT or run a shorter window"
+            )
+    return problems, info
 
 
 def run_capabilities(
@@ -339,18 +382,23 @@ def run_capabilities(
     projects = {
         (cap.filter.project or settings.project) for cap in capabilities
     }
-    scrape_notes = _scrape_projects(store, settings, projects, client)
+    scrape_problems, scrape_info = _scrape_projects(
+        store, settings, projects, client,
+        window_start=window_start, window_end=window_end,
+    )
 
     results: list[CapabilityRunResult] = []
     for cap in capabilities:
         project = cap.filter.project or settings.project
-        cap_notes = list(scrape_notes.get(project, []))
+        cap_notes = list(scrape_problems.get(project, []))
+        cap_info = list(scrape_info.get(project, []))
         try:
             results.append(
                 run_capability_analysis(
                     store, settings, cap,
                     window_start=window_start, window_end=window_end,
-                    replace_today=replace_today, notes=cap_notes, now=started_at,
+                    replace_today=replace_today, notes=cap_notes,
+                    info_notes=cap_info, now=started_at,
                 )
             )
         except Exception as exc:  # noqa: BLE001 — record the failure, keep going

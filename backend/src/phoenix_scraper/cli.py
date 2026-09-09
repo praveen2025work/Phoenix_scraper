@@ -1,7 +1,7 @@
 """Typer CLI: demo, seed, scrape, ingest, analyze, report, export, serve, doctor."""
 
 import json
-import logging
+import os
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
@@ -41,13 +41,10 @@ app = typer.Typer(
 
 @app.callback()
 def _init_logging() -> None:
-    """Surface this package's INFO logs (e.g. which CA bundle TLS trusts)."""
-    pkg_logger = logging.getLogger("phoenix_scraper")
-    if not pkg_logger.handlers:
-        handler = logging.StreamHandler()
-        handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
-        pkg_logger.addHandler(handler)
-        pkg_logger.setLevel(logging.INFO)
+    """Surface this package's logs (Phoenix calls, scrape counts, TLS trust)."""
+    from .logging_setup import configure_logging
+
+    configure_logging(os.environ.get("PHEONIX_LOG_LEVEL", "INFO"))
 
 
 capability_app = typer.Typer(

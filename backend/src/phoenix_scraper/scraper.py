@@ -78,23 +78,26 @@ def scrape_once(
     client: PhoenixClientWrapper,
     settings: Settings,
     since: datetime | None = None,
+    until: datetime | None = None,
+    ignore_watermark: bool = False,
 ) -> ScrapeReport:
     """One incremental pull from Phoenix with watermark + overlap dedup semantics.
 
     `since` bounds the FIRST pull only (no watermark yet) so huge projects don't
     require a full-history scan; once a watermark exists it takes precedence.
+
+    `ignore_watermark` opts out of that for a deliberate back-fill of `since`..`until`.
+    The watermark only ever moves forward (see below), so pulling an old window can
+    never rewind it — without this flag an older window is simply unreachable, because
+    the watermark pins every pull after the first to "newer than what we already hold".
     """
     source_key = f"phoenix:{settings.project}"
     watermark_before = _ensure_utc(store.get_watermark(source_key))
-    start = (
-        watermark_before - timedelta(minutes=settings.scrape_overlap_minutes)
-        if watermark_before is not None
-        else _ensure_utc(since)
-    )
-    frame = client.fetch_spans(
-        project=settings.project, start=start, end=None, limit=settings.scrape_limit
-    )
-    rows = _frame_rows(frame)
+    if ignore_watermark or watermark_before is None:
+        start = _ensure_utc(since)
+    else:
+        start = watermark_before - timedelta(minutes=settings.scrape_overlap_minutes)
+    rows, truncated = _fetch_window(client, settings, start, _ensure_utc(until))
     records = [
         record
         for record in (
@@ -109,6 +112,12 @@ def scrape_once(
     ]
     inserted = store.upsert_spans(records)
 
+    logger.info(
+        "scrape %s: pulled %d, inserted %d, skipped %d%s",
+        settings.project, len(rows), inserted, len(rows) - inserted,
+        " (TRUNCATED — Phoenix holds more)" if truncated else "",
+    )
+
     latest = max((r.start_time for r in records), default=None)
     watermark_after = watermark_before
     if latest is not None and (watermark_before is None or latest > watermark_before):
@@ -121,7 +130,49 @@ def scrape_once(
         skipped=len(rows) - inserted,
         watermark_before=watermark_before,
         watermark_after=watermark_after,
+        truncated=truncated,
     )
+
+
+# How many times a window may be halved before we give up and report truncation.
+# 2**6 = 64 slices, i.e. ~11 minutes of granularity across a half-day window.
+_MAX_SUBDIVISIONS = 6
+
+
+def _fetch_window(
+    client: PhoenixClientWrapper,
+    settings: Settings,
+    start: datetime | None,
+    end: datetime | None,
+    depth: int = 0,
+) -> tuple[list[dict], bool]:
+    """Rows for [start, end], halving the window whenever a pull comes back full.
+
+    `get_spans_dataframe` caps at `limit` and offers no cursor, so a page that is
+    exactly `limit` long means Phoenix had more to give and the extras are simply
+    lost. Asking for two narrower windows is the only way to reach them. Returns
+    (rows, truncated); truncated is True only when a full page could NOT be split
+    — an open-ended window, or the depth cap.
+    """
+    frame = client.fetch_spans(
+        project=settings.project, start=start, end=end, limit=settings.scrape_limit
+    )
+    rows = _frame_rows(frame)
+    if len(rows) < settings.scrape_limit:
+        return rows, False
+    if start is None or end is None or depth >= _MAX_SUBDIVISIONS:
+        logger.warning(
+            "Phoenix returned a full page of %d spans for %s..%s and it cannot be "
+            "narrowed further; some spans were not scraped",
+            len(rows), start, end,
+        )
+        return rows, True
+    mid = start + (end - start) / 2
+    if mid <= start or mid >= end:  # window too small to halve
+        return rows, True
+    left, left_cut = _fetch_window(client, settings, start, mid, depth + 1)
+    right, right_cut = _fetch_window(client, settings, mid, end, depth + 1)
+    return left + right, left_cut or right_cut
 
 
 def ingest_jsonl(

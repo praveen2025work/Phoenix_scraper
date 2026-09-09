@@ -93,6 +93,8 @@ class Settings(BaseSettings):
     # Read timeout (seconds) for Phoenix API calls. The first scrape scans the
     # project's full history and can exceed the 30s default on large projects.
     http_timeout: float = 30.0
+    # DEBUG surfaces every Phoenix request and each window slice of a big scrape.
+    log_level: str = "INFO"
 
     @field_validator("phoenix_endpoint", "phoenix_api_key", "api_key", mode="before")
     @classmethod
