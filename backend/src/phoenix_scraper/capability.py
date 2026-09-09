@@ -37,6 +37,18 @@ def validate_id(cap_id: str) -> str:
     return cap_id
 
 
+def _search_any(raw: object) -> tuple[str, ...]:
+    """`search_any` from yaml: a list, or a comma-separated string for convenience.
+
+    Blank entries are dropped so a trailing comma or an empty list item cannot
+    turn into `LIKE '%%'`, which would silently match every span.
+    """
+    if raw is None:
+        return ()
+    items = raw if isinstance(raw, (list, tuple)) else str(raw).split(",")
+    return tuple(term for term in (str(i).strip() for i in items) if term)
+
+
 def capability_dir(root: Path, cap_id: str) -> Path:
     return Path(root) / cap_id
 
@@ -95,7 +107,10 @@ def load_capability(root: Path, cap_id: str) -> Capability:
         id=validate_id(cap_id),
         name=str(raw.get("name") or cap_id),
         description=str(raw.get("description") or ""),
-        filter=CapabilityFilter(**{k: _clean(filter_raw.get(k)) for k in _FILTER_KEYS}),
+        filter=CapabilityFilter(
+            **{k: _clean(filter_raw.get(k)) for k in _FILTER_KEYS},
+            search_any=_search_any(filter_raw.get("search_any")),
+        ),
         window_days=window_days,
         thresholds={str(k): float(v) for k, v in thresholds_raw.items() if v is not None},
         status=status if status in _STATUSES else "active",
@@ -108,7 +123,10 @@ def dump_capability(capability: Capability) -> str:
         "id": capability.id,
         "name": capability.name,
         "description": capability.description,
-        "filter": {key: getattr(capability.filter, key) for key in _FILTER_KEYS},
+        "filter": {
+            **{key: getattr(capability.filter, key) for key in _FILTER_KEYS},
+            "search_any": list(capability.filter.search_any),
+        },
         "window_days": capability.window_days,
         "thresholds": dict(capability.thresholds),
         "status": capability.status,
@@ -200,6 +218,7 @@ def capability_query_filters(
         asset_class=f.asset_class,
         model_name=f.model_name,
         search=f.search,
+        search_any=f.search_any,
         start=start,
         end=end,
         limit=limit,

@@ -184,6 +184,52 @@ export const usePreview = (cid: string) =>
       ),
   });
 
+export interface SpanFilter {
+  project?: string | null;
+  workflow_stage?: string | null;
+  asset_class?: string | null;
+  model_name?: string | null;
+  search?: string | null;
+  search_any?: string[];
+}
+
+export interface FilterPreviewDto {
+  n_spans: number;
+  n_llm_spans: number;
+  n_users: number;
+  n_sessions: number;
+  n_spans_in_store: number;
+  window_days: number;
+  distinct: { workflow_stage: string[]; asset_class: string[]; project: string[] };
+  sample_prompts: string[];
+}
+
+/** What would this filter catch? Nothing is saved or run. */
+export function useFilterPreview(filter: SpanFilter, windowDays: number, enabled = true) {
+  return useQuery({
+    queryKey: ["preview", JSON.stringify(filter), windowDays],
+    queryFn: () =>
+      api.post<FilterPreviewDto>("/capabilities/preview", {
+        filter,
+        window_days: windowDays,
+      }),
+    enabled,
+    staleTime: 30_000,
+  });
+}
+
+export function usePatchCapability(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: Record<string, unknown>) =>
+      api.patch(`/capabilities/${enc(id)}`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["capability", id] });
+      qc.invalidateQueries({ queryKey: ["capabilities"] });
+    },
+  });
+}
+
 export const useCreateCapability = () => {
   const qc = useQueryClient();
   return useMutation({

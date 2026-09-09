@@ -252,3 +252,67 @@ def test_uploaded_skill_is_loaded_by_a_run(ctx) -> None:
     cap = load_capability(settings.capabilities_dir, "fobo")
     names = {s.name for s in load_capability_skills(settings, cap)}
     assert "fx-recon-triage" in names
+
+
+class TestSearchPatterns:
+    """search_any: OR-ed substrings, the escape hatch when spans carry no stage."""
+
+    def test_yaml_round_trip_list_and_csv(self, tmp_path: Path) -> None:
+        from phoenix_scraper import capability as cap_mod
+        from phoenix_scraper.models import CapabilityFilter
+
+        root = tmp_path / "caps"
+        cap_mod.scaffold_capability(
+            root, "fobo",
+            cap_filter=CapabilityFilter(search_any=("recon break", "unmatched")),
+        )
+        reloaded = cap_mod.load_capability(root, "fobo")
+        assert reloaded.filter.search_any == ("recon break", "unmatched")
+
+        # a comma-separated string is accepted too, and blanks are dropped
+        (root / "fobo" / "capability.yaml").write_text(
+            "id: fobo\nname: F\nfilter:\n  search_any: 'a, b, '\n", encoding="utf-8"
+        )
+        assert cap_mod.load_capability(root, "fobo").filter.search_any == ("a", "b")
+
+    def test_search_any_is_or_and_narrows_with_other_fields(self, ctx) -> None:
+        c, settings = ctx
+        c.post("/demo/seed")
+
+        def n(body: dict) -> int:
+            return c.post("/capabilities/preview", json=body).json()["n_spans"]
+
+        everything = n({"filter": {}})
+        recon = n({"filter": {"search_any": ["recon break"]}})
+        both = n({"filter": {"search_any": ["recon break", "unmatched"]}})
+        narrowed = n({
+            "filter": {"workflow_stage": "fobo_recon", "search_any": ["recon break", "unmatched"]}
+        })
+        assert 0 < recon <= both < everything          # OR widens
+        assert narrowed <= both                        # AND with a stage narrows
+        assert n({"filter": {"search_any": ["zzzz-nothing"]}}) == 0
+
+    def test_search_any_survives_the_db_mirror(self, ctx) -> None:
+        from phoenix_scraper.storage import Store
+
+        c, settings = ctx
+        c.patch("/capabilities/fobo", json={"filter": {"search_any": ["recon break", "x"]}})
+        with Store(settings.db_path) as store:
+            assert store.get_capability("fobo").filter.search_any == ("recon break", "x")
+
+    def test_preview_reports_what_is_there_and_saves_nothing(self, ctx) -> None:
+        c, settings = ctx
+        c.post("/demo/seed")
+        body = c.post("/capabilities/preview", json={"filter": {}}).json()
+        assert body["n_spans"] > 0
+        assert body["n_spans_in_store"] >= body["n_spans"]
+        assert "fobo_recon" in body["distinct"]["workflow_stage"]
+        assert body["sample_prompts"]
+        # nothing recorded
+        assert c.get("/capabilities/fobo/runs").json() == []
+
+    def test_preview_window_days_must_be_positive(self, ctx) -> None:
+        c, _ = ctx
+        assert c.post(
+            "/capabilities/preview", json={"filter": {}, "window_days": 0}
+        ).status_code == 422

@@ -69,7 +69,7 @@ carries it as `X-API-Key`. With no backend key the app runs open.
 | Route | |
 | --- | --- |
 | `/` | capabilities index + "New capability" dialog |
-| `/c/:id` | capability detail — run window (last N days, or from/to dates) + Run now, run summary, Rung 1 / Rung 2 lane boards, **Skills** (upload / paste / delete the capability's `skills/*.md`) |
+| `/c/:id` | capability detail — run window (last N days, or from/to dates) + Run now, run summary, Rung 1 / Rung 2 lane boards, **Filter** (edit the span filter with a live match count + sample prompts, then save), **Skills** (upload / paste / delete the capability's `skills/*.md`) |
 | `/c/:id/candidate/:cid` | candidate detail — evidence trend, determinism signals, decide, artifact preview + promote |
 | `/c/:id/analytics` | ~18 panels scoped to the capability — KPI row, activity + quality charts (Recharts, lazy-loaded), coverage, skills, agent behaviour |
 
