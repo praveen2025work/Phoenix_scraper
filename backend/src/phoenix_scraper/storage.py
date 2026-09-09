@@ -369,6 +369,15 @@ class Store:
         )
         self._conn.commit()
 
+    def clear_watermark(self, source: str) -> bool:
+        """Forget a source's scrape watermark so the next pull can go back to
+        --since / full history. Returns True if a row was removed."""
+        cur = self._conn.execute(
+            "DELETE FROM scrape_state WHERE source = ?", (source,)
+        )
+        self._conn.commit()
+        return cur.rowcount > 0
+
     # ---- analysis results ---------------------------------------------------
     def replace_analysis(
         self,

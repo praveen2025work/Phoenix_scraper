@@ -518,6 +518,20 @@ class TestScrapeOnce:
         assert report.watermark_after is None
         assert tmp_store.get_watermark(f"phoenix:{PROJECT}") is None
 
+    def test_clear_watermark_lets_since_apply_again(self, tmp_store: Store, tmp_path: Path) -> None:
+        settings = make_settings(tmp_path, project=PROJECT)
+        client = FakeWrapper([pd.DataFrame([flat_row(i) for i in range(5)])] * 2)
+        scrape_once(tmp_store, client, settings)
+        assert tmp_store.get_watermark(f"phoenix:{PROJECT}") is not None
+
+        assert tmp_store.clear_watermark(f"phoenix:{PROJECT}") is True
+        assert tmp_store.get_watermark(f"phoenix:{PROJECT}") is None
+        assert tmp_store.clear_watermark(f"phoenix:{PROJECT}") is False  # already gone
+
+        since = datetime(2020, 1, 1, tzinfo=UTC)
+        scrape_once(tmp_store, client, settings, since=since)
+        assert client.calls[-1]["start"] == since  # --since honoured again
+
     def test_span_id_as_both_index_and_column(self, tmp_store: Store, tmp_path: Path) -> None:
         # Some Phoenix responses index on context.span_id AND keep it as a column;
         # a plain reset_index() then raises "cannot insert ..., already exists".

@@ -4,7 +4,7 @@ import json
 import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
 
@@ -107,7 +107,13 @@ SinceOpt = typer.Option(
     None,
     "--since",
     help="First scrape only: pull spans starting at/after this time (UTC) instead of "
-    "the full project history. Ignored once a watermark exists.",
+    "the full project history. Ignored once a watermark exists (use --reset).",
+)
+ScrapeResetOpt = typer.Option(
+    False,
+    "--reset",
+    help="Forget the watermark first, so --since (or full history) applies again — "
+    "use this to backfill older spans. Re-inserts are no-ops (span_id key).",
 )
 PullAnnotationsOpt = typer.Option(
     False,
@@ -144,6 +150,9 @@ RunCapabilityOpt = typer.Option(None, "--capability", help="Run one capability b
 RunAllOpt = typer.Option(False, "--all", help="Run every active capability.")
 RunFromOpt = typer.Option(None, "--from", help="Window start (UTC); default now - window_days.")
 RunToOpt = typer.Option(None, "--to", help="Window end (UTC); default now.")
+RunDaysOpt = typer.Option(
+    None, "--days", help="Window = the last N days (shortcut for --from; ignored if --from given)."
+)
 ReplaceTodayOpt = typer.Option(
     False, "--replace-today", help="Reuse today's run_id instead of adding a new run."
 )
@@ -206,6 +215,7 @@ def seed(
 def scrape(
     project: str | None = ProjectOpt,
     since: datetime | None = SinceOpt,
+    reset: bool = ScrapeResetOpt,
     db: Path | None = DbOpt,
 ) -> None:
     """Incrementally pull spans from a live Phoenix server (watermarked)."""
@@ -220,6 +230,8 @@ def scrape(
         )
         raise typer.Exit(code=1)
     with _open_store(settings) as store:
+        if reset and store.clear_watermark(f"phoenix:{settings.project}"):
+            typer.echo(f"watermark cleared for '{settings.project}'")
         report = scraper.scrape_once(store, client, settings, since=_utc(since))
     _echo_scrape(report)
 
@@ -484,6 +496,7 @@ def run(
     run_all: bool = RunAllOpt,
     from_: datetime | None = RunFromOpt,
     to: datetime | None = RunToOpt,
+    days: int | None = RunDaysOpt,
     replace_today: bool = ReplaceTodayOpt,
     db: Path | None = DbOpt,
     capabilities_dir: Path | None = CapabilitiesDirOpt,
@@ -493,6 +506,11 @@ def run(
         typer.secho("Pass exactly one of --capability <id> or --all.",
                     fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1)
+    if days is not None and from_ is None:
+        if days <= 0:
+            typer.secho("--days must be a positive integer.", fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=1)
+        from_ = datetime.now(UTC) - timedelta(days=days)
     settings = _settings(db=db, capabilities_dir=capabilities_dir)
     client = PhoenixClientWrapper(settings)
     with _open_store(settings) as store:

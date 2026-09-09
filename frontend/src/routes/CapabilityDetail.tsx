@@ -7,6 +7,7 @@ import { LaneBoard } from "@/components/LaneBoard";
 import { RunSummary } from "@/components/RunSummary";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export function CapabilityDetail() {
@@ -16,6 +17,7 @@ export function CapabilityDetail() {
   const candidates = useCandidates(id);
   const enqueue = useEnqueueRun(id);
   const [jobId, setJobId] = useState<string | null>(null);
+  const [days, setDays] = useState("");
   const job = useJob(id, jobId);
 
   useEffect(() => {
@@ -45,13 +47,15 @@ export function CapabilityDetail() {
   const running = enqueue.isPending || jobId !== null;
 
   function triggerRun() {
-    enqueue.mutate(
-      {},
-      {
-        onSuccess: (d) => setJobId(d.job_id),
-        onError: (e) => toast.error((e as Error).message),
-      },
-    );
+    const n = Number(days);
+    const body =
+      Number.isFinite(n) && n > 0
+        ? { from: new Date(Date.now() - n * 86_400_000).toISOString() }
+        : {};
+    enqueue.mutate(body, {
+      onSuccess: (d) => setJobId(d.job_id),
+      onError: (e) => toast.error((e as Error).message),
+    });
   }
 
   return (
@@ -77,9 +81,20 @@ export function CapabilityDetail() {
             </p>
           )}
         </div>
-        <Button onClick={triggerRun} disabled={running}>
-          {running ? "Running…" : "Run now"}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Input
+            type="number"
+            min={1}
+            value={days}
+            onChange={(e) => setDays(e.target.value)}
+            placeholder={`${summary?.window_days ?? 30}d`}
+            aria-label="days to analyse"
+            className="w-20"
+          />
+          <Button onClick={triggerRun} disabled={running}>
+            {running ? "Running…" : "Run now"}
+          </Button>
+        </div>
       </div>
 
       <RunSummary run={(summary?.last_run as Record<string, unknown>) ?? null} />

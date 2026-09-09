@@ -298,9 +298,19 @@ records the run so consecutive runs diff.
 
 ```bash
 uv run pheonix run --capability fobo
+uv run pheonix run --capability fobo --days 90                 # window = last 90 days
 uv run pheonix run --capability fobo --from 2026-08-01 --to 2026-09-01
 uv run pheonix run --all --replace-today          # re-run without adding a history point
 uv run pheonix capability runs fobo               # recorded runs, newest first
+```
+
+`--days` / `--from` / `--to` override the capability's default `window_days` for
+that run; in the SPA, the "days" field next to **Run now** does the same. The
+window only selects from spans **already in the store** — to analyse further
+back than you've scraped, backfill first:
+
+```bash
+uv run pheonix scrape --reset --since 2026-05-01T00:00:00   # forget the watermark, re-pull
 ```
 
 Schedule `pheonix run --all` with cron (no built-in daemon). Offline / Phoenix
