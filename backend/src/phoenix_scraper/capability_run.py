@@ -51,14 +51,21 @@ logger = logging.getLogger(__name__)
 
 
 def load_capability_skills(settings: Settings, capability: Capability) -> list[SkillEntry]:
-    """Catalog + PHEONIX_SKILLS_DIRS + this capability's own loose ``skills/*.md``
-    files, de-duped by name (earlier source wins, matching ``load_all_skills``)."""
+    """This capability's own loose ``skills/*.md`` + catalog + PHEONIX_SKILLS_DIRS,
+    de-duped by name.
+
+    The capability's own files come FIRST, so a `skills/<name>.md` **overrides** a
+    shared-catalog entry of the same name for this capability only. That is the
+    whole point of the per-capability directory: coverage tells you "add this
+    example to `fobo-break-triage`", and dropping that file here has to actually
+    take effect. Letting the catalog win made the fix a silent no-op.
+    """
     cap_skill_files = [
         path
         for directory in capability_skill_dirs(settings.capabilities_dir, capability.id)
         for path in sorted(directory.glob("*.md"))
     ]
-    combined = load_all_skills(settings) + scan_skill_files(cap_skill_files)
+    combined = scan_skill_files(cap_skill_files) + load_all_skills(settings)
     seen: set[str] = set()
     unique: list[SkillEntry] = []
     for skill in combined:
