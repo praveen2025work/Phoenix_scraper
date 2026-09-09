@@ -1,5 +1,6 @@
 """CLI tests for `pheonix run` and `pheonix capability runs`."""
 
+from datetime import datetime
 from pathlib import Path
 
 from typer.testing import CliRunner, Result
@@ -68,6 +69,28 @@ class TestRun:
                     "--from", "2020-01-01", "--to", "2020-02-01", *common)
         assert r.exit_code == 0, r.output
         assert "0" in r.output  # nothing in that window
+
+    def test_days_shortcut(self, tmp_path: Path) -> None:
+        db, caps = _seed_db(tmp_path), tmp_path / "caps"
+        common = ("--capabilities-dir", str(caps), "--db", str(db))
+        _invoke("capability", "new", "fobo", "--stage", "fobo_recon", *common)
+        # a wide window catches the demo spans; the recorded window_start is ~90d back
+        r = _invoke("run", "--capability", "fobo", "--days", "90", *common)
+        assert r.exit_code == 0, r.output
+        store = Store(db)
+        try:
+            row = store.capability_runs_frame("fobo").iloc[0].to_dict()
+        finally:
+            store.close()
+        span_days = (
+            datetime.fromisoformat(row["window_end"])
+            - datetime.fromisoformat(row["window_start"])
+        ).days
+        assert 89 <= span_days <= 90
+
+    def test_days_zero_rejected(self, tmp_path: Path) -> None:
+        common = ("--capabilities-dir", str(tmp_path / "c"), "--db", str(tmp_path / "c.db"))
+        assert _invoke("run", "--capability", "x", "--days", "0", *common).exit_code == 1
 
 
 class TestCapabilityRunsVerb:

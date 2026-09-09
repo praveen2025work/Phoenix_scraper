@@ -372,11 +372,11 @@ def run_analysis(store: Store, settings: Settings) -> AnalysisResult
 ```
 
 ## cli.py (typer app named `app`) + api.py (fastapi app factory `create_app(settings)`)
-CLI commands: demo (seed fixtures + analyze + report), seed, scrape, ingest, analyze,
+CLI commands: demo (seed fixtures + analyze + report), seed, scrape (--since, --reset), ingest, analyze,
 evaluate (+ --pull-annotations / --push / --push-all / --user), coverage (+ --write),
 report, export (--what spans|clusters|matches|proposals|sessions|evaluations|
 coverage|uncovered --fmt csv|json|parquet + filter options), serve,
-run (--capability | --all, --from, --to, --replace-today),
+run (--capability | --all, --from, --to, --days, --replace-today),
 capability (new | list | show | sync | runs | jobs),
 candidates (<id> --rung --status --all), candidate (<cid>),
 decide (<cid> --action accept|reject|snooze|reopen --actor --note --snooze-runs),

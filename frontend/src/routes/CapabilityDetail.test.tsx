@@ -85,3 +85,20 @@ test("Run now enqueues a background job and polls it", async () => {
     expect(spy.mock.calls.some(([u]) => String(u).includes("/jobs/job-1"))).toBe(true),
   );
 });
+
+test("the days field sends a `from` window on the enqueue", async () => {
+  const spy = mock();
+  renderWithProviders(<CapabilityDetail />, { route: "/c/fobo", path: "/c/:id" });
+  await waitFor(() => screen.getByRole("button", { name: /run now/i }));
+  await userEvent.type(screen.getByLabelText(/days to analyse/i), "90");
+  await userEvent.click(screen.getByRole("button", { name: /run now/i }));
+  await waitFor(() => {
+    const post = spy.mock.calls.find(
+      ([u, i]) =>
+        String(u).endsWith("/capabilities/fobo/jobs") &&
+        (i as RequestInit).method === "POST",
+    );
+    expect(post).toBeTruthy();
+    expect(JSON.parse((post![1] as RequestInit).body as string)).toHaveProperty("from");
+  });
+});
