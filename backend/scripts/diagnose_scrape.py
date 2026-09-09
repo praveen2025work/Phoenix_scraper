@@ -127,7 +127,43 @@ def main() -> int:
             )
             if final.empty:
                 print("      -> 0 in scope: the last clause above that dropped to 0 is why.")
+                continue
+            _cluster_funnel(final, cap, settings)
     return 0
+
+
+def _cluster_funnel(in_scope, cap, settings) -> None:
+    """In-scope spans -> clusters -> cards, which is where an empty board is decided."""
+    from phoenix_scraper.cluster import build_clusters
+    from phoenix_scraper.ladder import _creation_floor, resolve_thresholds
+
+    with_prompt = int(
+        in_scope["input_text"].fillna("").str.strip().ne("").sum()
+    ) if "input_text" in in_scope else 0
+    print(f"      {with_prompt:>7}  of which carry a prompt (attributes.input.value)")
+    if not with_prompt:
+        print("      -> 0 clusters: nothing to group. These spans have no input.value,")
+        print("         so they are tool/chain spans, not the user turns the miner reads.")
+        return
+
+    clusters = build_clusters(in_scope, fuzz_threshold=settings.cluster_fuzz_threshold)
+    thresholds = resolve_thresholds(cap, settings)
+    floor = _creation_floor(thresholds)
+    eligible = [c for c in clusters if c.count >= floor]
+    max_users = max((c.n_users for c in clusters), default=0)
+    print(f"      {len(clusters):>7}  distinct prompt clusters")
+    print(f"      {len(eligible):>7}  clusters with count >= {floor} (the card-creation floor)")
+    if not eligible:
+        biggest = max((c.count for c in clusters), default=0)
+        print(f"      -> no cards: the busiest cluster has {biggest}, the floor is {floor}.")
+        print("         Lower rung1_min_count (floor = max(3, rung1_min_count//3)) in")
+        print(f"         {cap.id}'s capability.yaml thresholds, or collect more traffic.")
+        return
+    print(f"      ready needs n_users >= {thresholds.rung1_min_users} and "
+          f"count >= {thresholds.rung1_min_count}; best cluster has {max_users} user(s)")
+    if max_users < thresholds.rung1_min_users:
+        print("      -> cards appear but none can ever reach 'ready': not enough distinct")
+        print("         users. user_id comes from attributes.user.id on the span.")
 
 
 if __name__ == "__main__":
