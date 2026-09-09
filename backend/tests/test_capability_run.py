@@ -140,6 +140,22 @@ class TestRunCapabilityAnalysis:
         assert "recon-break-local" in names
         assert "glossary-explainer" in names  # catalog entries still present
 
+    def test_capability_skill_file_overrides_the_catalog_entry(
+        self, seeded_store, fobo_capability
+    ) -> None:
+        """Coverage says "add this example to <catalog skill>"; dropping that file in
+        the capability's skills/ has to win, or the advice is a no-op."""
+        settings, cap = fobo_capability
+        (settings.capabilities_dir / "fobo" / "skills" / "glossary.md").write_text(
+            "---\nname: glossary-explainer\ndescription: LOCAL OVERRIDE\n"
+            'example_prompts:\n  - "what does PLEX mean"\n---\n',
+            encoding="utf-8",
+        )
+        from phoenix_scraper.capability_run import load_capability_skills
+        by_name = {s.name: s for s in load_capability_skills(settings, cap)}
+        assert by_name["glossary-explainer"].description == "LOCAL OVERRIDE"
+        assert "what does PLEX mean" in by_name["glossary-explainer"].example_prompts
+
     def _seed_uncovered_cluster(self, store) -> None:
         # A recurring fobo_recon question no catalog skill demonstrates -> a
         # new_skill Rung-1 candidate. Distinct users so the evidence bar can be met.
