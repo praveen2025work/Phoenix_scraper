@@ -5,7 +5,7 @@ import re
 import shutil
 import uuid
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -67,6 +67,14 @@ class SkillFileBody(BaseModel):
     content: str
 
 
+class FilterPreview(BaseModel):
+    """Try a span filter without saving or running anything."""
+
+    filter: CapabilityFilter = Field(default_factory=CapabilityFilter)
+    window_days: int = Field(default=30, gt=0)
+    samples: int = Field(default=8, ge=0, le=50)
+
+
 def capability_router(settings: Settings) -> APIRouter:
     router = APIRouter()
     root = settings.capabilities_dir
@@ -119,6 +127,59 @@ def capability_router(settings: Settings) -> APIRouter:
             store.upsert_capability(cap)
             return _summary(store, cap)
 
+    @router.post("/capabilities/preview")
+    def preview_filter(body: FilterPreview) -> dict:
+        """What would this filter catch? Counts, the values present, and real
+        matched prompts — so a search pattern can be tuned before it is saved."""
+        from .models import QueryFilters
+
+        now = datetime.now(UTC)
+        f = body.filter
+        qf = QueryFilters(
+            project=f.project, workflow_stage=f.workflow_stage,
+            asset_class=f.asset_class, model_name=f.model_name,
+            search=f.search, search_any=f.search_any,
+            start=now - timedelta(days=body.window_days), end=now, limit=100_000,
+        )
+        with _store() as store:
+            spans = store.spans_frame(qf)
+            total = store.span_count()
+        if spans.empty:
+            return {
+                "n_spans": 0, "n_llm_spans": 0, "n_users": 0, "n_sessions": 0,
+                "n_spans_in_store": total, "window_days": body.window_days,
+                "distinct": {"workflow_stage": [], "asset_class": [], "project": []},
+                "sample_prompts": [],
+            }
+        llm = spans[spans["span_kind"] == "LLM"] if "span_kind" in spans else spans
+        prompts = [
+            p for p in (llm["input_text"].fillna("").astype(str) if "input_text" in llm
+                        else [])
+            if p.strip()
+        ]
+
+        def distinct(column: str) -> list[str]:
+            if column not in spans:
+                return []
+            return sorted({str(v) for v in spans[column].dropna() if str(v).strip()})
+
+        return {
+            "n_spans": int(len(spans)),
+            "n_llm_spans": int(len(llm)),
+            "n_users": int(spans["user_id"].nunique()) if "user_id" in spans else 0,
+            "n_sessions": (
+                int(spans["session_id"].nunique()) if "session_id" in spans else 0
+            ),
+            "n_spans_in_store": total,
+            "window_days": body.window_days,
+            "distinct": {
+                "workflow_stage": distinct("workflow_stage"),
+                "asset_class": distinct("asset_class"),
+                "project": distinct("project"),
+            },
+            "sample_prompts": prompts[: body.samples],
+        }
+
     @router.get("/capabilities/{cap_id}")
     def get_capability(cap_id: str) -> dict:
         cap_dir = capability_mod.capability_dir(root, cap_id)
@@ -146,7 +207,9 @@ def capability_router(settings: Settings) -> APIRouter:
             raise HTTPException(status_code=404, detail=f"No capability {cap_id!r}")
         updates = dict(body.model_dump(exclude_none=True))
         try:
-            cap = cap.model_copy(update=updates)
+            # Re-validate rather than model_copy: model_copy skips validation, so a
+            # patched `filter` would stay a plain dict and blow up on dump_capability.
+            cap = Capability.model_validate({**cap.model_dump(), **updates})
         except Exception as exc:  # noqa: BLE001 — pydantic validation -> 422
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         capability_mod.write_capability(root, cap)

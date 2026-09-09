@@ -5581,6 +5581,52 @@
         ]
       }
     },
+    "/capabilities/preview": {
+      "post": {
+        "summary": "Preview Filter",
+        "description": "What would this filter catch? Counts, the values present, and real\nmatched prompts \u2014 so a search pattern can be tuned before it is saved.",
+        "operationId": "preview_filter_capabilities_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FilterPreview"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Preview Filter Capabilities Preview Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
     "/capabilities/{cap_id}": {
       "get": {
         "summary": "Get Capability",
@@ -6730,6 +6776,14 @@
               }
             ],
             "title": "Search"
+          },
+          "search_any": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Search Any",
+            "default": []
           }
         },
         "type": "object",
@@ -6843,6 +6897,29 @@
           "action"
         ],
         "title": "DecisionBody"
+      },
+      "FilterPreview": {
+        "properties": {
+          "filter": {
+            "$ref": "#/components/schemas/CapabilityFilter"
+          },
+          "window_days": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Window Days",
+            "default": 30
+          },
+          "samples": {
+            "type": "integer",
+            "maximum": 50.0,
+            "minimum": 0.0,
+            "title": "Samples",
+            "default": 8
+          }
+        },
+        "type": "object",
+        "title": "FilterPreview",
+        "description": "Try a span filter without saving or running anything."
       },
       "HTTPValidationError": {
         "properties": {

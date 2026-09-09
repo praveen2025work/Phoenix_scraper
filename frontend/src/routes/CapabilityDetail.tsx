@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { useCandidates, useCapability, useEnqueueRun, useJob } from "@/api/hooks";
+import { FilterEditor } from "@/components/FilterEditor";
 import { LaneBoard } from "@/components/LaneBoard";
 import { RunSummary } from "@/components/RunSummary";
 import { SkillFiles } from "@/components/SkillFiles";
@@ -79,8 +80,10 @@ export function CapabilityDetail() {
           {summary && (
             <p className="text-sm text-muted-foreground">
               {Object.entries(summary.filter)
-                .filter(([, v]) => v)
-                .map(([k, v]) => `${k}=${v}`)
+                // an empty array is truthy — without the length check an unset
+                // search_any renders as a bare "search_any=".
+                .filter(([, v]) => (Array.isArray(v) ? v.length : v))
+                .map(([k, v]) => `${k}=${Array.isArray(v) ? v.join("|") : v}`)
                 .join(", ") || "all spans"}{" "}
               · window {summary.window_days}d ·{" "}
               <Badge variant={summary.status === "active" ? "default" : "warn"}>
@@ -136,6 +139,7 @@ export function CapabilityDetail() {
         <TabsList>
           <TabsTrigger value="rung1">Rung 1 — promote to skill ({rung1.length})</TabsTrigger>
           <TabsTrigger value="rung2">Rung 2 — make deterministic ({rung2.length})</TabsTrigger>
+          <TabsTrigger value="filter">Filter</TabsTrigger>
           <TabsTrigger value="skills">
             Skills ({cap.data?.skill_files?.length ?? 0})
           </TabsTrigger>
@@ -148,6 +152,13 @@ export function CapabilityDetail() {
         </TabsContent>
         <TabsContent value="rung2">
           <LaneBoard candidates={rung2} capabilityId={id} />
+        </TabsContent>
+        <TabsContent value="filter">
+          <FilterEditor
+            capabilityId={id}
+            initial={(summary?.filter ?? {}) as Record<string, never>}
+            windowDays={summary?.window_days ?? 30}
+          />
         </TabsContent>
         <TabsContent value="skills">
           <SkillFiles capabilityId={id} />

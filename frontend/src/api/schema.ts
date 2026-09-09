@@ -753,6 +753,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/capabilities/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Filter
+         * @description What would this filter catch? Counts, the values present, and real
+         *     matched prompts — so a search pattern can be tuned before it is saved.
+         */
+        post: operations["preview_filter_capabilities_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/capabilities/{cap_id}": {
         parameters: {
             query?: never;
@@ -1040,6 +1061,11 @@ export interface components {
             model_name?: string | null;
             /** Search */
             search?: string | null;
+            /**
+             * Search Any
+             * @default []
+             */
+            search_any: string[];
         };
         /** CapabilityPatch */
         CapabilityPatch: {
@@ -1073,6 +1099,23 @@ export interface components {
              * @default 3
              */
             snooze_runs: number;
+        };
+        /**
+         * FilterPreview
+         * @description Try a span filter without saving or running anything.
+         */
+        FilterPreview: {
+            filter?: components["schemas"]["CapabilityFilter"];
+            /**
+             * Window Days
+             * @default 30
+             */
+            window_days: number;
+            /**
+             * Samples
+             * @default 8
+             */
+            samples: number;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -2591,6 +2634,41 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_filter_capabilities_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FilterPreview"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

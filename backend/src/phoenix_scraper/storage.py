@@ -167,6 +167,7 @@ CREATE TABLE IF NOT EXISTS capabilities (
     filter_asset_class TEXT,
     filter_model_name TEXT,
     filter_search TEXT,
+    filter_search_any TEXT NOT NULL DEFAULT '[]',
     window_days INTEGER NOT NULL DEFAULT 30 CHECK (window_days > 0),
     thresholds_json TEXT NOT NULL DEFAULT '{}',
     status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'paused')),
@@ -299,6 +300,7 @@ CREATE INDEX IF NOT EXISTS idx_capability_jobs_state
 # and are applied idempotently on every open.
 _ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("capability_cluster_snapshots", "asset_classes", "TEXT NOT NULL DEFAULT '[]'"),
+    ("capabilities", "filter_search_any", "TEXT NOT NULL DEFAULT '[]'"),
 )
 
 
@@ -658,9 +660,9 @@ class Store:
         self._conn.execute(
             "INSERT INTO capabilities (capability_id, name, description, "
             "filter_project, filter_workflow_stage, filter_asset_class, "
-            "filter_model_name, filter_search, window_days, thresholds_json, "
-            "status, created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) "
+            "filter_model_name, filter_search, filter_search_any, window_days, "
+            "thresholds_json, status, created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
             "ON CONFLICT(capability_id) DO UPDATE SET "
             "name=excluded.name, description=excluded.description, "
             "filter_project=excluded.filter_project, "
@@ -668,12 +670,14 @@ class Store:
             "filter_asset_class=excluded.filter_asset_class, "
             "filter_model_name=excluded.filter_model_name, "
             "filter_search=excluded.filter_search, "
+            "filter_search_any=excluded.filter_search_any, "
             "window_days=excluded.window_days, "
             "thresholds_json=excluded.thresholds_json, "
             "status=excluded.status, updated_at=excluded.updated_at",
             (
                 capability.id, capability.name, capability.description,
                 f.project, f.workflow_stage, f.asset_class, f.model_name, f.search,
+                json.dumps(list(f.search_any)),
                 capability.window_days, json.dumps(capability.thresholds),
                 capability.status, now, now,
             ),
@@ -1067,6 +1071,16 @@ def _evaluation_row(evaluation: SpanEvaluation) -> tuple:
     )
 
 
+def _row_get(row: object, key: str, default: object = None) -> object:
+    """Column lookup tolerant of a sqlite3.Row (which has no .get) and of a row
+    that predates a column — used for fields added after the table shipped."""
+    try:
+        value = row[key]  # type: ignore[index]
+    except (IndexError, KeyError):
+        return default
+    return default if value is None else value
+
+
 def _capability_from_row(row: sqlite3.Row) -> Capability:
     window_days = int(row["window_days"])
     status = row["status"]
@@ -1080,6 +1094,7 @@ def _capability_from_row(row: sqlite3.Row) -> Capability:
             asset_class=row["filter_asset_class"],
             model_name=row["filter_model_name"],
             search=row["filter_search"],
+            search_any=tuple(json.loads(_row_get(row, "filter_search_any") or "[]")),
         ),
         window_days=window_days if window_days > 0 else 30,
         thresholds=json.loads(row["thresholds_json"]),
@@ -1182,4 +1197,9 @@ def _span_where(f: QueryFilters, alias: str = "") -> tuple[str, list]:
     if f.search:
         clauses.append(f"{prefix}input_text LIKE ?")
         params.append(f"%{f.search}%")
+    if f.search_any:
+        # OR within the group, AND with everything else: "must contain one of these".
+        ors = " OR ".join(f"{prefix}input_text LIKE ?" for _ in f.search_any)
+        clauses.append(f"({ors})")
+        params.extend(f"%{term}%" for term in f.search_any)
     return (" WHERE " + " AND ".join(clauses)) if clauses else "", params

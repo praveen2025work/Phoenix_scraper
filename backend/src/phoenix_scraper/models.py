@@ -106,6 +106,9 @@ class CapabilityFilter(_Frozen):
     asset_class: str | None = None
     model_name: str | None = None
     search: str | None = None  # substring match on input_text
+    # Any-of substrings, OR-ed together and AND-ed with `search`. The escape
+    # hatch when spans carry no workflow_stage: scope a capability by phrasing.
+    search_any: tuple[str, ...] = ()
 
 
 class Capability(_Frozen):
@@ -286,6 +289,7 @@ class QueryFilters(_Frozen):
     session_id: str | None = None
     user_id: str | None = None
     search: str | None = None  # substring match on input_text
+    search_any: tuple[str, ...] = ()  # OR-ed substrings, AND-ed with `search`
     min_count: int = 1  # for clusters
     limit: int = 1000
 

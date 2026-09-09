@@ -88,6 +88,10 @@ def load_all_capabilities(root: Path) -> list[Capability]   # skips malformed (w
 def capability_skill_dirs(root: Path, cap_id: str) -> list[Path]   # [<id>/skills] or []
 def capability_query_filters(capability, *, start=None, end=None,
                              limit=100_000) -> QueryFilters
+def _search_any(raw) -> tuple[str, ...]   # yaml list OR comma string; blanks dropped
+    # CapabilityFilter.search_any / QueryFilters.search_any: substrings OR-ed
+    # together and AND-ed with everything else. Mirrored to capabilities
+    # .filter_search_any (JSON, via _ADDED_COLUMNS).
 ```
 
 ## capability_run.py  (scoped pipeline run + orchestration; does NOT touch the global run_analysis)
@@ -394,7 +398,11 @@ Phase E — Capabilities: GET/POST /capabilities, GET/PATCH/DELETE
 /capabilities/{id} (?purge=), POST /capabilities/{id}/sync. Runs: POST
 /capabilities/{id}/runs {from?,to?,replace_today?} (synchronous), GET
 /capabilities/{id}/runs, GET /capabilities/{id}/runs/{run_id}, GET
-/capabilities/{id}/runs/delta?from=&to=. Async runs: POST
+/capabilities/{id}/runs/delta?from=&to=. Filter tuning: POST
+/capabilities/preview {filter, window_days?, samples?} -> {n_spans, n_llm_spans,
+n_users, n_sessions, n_spans_in_store, distinct:{workflow_stage, asset_class,
+project}, sample_prompts} — tries a span filter, saves and runs nothing.
+Async runs: POST
 /capabilities/{id}/jobs {from?,to?,replace_today?} -> 202 {job_id, state},
 GET /capabilities/{id}/jobs, GET /capabilities/{id}/jobs/{job_id}
 {state: queued|running|done|error, run_id, error}. Skill files: GET

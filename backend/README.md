@@ -322,6 +322,36 @@ uv run pheonix capability sync            # re-read every capability.yaml into t
 `new` scaffolds `capabilities/fobo/` with `capability.yaml`, `skills/`,
 `deterministic/`. `PHEONIX_CAPABILITIES_DIR` relocates the root.
 
+### Scoping by phrasing when spans carry no workflow_stage
+
+The scraper does **not** classify spans — it reads `attributes.metadata.workflow_stage`
+and `.asset_class` straight off the Phoenix span. If your agent never sets them,
+a `workflow_stage` filter matches nothing. Scope by phrasing instead:
+
+```yaml
+filter:
+  search:      recon          # must contain
+  search_any:                 # ...AND must contain ANY of these
+    - "recon break"
+    - "unmatched trade"
+```
+
+`search_any` is OR-ed internally and AND-ed with every other field. A
+comma-separated string works too (`search_any: "recon break, unmatched"`).
+
+Tune it before committing — `POST /capabilities/preview` runs nothing and saves
+nothing:
+
+```bash
+curl -s localhost:8000/capabilities/preview -H content-type:application/json \
+  -d '{"filter":{"search_any":["recon break","unmatched"]},"window_days":30}'
+# -> {"n_spans":57,"n_llm_spans":57,"n_users":7,
+#     "distinct":{"workflow_stage":["commentary_signoff","fobo_recon"],...},
+#     "sample_prompts":["List unmatched FOBO trades over 210k...", ...]}
+```
+
+The SPA's **Filter** tab is this loop with a live match count as you type.
+
 ## Daily runs
 
 `pheonix run` scrapes the capability's Phoenix project (once, even for `--all`),
