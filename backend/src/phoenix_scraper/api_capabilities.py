@@ -1,6 +1,7 @@
 """Capability CRUD + run-trigger HTTP routes (mounted under the protected router)."""
 
 import json
+import re
 import shutil
 import uuid
 from contextlib import contextmanager
@@ -50,6 +51,20 @@ class JobRequest(BaseModel):
     replace_today: bool = False
 
     model_config = {"populate_by_name": True}
+
+
+# A capability's own skill files are loose `<cap>/skills/<name>.md`. Keep the
+# name a kebab slug so it can never escape the directory or collide with the
+# `<id>` masks normalize.py writes.
+_SKILL_FILENAME_RE = re.compile(r"^[a-z][a-z0-9-]{0,63}\.md$")
+
+# Skill files are hand-sized markdown; a megabyte is already absurd for one.
+_MAX_SKILL_BYTES = 1_000_000
+
+
+class SkillFileBody(BaseModel):
+    filename: str
+    content: str
 
 
 def capability_router(settings: Settings) -> APIRouter:
@@ -158,6 +173,81 @@ def capability_router(settings: Settings) -> APIRouter:
         with _store() as store:
             store.upsert_capability(cap)
             return {"capability": cap.model_dump()}
+
+    def _skills_dir(cap_id: str):
+        """`<capabilities_dir>/<id>/skills`, verified to belong to a real capability."""
+        try:
+            capability_mod.validate_id(cap_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if not capability_mod.config_path(root, cap_id).is_file():
+            raise HTTPException(status_code=404, detail=f"No capability {cap_id!r}")
+        return capability_mod.capability_dir(root, cap_id) / "skills"
+
+    def _skill_row(path) -> dict:
+        from .skills import scan_skill_files
+
+        entries = scan_skill_files([path])
+        entry = entries[0] if entries else None
+        return {
+            "filename": path.name,
+            "bytes": path.stat().st_size,
+            # False when the frontmatter is missing/malformed — the run silently
+            # skips such a file, so say so instead of pretending it landed.
+            "valid": entry is not None,
+            "name": entry.name if entry else None,
+            "description": entry.description if entry else None,
+            "n_example_prompts": len(entry.example_prompts) if entry else 0,
+        }
+
+    @router.get("/capabilities/{cap_id}/skills")
+    def list_skill_files(cap_id: str) -> list[dict]:
+        skills_dir = _skills_dir(cap_id)
+        if not skills_dir.is_dir():
+            return []
+        return [_skill_row(p) for p in sorted(skills_dir.glob("*.md"))]
+
+    @router.post("/capabilities/{cap_id}/skills", status_code=201)
+    def put_skill_file(cap_id: str, body: SkillFileBody) -> dict:
+        skills_dir = _skills_dir(cap_id)
+        filename = body.filename.strip().lower()
+        if not filename.endswith(".md"):
+            filename += ".md"
+        if not _SKILL_FILENAME_RE.match(filename):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid skill filename {filename!r}: lowercase letters, digits "
+                "and hyphens, starting with a letter, ending in .md.",
+            )
+        if len(body.content.encode("utf-8")) > _MAX_SKILL_BYTES:
+            raise HTTPException(status_code=413, detail="Skill file is too large.")
+        skills_dir.mkdir(parents=True, exist_ok=True)
+        path = skills_dir / filename
+        existed = path.is_file()
+        path.write_text(body.content, encoding="utf-8")
+        row = _skill_row(path)
+        if not row["valid"]:
+            # Written, but the miner will skip it — a 201 that quietly does
+            # nothing is worse than saying why.
+            path.unlink(missing_ok=True)
+            raise HTTPException(
+                status_code=422,
+                detail="No usable YAML frontmatter: a skill file needs `---` "
+                "delimiters with at least a `name:` field.",
+            )
+        row["replaced"] = existed
+        return row
+
+    @router.delete("/capabilities/{cap_id}/skills/{filename}")
+    def delete_skill_file(cap_id: str, filename: str) -> dict:
+        skills_dir = _skills_dir(cap_id)
+        if not _SKILL_FILENAME_RE.match(filename):
+            raise HTTPException(status_code=400, detail="Invalid skill filename")
+        path = skills_dir / filename
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail=f"No skill file {filename!r}")
+        path.unlink()
+        return {"deleted": filename}
 
     _register_run_routes(router, settings, _store)
     return router

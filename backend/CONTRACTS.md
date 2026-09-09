@@ -397,7 +397,13 @@ Phase E — Capabilities: GET/POST /capabilities, GET/PATCH/DELETE
 /capabilities/{id}/runs/delta?from=&to=. Async runs: POST
 /capabilities/{id}/jobs {from?,to?,replace_today?} -> 202 {job_id, state},
 GET /capabilities/{id}/jobs, GET /capabilities/{id}/jobs/{job_id}
-{state: queued|running|done|error, run_id, error}.
+{state: queued|running|done|error, run_id, error}. Skill files: GET
+/capabilities/{id}/skills -> [{filename, bytes, valid, name, description,
+n_example_prompts}], POST /capabilities/{id}/skills {filename, content} -> 201
+(422 when the markdown has no usable YAML frontmatter — nothing is written; 400
+on a filename outside ^[a-z][a-z0-9-]{0,63}\.md$), DELETE
+/capabilities/{id}/skills/{filename}. Files land in <cap>/skills/ and
+load_capability_skills reads them on the next run.
 Ladder: GET /capabilities/{id}/candidates?rung=&status=, GET /candidates/{cid},
 POST /candidates/{cid}/decision {action,actor?,note?,snooze_runs?} (409 on
 invalid transition), POST /candidates/{cid}/promote?accept=, GET

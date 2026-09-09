@@ -86,6 +86,27 @@ test("Run now enqueues a background job and polls it", async () => {
   );
 });
 
+test("an explicit from/to range wins over the days field", async () => {
+  const spy = mock();
+  renderWithProviders(<CapabilityDetail />, { route: "/c/fobo", path: "/c/:id" });
+  await waitFor(() => screen.getByRole("button", { name: /run now/i }));
+  await userEvent.type(screen.getByLabelText(/window start date/i), "2026-05-01");
+  await userEvent.type(screen.getByLabelText(/window end date/i), "2026-06-01");
+  await userEvent.click(screen.getByRole("button", { name: /run now/i }));
+  await waitFor(() => {
+    const post = spy.mock.calls.find(
+      ([u, i]) =>
+        String(u).endsWith("/capabilities/fobo/jobs") &&
+        (i as RequestInit).method === "POST",
+    );
+    expect(post).toBeTruthy();
+    expect(JSON.parse((post![1] as RequestInit).body as string)).toEqual({
+      from: "2026-05-01",
+      to: "2026-06-01",
+    });
+  });
+});
+
 test("the days field sends a `from` window on the enqueue", async () => {
   const spy = mock();
   renderWithProviders(<CapabilityDetail />, { route: "/c/fobo", path: "/c/:id" });
