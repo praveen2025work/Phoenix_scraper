@@ -83,6 +83,45 @@ export interface JobDto {
   error: string | null;
 }
 
+export interface SkillFile {
+  filename: string;
+  bytes: number;
+  valid: boolean;
+  name: string | null;
+  description: string | null;
+  n_example_prompts: number;
+}
+
+export const useSkillFiles = (id: string) =>
+  useQuery({
+    queryKey: ["skills", id],
+    queryFn: () => api.get<SkillFile[]>(`/capabilities/${enc(id)}/skills`),
+  });
+
+export function useUploadSkillFile(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { filename: string; content: string }) =>
+      api.post<SkillFile>(`/capabilities/${enc(id)}/skills`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["skills", id] });
+      qc.invalidateQueries({ queryKey: ["capability", id] });
+    },
+  });
+}
+
+export function useDeleteSkillFile(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (filename: string) =>
+      api.del(`/capabilities/${enc(id)}/skills/${enc(filename)}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["skills", id] });
+      qc.invalidateQueries({ queryKey: ["capability", id] });
+    },
+  });
+}
+
 /** Enqueue a background capability run — returns a job_id to poll with useJob. */
 export function useEnqueueRun(id: string) {
   return useMutation({

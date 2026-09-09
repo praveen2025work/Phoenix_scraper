@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { useCandidates, useCapability, useEnqueueRun, useJob } from "@/api/hooks";
 import { LaneBoard } from "@/components/LaneBoard";
 import { RunSummary } from "@/components/RunSummary";
+import { SkillFiles } from "@/components/SkillFiles";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +19,8 @@ export function CapabilityDetail() {
   const enqueue = useEnqueueRun(id);
   const [jobId, setJobId] = useState<string | null>(null);
   const [days, setDays] = useState("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
   const job = useJob(id, jobId);
 
   useEffect(() => {
@@ -46,13 +49,18 @@ export function CapabilityDetail() {
   const rung2 = all.filter((c) => c.rung === "deterministic");
   const running = enqueue.isPending || jobId !== null;
 
-  function triggerRun() {
+  /** An explicit from/to wins; else "last N days"; else the capability's window_days. */
+  function runWindow(): { from?: string; to?: string } {
+    if (from) return to ? { from, to } : { from };
     const n = Number(days);
-    const body =
-      Number.isFinite(n) && n > 0
-        ? { from: new Date(Date.now() - n * 86_400_000).toISOString() }
-        : {};
-    enqueue.mutate(body, {
+    if (Number.isFinite(n) && n > 0) {
+      return { from: new Date(Date.now() - n * 86_400_000).toISOString() };
+    }
+    return {};
+  }
+
+  function triggerRun() {
+    enqueue.mutate(runWindow(), {
       onSuccess: (d) => setJobId(d.job_id),
       onError: (e) => toast.error((e as Error).message),
     });
@@ -81,16 +89,41 @@ export function CapabilityDetail() {
             </p>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          <Input
-            type="number"
-            min={1}
-            value={days}
-            onChange={(e) => setDays(e.target.value)}
-            placeholder={`${summary?.window_days ?? 30}d`}
-            aria-label="days to analyse"
-            className="w-20"
-          />
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="text-xs text-muted-foreground">
+            last N days
+            <Input
+              type="number"
+              min={1}
+              value={days}
+              onChange={(e) => setDays(e.target.value)}
+              disabled={!!from}
+              placeholder={`${summary?.window_days ?? 30}`}
+              aria-label="days to analyse"
+              className="mt-0.5 w-24"
+            />
+          </label>
+          <label className="text-xs text-muted-foreground">
+            from
+            <Input
+              type="date"
+              value={from}
+              onChange={(e) => setFrom(e.target.value)}
+              aria-label="window start date"
+              className="mt-0.5 w-40"
+            />
+          </label>
+          <label className="text-xs text-muted-foreground">
+            to
+            <Input
+              type="date"
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+              disabled={!from}
+              aria-label="window end date"
+              className="mt-0.5 w-40"
+            />
+          </label>
           <Button onClick={triggerRun} disabled={running}>
             {running ? "Running…" : "Run now"}
           </Button>
@@ -103,6 +136,9 @@ export function CapabilityDetail() {
         <TabsList>
           <TabsTrigger value="rung1">Rung 1 — promote to skill ({rung1.length})</TabsTrigger>
           <TabsTrigger value="rung2">Rung 2 — make deterministic ({rung2.length})</TabsTrigger>
+          <TabsTrigger value="skills">
+            Skills ({cap.data?.skill_files?.length ?? 0})
+          </TabsTrigger>
           <TabsTrigger value="analytics" asChild>
             <Link to={`/c/${id}/analytics`}>Analytics</Link>
           </TabsTrigger>
@@ -112,6 +148,9 @@ export function CapabilityDetail() {
         </TabsContent>
         <TabsContent value="rung2">
           <LaneBoard candidates={rung2} capabilityId={id} />
+        </TabsContent>
+        <TabsContent value="skills">
+          <SkillFiles capabilityId={id} />
         </TabsContent>
       </Tabs>
     </div>

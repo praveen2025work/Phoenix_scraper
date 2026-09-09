@@ -259,13 +259,19 @@ Every `analyze` snapshots its clusters so consecutive runs diff (`new` / `growin
 
 ## Skills catalog inputs
 
-Two sources, merged (catalog wins on name collisions):
+Three sources, merged (catalog wins on name collisions):
 
 1. `config/skills_catalog.yaml` — explicit entries
    (level / asset_class / capability / keywords / example_prompts).
 2. `PHEONIX_SKILLS_DIRS` — comma-separated dirs scanned recursively for `SKILL.md`
    with YAML frontmatter. `example_prompts` in frontmatter is what coverage
    measures against — a file that declares none shows 0%.
+3. **The capability's own `capabilities/<id>/skills/*.md`** — loose markdown files,
+   read fresh on every run. Add them by dropping a file in that directory, by
+   `pheonix promote`-ing a ready Rung-1 candidate, or from the SPA's **Skills**
+   tab (upload or paste — `POST /capabilities/<id>/skills`). A file without
+   usable YAML frontmatter is rejected by the API and skipped by a run, so the
+   upload tells you instead of silently doing nothing.
 
 Replace the sample `config/skills_catalog.yaml` with your catalog and update
 `config/pricing.yaml` with your Bedrock token rates so cost numbers are real.
@@ -403,6 +409,7 @@ and `fmt=json|csv`; every analytics route takes `?capability=<id>`.
 | `GET/POST /capabilities` · `GET/PATCH/DELETE /capabilities/{id}` (`?purge=`) · `POST /capabilities/{id}/sync` | capability CRUD |
 | `POST /capabilities/{id}/runs` (sync) · `GET /capabilities/{id}/runs[/{run_id}]` · `.../runs/delta` | scoped runs |
 | `POST/GET /capabilities/{id}/jobs` · `GET /capabilities/{id}/jobs/{job_id}` | async runs (job worker) |
+| `GET/POST /capabilities/{id}/skills` · `DELETE /capabilities/{id}/skills/{filename}` | the capability's own `skills/*.md` — upload, list, remove |
 | `GET /capabilities/{id}/candidates` · `GET /candidates/{cid}` | ladder board / detail |
 | `POST /candidates/{cid}/decision` (409 on invalid) · `.../promote?accept=` · `.../artifact/preview` | ladder actions |
 

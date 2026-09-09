@@ -55,7 +55,12 @@ carries it as `X-API-Key`. With no backend key the app runs open.
 - **Async runs.** "Run now" calls `useEnqueueRun` → `POST /capabilities/{id}/jobs`
   → `202 {job_id}`; `useJob(id, jobId)` then polls
   `GET /capabilities/{id}/jobs/{job_id}` every 1.5 s until `state` is `done` /
-  `error`, then toasts and refetches the board.
+  `error`, then toasts and refetches the board. The window comes from the
+  controls beside the button: an explicit `from`/`to` wins, else "last N days",
+  else the capability's `window_days`.
+- **Skill files.** `useSkillFiles` / `useUploadSkillFile` / `useDeleteSkillFile`
+  wrap `GET/POST/DELETE /capabilities/{id}/skills`. Uploads read the file as text
+  in the browser and POST `{filename, content}` — no multipart.
 - **Types.** `src/api/schema.ts` is generated from the backend's OpenAPI schema —
   regenerate with `make ui-types` (repo root) after changing an API route.
 
@@ -64,7 +69,7 @@ carries it as `X-API-Key`. With no backend key the app runs open.
 | Route | |
 | --- | --- |
 | `/` | capabilities index + "New capability" dialog |
-| `/c/:id` | capability detail — Run now, run summary, Rung 1 / Rung 2 lane boards |
+| `/c/:id` | capability detail — run window (last N days, or from/to dates) + Run now, run summary, Rung 1 / Rung 2 lane boards, **Skills** (upload / paste / delete the capability's `skills/*.md`) |
 | `/c/:id/candidate/:cid` | candidate detail — evidence trend, determinism signals, decide, artifact preview + promote |
 | `/c/:id/analytics` | ~18 panels scoped to the capability — KPI row, activity + quality charts (Recharts, lazy-loaded), coverage, skills, agent behaviour |
 
