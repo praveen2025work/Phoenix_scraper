@@ -5,10 +5,9 @@ import { toast } from "sonner";
 import { useCapability, useEnqueueRun, useJob, useSkillFiles } from "@/api/hooks";
 import { FilterEditor } from "@/components/FilterEditor";
 import { OutcomeBanner } from "@/components/OutcomeBanner";
-import { PageHeader } from "@/components/PageHeader";
 import { RunHistory } from "@/components/RunHistory";
 import { RunProgress } from "@/components/RunProgress";
-import { RunResults } from "@/components/RunResults";
+import { RunResults, RunResultsChrome } from "@/components/RunResults";
 import { SkillFiles } from "@/components/SkillFiles";
 import { WizardSteps, type WizardStep } from "@/components/WizardSteps";
 import { Badge } from "@/components/ui/badge";
@@ -42,6 +41,14 @@ function wizardToJourney(step: WizardStep): JourneyStep {
     case "History":
       return "History";
   }
+}
+
+function filterOneLiner(filter: Record<string, unknown> | undefined): string {
+  if (!filter) return "all spans";
+  const parts = Object.entries(filter)
+    .filter(([, v]) => (Array.isArray(v) ? v.length : v))
+    .map(([k, v]) => `${k}=${Array.isArray(v) ? v.join("|") : v}`);
+  return parts.join(", ") || "all spans";
 }
 
 export function CapabilityDetail() {
@@ -219,7 +226,7 @@ export function CapabilityDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, searchParams, setSearchParams, cap.isLoading, cap.error, lastRunId, resultRunId]);
 
-  // Keep the app-wide product rail in sync with this capability's step.
+  // Keep the app-wide left journey rail in sync with this capability's step.
   useEffect(() => {
     setCapabilityId(id);
   }, [id, setCapabilityId]);
@@ -239,125 +246,166 @@ export function CapabilityDetail() {
     return <p className="text-sm text-destructive">{(cap.error as Error).message}</p>;
 
   const skillCount = skills.data?.length ?? cap.data?.skill_files?.length ?? 0;
+  const title = summary?.name ?? id;
+  const filterLine = filterOneLiner(
+    (summary?.filter ?? {}) as Record<string, unknown>,
+  );
 
   return (
     <div className="space-y-5">
-      <PageHeader
-        breadcrumb={
-          <Link to="/" className="hover:underline">
+      <section
+        className="section-surface space-y-3 p-3 sm:p-4"
+        data-testid="capability-chrome"
+      >
+        {/* Row 1: breadcrumb · title · status · filter */}
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+          <Link
+            to="/"
+            className="text-xs font-medium text-muted-foreground hover:underline"
+          >
             Capabilities
           </Link>
-        }
-        title={summary?.name ?? id}
-        outcome={
-          <>
-            Gaps first — then{" "}
-            <span className="text-foreground">promote to skill</span> or{" "}
-            <span className="text-foreground">make deterministic</span>.
-          </>
-        }
-        meta={
-          summary && (
-            <p className="flex flex-wrap items-center gap-2">
-              <span>
-                {Object.entries(summary.filter)
-                  .filter(([, v]) => (Array.isArray(v) ? v.length : v))
-                  .map(([k, v]) => `${k}=${Array.isArray(v) ? v.join("|") : v}`)
-                  .join(", ") || "all spans"}
-              </span>
-              <Badge variant={summary.status === "active" ? "default" : "warn"}>
-                {summary.status}
-              </Badge>
-            </p>
-          )
-        }
-        actions={<WizardSteps current={step} onSelect={onWizardSelect} />}
-      />
+          <span aria-hidden className="text-xs text-border">
+            ·
+          </span>
+          <h1 className="font-display text-xl font-semibold leading-tight tracking-tight text-foreground sm:text-2xl">
+            {title}
+          </h1>
+          {summary && (
+            <Badge
+              variant={summary.status === "active" ? "default" : "warn"}
+              className="px-1.5 py-0 text-[10px] font-medium"
+              data-testid="capability-status-badge"
+            >
+              {summary.status}
+            </Badge>
+          )}
+          <span
+            className="min-w-0 max-w-full truncate text-[11px] text-muted-foreground sm:max-w-md"
+            title={filterLine}
+            data-testid="capability-filter-line"
+          >
+            {filterLine}
+          </span>
+        </div>
+
+        {/* Row 2: wizard full width */}
+        <WizardSteps current={step} onSelect={onWizardSelect} />
+
+        {/* Rows 3–4: Results version + metrics inside the same panel */}
+        {step === "Results" && resultRunId && (
+          <div className="border-t border-border/70 pt-3">
+            <RunResultsChrome
+              capabilityId={id}
+              runId={resultRunId}
+              onRunNext={goSetup}
+            />
+          </div>
+        )}
+      </section>
 
       {step === "Setup" && (
         <div className="step-enter space-y-4" data-testid="run-setup">
-          <OutcomeBanner title="Expected outcome" data-testid="setup-howto" dismissible dismissKey={`setup-${id}`}>
-            Closed window + skill MDs → Run now → gaps & promotion queue. Same-day
-            versions don&apos;t block each other.
+          <OutcomeBanner
+            title="Setup"
+            data-testid="setup-howto"
+            dismissible
+            dismissKey={`setup-${id}`}
+          >
+            Window + skills → Run now → gaps & promote. Same-day versions don&apos;t
+            block each other.
           </OutcomeBanner>
 
-          <section className="section-surface space-y-3 p-4">
-            <div>
-              <h2 className="font-display text-lg font-semibold tracking-tight">
-                1. Pick window
-              </h2>
-              <p className="mt-0.5 text-sm text-muted-foreground">
-                Closed from/to required. Default last {DEFAULT_WINDOW_DAYS} days —
-                keep short; large backfills may truncate.
-              </p>
+          <section
+            className="section-surface divide-y divide-border/70"
+            data-testid="setup-card"
+          >
+            {/* Window */}
+            <div className="space-y-3 p-4">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                <h2 className="text-sm font-semibold tracking-tight text-foreground">
+                  Window
+                </h2>
+                <p
+                  className="text-[11px] text-muted-foreground"
+                  title="Large backfills may truncate — keep the window short."
+                >
+                  Default last {DEFAULT_WINDOW_DAYS} days
+                </p>
+              </div>
+              <div className="flex flex-wrap items-end gap-5">
+                <label className="flex flex-col gap-1.5 text-xs font-medium text-foreground">
+                  From
+                  <Input
+                    type="date"
+                    value={from}
+                    onChange={(e) => setFrom(e.target.value)}
+                    aria-label="window start date"
+                    className="h-10 w-44 px-3 py-2"
+                    required
+                  />
+                </label>
+                <label className="flex flex-col gap-1.5 text-xs font-medium text-foreground">
+                  To
+                  <Input
+                    type="date"
+                    value={to}
+                    onChange={(e) => setTo(e.target.value)}
+                    aria-label="window end date"
+                    className="h-10 w-44 px-3 py-2"
+                    required
+                  />
+                </label>
+              </div>
             </div>
-            <div className="flex flex-wrap items-end gap-3">
-              <label className="text-sm font-medium text-foreground">
-                From
-                <Input
-                  type="date"
-                  value={from}
-                  onChange={(e) => setFrom(e.target.value)}
-                  aria-label="window start date"
-                  className="mt-1 h-10 w-44"
-                  required
-                />
-              </label>
-              <label className="text-sm font-medium text-foreground">
-                To
-                <Input
-                  type="date"
-                  value={to}
-                  onChange={(e) => setTo(e.target.value)}
-                  aria-label="window end date"
-                  className="mt-1 h-10 w-44"
-                  required
-                />
-              </label>
+
+            {/* Skills */}
+            <div className="space-y-2 p-4">
+              <h2 className="text-sm font-semibold tracking-tight text-foreground">
+                Skills
+                <span className="ml-1.5 font-normal text-muted-foreground">
+                  ({skillCount})
+                </span>
+              </h2>
+              <SkillFiles capabilityId={id} />
+            </div>
+
+            {/* Run — primary action, visually last before Advanced */}
+            <div className="flex flex-wrap items-center gap-3 bg-surface-strong/60 p-4">
               <Button
-                size="lg"
+                size="xl"
                 onClick={triggerRun}
                 disabled={running || !from || !to}
+                data-testid="setup-run-now"
               >
-                {enqueue.isPending ? "Starting…" : "3. Run now"}
+                {enqueue.isPending ? "Starting…" : "Run now"}
               </Button>
               {(resultRunId || lastRunId) && (
-                <Button variant="ghost" onClick={goHistory}>
+                <Button variant="outline" onClick={goHistory}>
                   Browse history
                 </Button>
               )}
             </div>
-          </section>
 
-          <section className="section-surface space-y-3 p-4">
-            <div>
-              <h2 className="font-display text-lg font-semibold tracking-tight">
-                2. Upload skills ({skillCount})
-              </h2>
-              <p className="mt-0.5 text-sm text-muted-foreground">
-                Hashes freeze at run start — edit, re-upload same filename, re-run.
-              </p>
-            </div>
-            <SkillFiles capabilityId={id} />
+            {/* Advanced — collapsed */}
+            <details className="group p-4">
+              <summary className="cursor-pointer text-sm font-semibold tracking-tight text-foreground">
+                Advanced
+                <span className="ml-2 font-normal text-[11px] text-muted-foreground">
+                  span filter & preview
+                </span>
+              </summary>
+              <div className="mt-3">
+                <FilterEditor
+                  capabilityId={id}
+                  initial={(summary?.filter ?? {}) as Record<string, never>}
+                  windowDays={DEFAULT_WINDOW_DAYS}
+                  windowFrom={from || undefined}
+                  windowTo={to || undefined}
+                />
+              </div>
+            </details>
           </section>
-
-          <details className="section-surface p-4">
-            <summary className="cursor-pointer font-display text-base font-semibold tracking-tight">
-              Advanced filter
-            </summary>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Optional. Empty = no narrowing. Preview uses the same from/to.
-            </p>
-            <div className="mt-3">
-              <FilterEditor
-                capabilityId={id}
-                initial={(summary?.filter ?? {}) as Record<string, never>}
-                windowDays={DEFAULT_WINDOW_DAYS}
-                windowFrom={from || undefined}
-                windowTo={to || undefined}
-              />
-            </div>
-          </details>
         </div>
       )}
 
@@ -380,7 +428,7 @@ export function CapabilityDetail() {
             capabilityId={id}
             runId={resultRunId}
             onRunNext={goSetup}
-            onBrowseHistory={goHistory}
+            showChrome={false}
           />
         </div>
       )}

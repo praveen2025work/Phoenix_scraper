@@ -94,6 +94,7 @@ const resultsBody = {
 const olderResultsBody = {
   ...resultsBody,
   run_id: OLDER_RUN,
+  status: "partial",
   previous_run_id: null,
   uncovered: [
     {
@@ -276,7 +277,37 @@ test("lands on Results for the last run with skill gaps first", async () => {
   mock();
   renderWithProviders(<CapabilityDetail />, { route: "/c/fobo", path: "/c/:id" });
   await waitFor(() => expect(screen.getByTestId("run-results")).toBeInTheDocument());
-  expect(screen.getByTestId("outcome-framing")).toHaveTextContent(/Gaps first/i);
+
+  // Single dense chrome panel — no stacked outcome subtitle.
+  const chrome = screen.getByTestId("capability-chrome");
+  expect(screen.queryByTestId("outcome-framing")).not.toBeInTheDocument();
+  expect(screen.queryByText(/Gaps first/i)).not.toBeInTheDocument();
+  expect(within(chrome).getByRole("heading", { level: 1, name: /^FOBO$/i })).toBeInTheDocument();
+  expect(within(chrome).getByTestId("capability-status-badge")).toHaveTextContent(/active/i);
+  expect(within(chrome).getByTestId("capability-filter-line")).toHaveTextContent(
+    /workflow_stage=fobo_recon/,
+  );
+  expect(within(chrome).getByRole("link", { name: /^Capabilities$/i })).toBeInTheDocument();
+  // Version chrome lives in the combined capability header, not duplicated under results.
+  expect(within(chrome).getByTestId("results-chrome")).toBeInTheDocument();
+  expect(
+    within(screen.getByTestId("run-results")).queryByTestId("results-chrome"),
+  ).not.toBeInTheDocument();
+  expect(within(chrome).getByTestId("version-strip")).toBeInTheDocument();
+  expect(within(chrome).getByTestId("funnel-strip")).toBeInTheDocument();
+  expect(within(chrome).getByRole("navigation", { name: /Run workflow/i })).toBeInTheDocument();
+  expect(screen.queryByText(/Window & skills/i)).not.toBeInTheDocument();
+  expect(screen.queryByText(/Gaps & decisions/i)).not.toBeInTheDocument();
+
+  const funnel = within(chrome).getByTestId("funnel-strip");
+  expect(funnel).toHaveTextContent(/40/);
+  expect(funnel).toHaveTextContent(/in-scope/i);
+  expect(funnel).toHaveTextContent(/gaps/i);
+  expect(funnel).toHaveTextContent(/ready to decide/i);
+  expect(funnel).not.toHaveTextContent(/unmatched/i);
+  await userEvent.click(within(chrome).getByTestId("funnel-more"));
+  expect(funnel).toHaveTextContent(/unmatched/i);
+
   expect(screen.getByRole("heading", { name: /^Skill gaps$/i })).toBeInTheDocument();
   expect(screen.getAllByText(/why is recon break unmatched/i).length).toBeGreaterThan(0);
   expect(screen.getAllByText(/Promote to skill/i).length).toBeGreaterThan(0);
@@ -284,15 +315,69 @@ test("lands on Results for the last run with skill gaps first", async () => {
   expect(screen.getAllByText("why recon break").length).toBeGreaterThan(0);
   expect(screen.getByText(/TRUNCATED/)).toBeInTheDocument();
   await waitFor(() =>
-    expect(screen.getByTestId("promotion-queue")).toHaveTextContent(
-      /Accepted — write file next/i,
-    ),
+    expect(
+      within(screen.getByTestId("promotion-queue")).getByTestId(
+        "promotion-card-decide",
+      ),
+    ).toBeInTheDocument(),
   );
-  expect(screen.getByTestId("latest-run-badge")).toBeInTheDocument();
+  const queue = screen.getByTestId("promotion-queue");
+  expect(
+    within(queue).getByRole("heading", { name: "Decide" }),
+  ).toBeInTheDocument();
+  expect(
+    within(queue).getByRole("heading", { name: "Write file" }),
+  ).toBeInTheDocument();
+  expect(
+    within(queue).getByRole("heading", { name: "Done" }),
+  ).toBeInTheDocument();
+  expect(within(queue).getByTestId("promotion-card-write")).toHaveTextContent(
+    "Nothing here",
+  );
+  expect(within(queue).getByTestId("promotion-card-done")).toHaveTextContent(
+    "Nothing here",
+  );
+  expect(within(chrome).getByTestId("latest-run-badge")).toBeInTheDocument();
+  expect(within(chrome).getByRole("button", { name: /Run next version/i })).toBeInTheDocument();
+  // History lives only in the wizard step strip — not duplicated in chrome actions or body.
+  expect(
+    within(screen.getByTestId("results-chrome")).queryByRole("button", {
+      name: /^History$/i,
+    }),
+  ).not.toBeInTheDocument();
+  expect(
+    within(screen.getByTestId("run-results")).queryByRole("button", {
+      name: /^History$/i,
+    }),
+  ).not.toBeInTheDocument();
+  expect(
+    within(screen.getByRole("navigation", { name: /Run workflow/i })).getByRole(
+      "button",
+      { name: /^History$/i },
+    ),
+  ).toBeInTheDocument();
   expect(screen.getByRole("link", { name: /^Usage$/i })).toHaveAttribute(
     "href",
     "/c/fobo/analytics",
   );
+  // Idle Running is a non-interactive milestone, not a nav button.
+  const runningStep = screen.getByTestId("wizard-running-step");
+  expect(runningStep.tagName).toBe("SPAN");
+  expect(runningStep).toHaveAttribute(
+    "title",
+    "Shown while a run is in progress",
+  );
+  expect(
+    within(screen.getByRole("navigation", { name: /Run workflow/i })).queryByRole(
+      "button",
+      { name: /^Running$/i },
+    ),
+  ).not.toBeInTheDocument();
+  expect(
+    within(screen.getByTestId("run-results")).queryByRole("button", {
+      name: /Browse history/i,
+    }),
+  ).not.toBeInTheDocument();
 });
 
 test("shows version comparison against the previous run", async () => {
@@ -325,6 +410,10 @@ test("History step lists runs by day; clicking opens that version's Results", as
   expect(screen.getByText(/older uncovered ask/i)).toBeInTheDocument();
   expect(screen.getByTestId("older-run-badge")).toBeInTheDocument();
   expect(screen.getByTestId("older-run-note")).toHaveTextContent(/older snapshot/i);
+  expect(screen.getByTestId("run-status-badge")).toHaveTextContent(/partial/i);
+  expect(screen.getByTestId("run-status-badge").getAttribute("title")).toMatch(
+    /truncat|incomplete/i,
+  );
 });
 
 test("Run next version returns to Setup with required from/to", async () => {
@@ -333,10 +422,15 @@ test("Run next version returns to Setup with required from/to", async () => {
   await waitFor(() => screen.getByRole("button", { name: /Run next version/i }));
   await userEvent.click(screen.getByRole("button", { name: /Run next version/i }));
   await waitFor(() => expect(screen.getByTestId("run-setup")).toBeInTheDocument());
-  expect(screen.getByTestId("setup-howto")).toHaveTextContent(/Expected outcome/i);
+  expect(screen.getByTestId("setup-howto")).toHaveTextContent(/Window \+ skills/i);
+  expect(screen.getByTestId("setup-card")).toBeInTheDocument();
   expect(screen.getByLabelText(/window start date/i)).toBeInTheDocument();
   expect(screen.getByLabelText(/window end date/i)).toBeInTheDocument();
-  expect(screen.getByText(/Advanced filter/i)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /^Run now$/i })).toBeInTheDocument();
+  expect(screen.getByText(/span filter & preview/i)).toBeInTheDocument();
+  // Visual order: Window → Skills → Run (no numbered 1/2/3 chaos)
+  expect(screen.queryByText(/1\.\s*Pick window/i)).not.toBeInTheDocument();
+  expect(screen.queryByText(/3\.\s*Run now/i)).not.toBeInTheDocument();
 });
 
 test("Run now enqueues a closed from/to job and shows Running", async () => {

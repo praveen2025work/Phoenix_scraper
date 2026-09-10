@@ -21,8 +21,8 @@ function AppShell() {
   const atHome = pathname === "/";
   const onCapability = pathname.startsWith("/c/");
 
-  // Home pins the highlight to Capabilities. Keep last capabilityId so the rail
-  // can deep-link Setup/Gaps/Decide/History — only clear the in-page onSelect.
+  // Home pins the highlight to Capabilities. Keep last capabilityId so the
+  // left rail can deep-link Setup/Gaps/Decide/History (e.g. FOBO).
   useEffect(() => {
     if (atHome) {
       setCurrent("Capabilities");
@@ -35,39 +35,39 @@ function AppShell() {
   }, [atHome, onCapability, setCurrent, setHandlers]);
 
   return (
-    <div className="relative z-0 min-h-full">
-      <header className="sticky top-0 z-20 border-b border-border bg-background/90 backdrop-blur-md">
-        <div className="flex w-full items-center justify-between gap-3 px-3 py-2.5 sm:px-5 lg:px-6">
-          <div className="min-w-0">
-            <Link
-              to="/"
-              className="font-display text-xl font-semibold tracking-tight text-foreground hover:opacity-90"
-            >
-              pheonix
-            </Link>
-            <p className="truncate text-xs text-muted-foreground">
-              {atHome
-                ? "Pick a capability → run → close skill gaps"
-                : "Setup → run → gaps → decide → history"}
-            </p>
-          </div>
-          <nav className="flex shrink-0 items-center gap-3" aria-label="App">
-            {!atHome && (
+    <div className="relative z-0 flex min-h-full">
+      <ProductRail />
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="sticky top-0 z-20 border-b border-border bg-background/95 backdrop-blur-md">
+          <div className="flex w-full items-center justify-between gap-2 px-3 py-1.5 sm:gap-3 sm:px-4 lg:px-5">
+            <div className="min-w-0">
               <Link
                 to="/"
-                className="rounded-md border border-border bg-card px-3 py-1.5 text-sm font-medium text-foreground hover:bg-accent"
+                className="font-display block shrink-0 text-lg font-semibold tracking-tight text-foreground hover:opacity-90 sm:text-xl"
               >
-                All capabilities
+                Phoenix
               </Link>
-            )}
-            <ThemeToggle />
-          </nav>
-        </div>
-      </header>
+              <p className="hidden text-[11px] text-muted-foreground sm:block">
+                Capability evaluation
+              </p>
+            </div>
 
-      <div className="relative z-0 flex w-full flex-col md:flex-row">
-        <ProductRail />
-        <main className="app-shell-main relative z-0 flex-1 px-3 py-4 sm:px-5 lg:px-6 lg:py-5">
+            <nav className="flex shrink-0 items-center gap-1.5 sm:gap-2" aria-label="App">
+              {!atHome && (
+                <Link
+                  to="/"
+                  className="rounded-md border border-border bg-card px-2 py-1 text-xs font-medium text-foreground hover:bg-accent sm:px-2.5 sm:text-sm"
+                >
+                  Capabilities
+                </Link>
+              )}
+              <ThemeToggle />
+            </nav>
+          </div>
+        </header>
+
+        <main className="app-shell-main relative z-0 w-full flex-1 px-3 py-3 sm:px-4 lg:px-5 lg:py-4">
           <div className="mx-auto w-full max-w-7xl">
             <ErrorBoundary>
               <Suspense

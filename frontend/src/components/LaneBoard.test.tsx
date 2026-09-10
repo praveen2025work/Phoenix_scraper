@@ -17,7 +17,7 @@ const base: Candidate = {
   cluster_id: "a",
 };
 
-test("groups candidates into status columns", () => {
+test("groups candidates into status lanes", () => {
   renderWithProviders(
     <LaneBoard
       capabilityId="fobo"
@@ -28,9 +28,31 @@ test("groups candidates into status columns", () => {
     />,
     { route: "/c/fobo", path: "/c/:id" },
   );
-  expect(screen.getByRole("heading", { name: /Ready to decide \(1\)/i })).toBeInTheDocument();
-  expect(screen.getByRole("heading", { name: /Building evidence \(1\)/i })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: /Ready · 1/i })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: /Building evidence · 1/i })).toBeInTheDocument();
   expect(screen.getByText("why recon break")).toBeInTheDocument();
+  expect(screen.getByText("ready")).toHaveAttribute("data-status", "ready");
+  expect(screen.getByText("accumulating")).toHaveAttribute("data-status", "accumulating");
+  expect(screen.getAllByText("Review evidence").length).toBe(2);
+  expect(screen.getAllByText("40 asks · 6 users").length).toBe(2);
+  expect(screen.queryByText(/Ready — open to accept/i)).not.toBeInTheDocument();
+});
+
+test("hides promoted behind a toggle by default", async () => {
+  renderWithProviders(
+    <LaneBoard
+      capabilityId="fobo"
+      candidates={[{ ...base, status: "promoted", title: "already shipped" }]}
+    />,
+    { route: "/c/fobo", path: "/c/:id" },
+  );
+  expect(screen.queryByText("already shipped")).not.toBeInTheDocument();
+  expect(
+    screen.getByText(/No active candidates — expand promoted or hidden below/i),
+  ).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: /show promoted \(1\)/i }));
+  expect(screen.getByText("already shipped")).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: /Promoted · 1/i })).toBeInTheDocument();
 });
 
 test("hides rejected/snoozed/stale behind a toggle", async () => {

@@ -7,7 +7,7 @@ import {
   type ReactNode,
 } from "react";
 
-/** App-wide guided journey: always visible in the product rail. */
+/** App-wide guided journey: highlighted in the left product rail. */
 export const JOURNEY_STEPS = [
   "Capabilities",
   "Setup",
@@ -27,7 +27,7 @@ type JourneyHandlers = {
 type JourneyValue = {
   current: JourneyStep;
   setCurrent: (step: JourneyStep) => void;
-  /** Last capability in context — survives home so the rail can deep-link. */
+  /** Last capability in context — survives home so the left rail can deep-link. */
   capabilityId: string | null;
   setCapabilityId: (id: string | null) => void;
   handlers: JourneyHandlers;

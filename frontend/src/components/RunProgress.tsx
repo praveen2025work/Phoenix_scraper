@@ -52,15 +52,15 @@ export function RunProgress({
               const past = !errored && i < currentIdx;
               return (
                 <li key={s}>
-                  <Badge variant={active ? "default" : past ? "outline" : "outline"}>
-                    <span className="tabular-nums text-muted-foreground">{i + 1}.</span>{" "}
+                  <Badge variant={active ? "info" : past ? "ok" : "outline"}>
+                    <span className="tabular-nums opacity-80">{i + 1}.</span>{" "}
                     {STAGE_LABEL[s]}
                     {s === stage ? ` (${s})` : ""}
                   </Badge>
                 </li>
               );
             })}
-            {errored && <Badge variant="warn">error</Badge>}
+            {errored && <Badge variant="error">error</Badge>}
           </ol>
 
           <div

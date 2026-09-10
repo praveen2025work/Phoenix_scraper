@@ -54,7 +54,7 @@ export function ApiKeyGate({ children }: { children: ReactNode }) {
         setState("open");
       }}
     >
-      <h1 className="text-lg font-semibold">pheonix</h1>
+      <h1 className="text-lg font-semibold">Phoenix</h1>
       <p className="text-sm text-muted-foreground">
         {authRequired
           ? "This API requires an X-API-Key."

@@ -31,9 +31,22 @@ test("previews the current filter and shows the counts and samples", async () =>
     <FilterEditor capabilityId="fobo" initial={{ workflow_stage: "fobo_recon" }} windowDays={30} />,
   );
   await waitFor(() => expect(screen.getByText("57")).toBeInTheDocument());
-  expect(screen.getByText(/of 388/)).toBeInTheDocument();
+  expect(screen.getByText(/\/ 388 spans/)).toBeInTheDocument();
   expect(screen.getByText("fobo_recon")).toBeInTheDocument();
   expect(screen.getByText(/why is there a recon break/)).toBeInTheDocument();
+});
+
+test("preview caps sample prompts at three", async () => {
+  mock({
+    ...PREVIEW,
+    sample_prompts: ["one", "two", "three", "four", "five"],
+  });
+  renderWithProviders(
+    <FilterEditor capabilityId="fobo" initial={{}} windowDays={30} />,
+  );
+  await waitFor(() => expect(screen.getByText("one")).toBeInTheDocument());
+  expect(screen.getByText("three")).toBeInTheDocument();
+  expect(screen.queryByText("four")).not.toBeInTheDocument();
 });
 
 test("typing patterns sends them as search_any", async () => {

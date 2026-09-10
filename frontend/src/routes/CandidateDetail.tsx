@@ -12,6 +12,7 @@ import {
 import { OutcomeBanner } from "@/components/OutcomeBanner";
 import { PageHeader } from "@/components/PageHeader";
 import { Sparkline } from "@/components/Sparkline";
+import { StatusBadge } from "@/components/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -366,9 +367,7 @@ export function CandidateDetail() {
           <div className="flex flex-wrap gap-1">
             <Badge>{lane}</Badge>
             {candidate.subtype && <Badge variant="outline">{candidate.subtype}</Badge>}
-            <Badge variant={candidate.status === "ready" ? "ready" : "outline"}>
-              {candidate.status}
-            </Badge>
+            <StatusBadge status={candidate.status} />
             {candidate.matched_skill && (
               <Badge variant="outline">→ {candidate.matched_skill}</Badge>
             )}

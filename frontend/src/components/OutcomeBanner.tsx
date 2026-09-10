@@ -58,6 +58,7 @@ export function OutcomeBanner({
       )}
       data-testid={testId}
       aria-labelledby={titleId}
+      role="status"
     >
       <div className="flex items-start justify-between gap-2">
         <p

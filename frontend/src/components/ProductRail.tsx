@@ -1,18 +1,40 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  JOURNEY_STEPS,
+  ChevronLeft,
+  ChevronRight,
+  GitBranch,
+  History,
+  Play,
+  Scale,
+  Settings2,
+} from "lucide-react";
+import {
   type JourneyStep,
   useJourney,
 } from "@/journey/JourneyContext";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 
-const HINT: Record<JourneyStep, string> = {
-  Capabilities: "Pick scope",
-  Setup: "Window & skills",
-  Run: "Scrape & match",
-  Gaps: "What skills miss",
-  Decide: "Promote or harden",
-  History: "Past versions",
+/** Product-story steps shown in the left rail (Capabilities lives on the home link). */
+export const STORY_STEPS = [
+  "Setup",
+  "Run",
+  "Gaps",
+  "Decide",
+  "History",
+] as const;
+
+export type StoryStep = (typeof STORY_STEPS)[number];
+
+const RAIL_COLLAPSED_KEY = "phoenix_rail_collapsed";
+
+const STEP_ICONS: Record<StoryStep, typeof Settings2> = {
+  Setup: Settings2,
+  Run: Play,
+  Gaps: GitBranch,
+  Decide: Scale,
+  History: History,
 };
 
 /** Deep-link targets for when a capability is known but detail isn't mounted. */
@@ -37,136 +59,144 @@ export function journeyStepPath(
 }
 
 function disabledReason(
-  step: JourneyStep,
+  step: StoryStep,
   capabilityId: string | null,
 ): string | null {
-  if (step === "Capabilities") return null;
   if (!capabilityId) return "Open a capability first";
-  if (step === "Run") return "Start a run from Setup → Run now";
+  if (step === "Run") return "Shown while a run is in progress";
   return null;
 }
 
-/** Persistent product journey rail — always shows the guided loop. */
+function readCollapsed(): boolean {
+  try {
+    return localStorage.getItem(RAIL_COLLAPSED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Vertical product journey — left app chrome.
+ * Capability pages keep WizardSteps for real Setup/Running/Results/History nav.
+ */
 export function ProductRail() {
   const { current, handlers, capabilityId } = useJourney();
-  const idx = JOURNEY_STEPS.indexOf(current);
+  const idx = STORY_STEPS.indexOf(current as StoryStep);
+  const [collapsed, setCollapsed] = useState(readCollapsed);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(RAIL_COLLAPSED_KEY, collapsed ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  }, [collapsed]);
 
   return (
-    <nav
-      aria-label="Product journey"
+    <aside
       data-testid="product-rail"
-      className="product-rail relative z-0 border-b border-border bg-rail px-2 py-2 md:border-b-0 md:border-r md:px-2 md:py-3"
+      data-collapsed={collapsed ? "true" : "false"}
+      className={cn(
+        "product-rail sticky top-0 flex h-svh shrink-0 flex-col border-r border-border bg-rail transition-[width] duration-200",
+        collapsed ? "w-14" : "w-44",
+      )}
     >
-      <p className="mb-1.5 hidden px-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground md:block">
-        Journey
-      </p>
-      <ol className="flex gap-0.5 overflow-x-auto md:flex-col md:gap-0.5 md:overflow-visible">
-        {JOURNEY_STEPS.map((step, i) => {
-          const active = step === current;
-          const done = i < idx;
-          const reason = disabledReason(step, capabilityId);
-          const inPage = !!handlers.onSelect && !!capabilityId && step !== "Run";
-          const href =
-            !reason && !inPage && capabilityId
-              ? journeyStepPath(step, capabilityId)
-              : step === "Capabilities"
-                ? "/"
+      <div
+        className={cn(
+          "flex items-center border-b border-border px-2 py-2",
+          collapsed ? "justify-center" : "justify-end",
+        )}
+      >
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-label={collapsed ? "Expand journey rail" : "Collapse journey rail"}
+          aria-expanded={!collapsed}
+          onClick={() => setCollapsed((c) => !c)}
+        >
+          {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+        </Button>
+      </div>
+
+      <nav aria-label="Product journey" className="product-journey min-h-0 flex-1 px-2 py-3">
+        <ol className="flex flex-col gap-1">
+          {STORY_STEPS.map((step, i) => {
+            const active = step === current;
+            const done = idx >= 0 && i < idx;
+            const reason = disabledReason(step, capabilityId);
+            const inPage =
+              !!handlers.onSelect && !!capabilityId && step !== "Run";
+            const href =
+              !reason && !inPage && capabilityId
+                ? journeyStepPath(step, capabilityId)
                 : null;
-          const className = cn(
-            "journey-step flex min-w-[6.5rem] flex-col rounded-md border px-2 py-1.5 text-left transition-[background-color,border-color] duration-150 md:min-w-0",
-            active && "border-primary bg-background text-foreground shadow-sm",
-            !active && done && "border-transparent bg-background/50 text-foreground",
-            !active &&
-              !done &&
-              "border-transparent text-muted-foreground hover:bg-background/40",
-            reason && "cursor-not-allowed opacity-60 hover:bg-transparent",
-          );
-          const body = (
-            <>
-              <span className="flex items-center gap-1.5">
+            const Icon = STEP_ICONS[step];
+            const className = cn(
+              "journey-step inline-flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm font-medium transition-colors duration-150",
+              collapsed && "justify-center px-0",
+              active && "bg-primary text-primary-foreground shadow-sm",
+              !active &&
+                done &&
+                "text-foreground/80 hover:bg-accent hover:text-foreground",
+              !active &&
+                !done &&
+                "text-muted-foreground hover:bg-accent/70 hover:text-foreground",
+              reason && "cursor-not-allowed opacity-50 hover:bg-transparent",
+            );
+            const label = (
+              <>
+                <Icon size={16} className="shrink-0" aria-hidden="true" />
+                {!collapsed && <span className="truncate">{step}</span>}
+              </>
+            );
+
+            const item = (() => {
+              if (inPage && handlers.onSelect) {
+                return (
+                  <button
+                    type="button"
+                    className={className}
+                    aria-label={step}
+                    aria-current={active ? "step" : undefined}
+                    title={collapsed ? step : undefined}
+                    onClick={() => handlers.onSelect?.(step)}
+                  >
+                    {label}
+                  </button>
+                );
+              }
+              if (href) {
+                return (
+                  <Link
+                    to={href}
+                    className={className}
+                    aria-label={step}
+                    aria-current={active ? "step" : undefined}
+                    title={collapsed ? step : undefined}
+                  >
+                    {label}
+                  </Link>
+                );
+              }
+              return (
                 <span
-                  className={cn(
-                    "inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold tabular-nums",
-                    active
-                      ? "bg-primary text-primary-foreground"
-                      : done
-                        ? "bg-accent text-foreground"
-                        : "bg-muted text-muted-foreground",
-                  )}
-                >
-                  {i + 1}
-                </span>
-                <span className={cn("text-sm", active ? "font-semibold" : "font-medium")}>
-                  {step}
-                </span>
-              </span>
-              <span className="mt-0.5 pl-[1.375rem] text-[11px] leading-tight text-muted-foreground">
-                {HINT[step]}
-              </span>
-            </>
-          );
-
-          if (step === "Capabilities") {
-            return (
-              <li key={step}>
-                <Link
-                  to="/"
-                  className={className}
-                  aria-current={active ? "step" : undefined}
-                >
-                  {body}
-                </Link>
-              </li>
-            );
-          }
-
-          if (inPage && handlers.onSelect) {
-            return (
-              <li key={step}>
-                <button
-                  type="button"
-                  className={className}
+                  className={cn(className, reason && "cursor-not-allowed")}
                   aria-label={step}
+                  aria-disabled={reason ? "true" : undefined}
                   aria-current={active ? "step" : undefined}
-                  onClick={() => handlers.onSelect?.(step)}
+                  title={reason ?? (collapsed ? step : undefined)}
+                  data-disabled-reason={reason ?? undefined}
                 >
-                  {body}
-                </button>
-              </li>
-            );
-          }
+                  {label}
+                </span>
+              );
+            })();
 
-          if (href) {
-            return (
-              <li key={step}>
-                <Link
-                  to={href}
-                  className={className}
-                  aria-label={step}
-                  aria-current={active ? "step" : undefined}
-                >
-                  {body}
-                </Link>
-              </li>
-            );
-          }
-
-          return (
-            <li key={step}>
-              <span
-                className={cn(className, "cursor-not-allowed")}
-                aria-label={step}
-                aria-disabled="true"
-                aria-current={active ? "step" : undefined}
-                title={reason ?? undefined}
-                data-disabled-reason={reason ?? undefined}
-              >
-                {body}
-              </span>
-            </li>
-          );
-        })}
-      </ol>
-    </nav>
+            return <li key={step}>{item}</li>;
+          })}
+        </ol>
+      </nav>
+    </aside>
   );
 }

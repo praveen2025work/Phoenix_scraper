@@ -5,7 +5,6 @@ import {
   useFilterPreview,
   usePatchCapability,
 } from "@/api/hooks";
-import { Panel } from "@/components/Panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,8 +14,10 @@ const TEXT_FIELDS: { key: keyof SpanFilter; label: string; hint: string }[] = [
   { key: "workflow_stage", label: "workflow stage", hint: "fobo_recon" },
   { key: "asset_class", label: "asset class", hint: "fx" },
   { key: "model_name", label: "model", hint: "claude-sonnet" },
-  { key: "search", label: "search (must contain)", hint: "recon" },
+  { key: "search", label: "search", hint: "recon" },
 ];
+
+const MAX_SAMPLE_PROMPTS = 3;
 
 /** Debounce so every keystroke doesn't fire a preview request. */
 function useDebounced<T>(value: T, ms = 400): T {
@@ -61,6 +62,7 @@ export function FilterEditor({
       : undefined,
   });
   const p = preview.data;
+  const samples = (p?.sample_prompts ?? []).slice(0, MAX_SAMPLE_PROMPTS);
 
   function set(key: keyof SpanFilter, value: string) {
     setFilter((f) => ({ ...f, [key]: value.trim() ? value : null }));
@@ -76,104 +78,113 @@ export function FilterEditor({
     );
   }
 
+  const windowLabel =
+    windowFrom && windowTo
+      ? `${windowFrom} → ${windowTo}`
+      : `last ${windowDays}d`;
+
   return (
-    <div className="space-y-4">
-      <Panel
-        title="Span filter"
-        subtitle="what this capability looks at — edit, watch the match count, then save"
-      >
-        <div className="grid gap-3 sm:grid-cols-2">
+    <div className="space-y-4" data-testid="filter-editor">
+      <div className="space-y-3">
+        <div className="grid gap-2 sm:grid-cols-2">
           {TEXT_FIELDS.map((f) => (
-            <label key={f.key} className="text-xs text-muted-foreground">
+            <label key={f.key} className="text-[11px] text-muted-foreground">
               {f.label}
               <Input
                 value={(filter[f.key] as string | null) ?? ""}
                 onChange={(e) => set(f.key, e.target.value)}
                 placeholder={f.hint}
                 aria-label={f.label}
-                className="mt-1"
+                className="mt-0.5 h-8"
               />
             </label>
           ))}
-          <label className="text-xs text-muted-foreground sm:col-span-2">
-            search any of these (one per line — a span matches if it contains ANY)
+          <label className="text-[11px] text-muted-foreground sm:col-span-2">
+            search any (one per line)
             <textarea
               value={anyText}
               onChange={(e) => setAnyText(e.target.value)}
               aria-label="search any patterns"
-              rows={4}
+              rows={3}
               placeholder={"recon break\nunmatched trade"}
-              className="mt-1 w-full rounded-md border border-border bg-background p-2
+              className="mt-0.5 w-full rounded-md border border-border bg-background p-2
                          font-mono text-xs"
             />
           </label>
         </div>
-        <div className="mt-3 flex items-center gap-2">
-          <Button onClick={save} disabled={patch.isPending}>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" onClick={save} disabled={patch.isPending}>
             {patch.isPending ? "Saving…" : "Save filter"}
           </Button>
-          <span className="text-xs text-muted-foreground">
-            saving does not run it — hit Run now afterwards
+          <span className="text-[11px] text-muted-foreground">
+            Save only — then Run now
           </span>
         </div>
-      </Panel>
+      </div>
 
-      <Panel
-        title="Preview"
-        subtitle={
-          windowFrom && windowTo
-            ? `what this filter catches ${windowFrom} → ${windowTo} — nothing is saved or run`
-            : `what this filter catches in the last ${windowDays} days — nothing is saved or run`
-        }
-        isLoading={preview.isLoading}
-        error={preview.error}
-      >
-        {p && (
-          <div className="space-y-3">
-            <div className="flex flex-wrap gap-4 text-sm">
+      <div className="space-y-2 border-t border-border/70 pt-3" data-testid="filter-preview">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h4 className="text-sm font-semibold tracking-tight">Preview</h4>
+          <span className="text-[11px] text-muted-foreground">{windowLabel}</span>
+        </div>
+
+        {preview.isLoading ? (
+          <p className="text-xs text-muted-foreground">Loading preview…</p>
+        ) : preview.error ? (
+          <p className="text-sm text-destructive" role="alert">
+            {(preview.error as Error).message}
+          </p>
+        ) : p ? (
+          <div className="space-y-2">
+            <p className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs tabular-nums">
               <span>
-                <strong className="tabular-nums">{p.n_spans}</strong> spans
-                <span className="text-muted-foreground"> of {p.n_spans_in_store}</span>
+                <strong>{p.n_spans}</strong>
+                <span className="text-muted-foreground"> / {p.n_spans_in_store} spans</span>
               </span>
               <span>
-                <strong className="tabular-nums">{p.n_llm_spans}</strong> LLM
+                <strong>{p.n_llm_spans}</strong> LLM
               </span>
               <span>
-                <strong className="tabular-nums">{p.n_users}</strong> users
+                <strong>{p.n_users}</strong> users
               </span>
               <span>
-                <strong className="tabular-nums">{p.n_sessions}</strong> sessions
+                <strong>{p.n_sessions}</strong> sessions
               </span>
-            </div>
+            </p>
 
             {p.n_spans === 0 ? (
-              <p className="text-sm text-destructive" role="alert">
-                Nothing matches. A run with this filter would find no spans.
+              <p className="text-xs text-destructive" role="alert">
+                Nothing matches — a run would find no spans.
               </p>
             ) : (
               <>
-                <div className="flex flex-wrap items-center gap-1 text-xs">
-                  <span className="text-muted-foreground">stages caught:</span>
-                  {p.distinct.workflow_stage.length ? (
-                    p.distinct.workflow_stage.map((s) => <Badge key={s}>{s}</Badge>)
-                  ) : (
-                    <span className="text-muted-foreground">
-                      none — these spans carry no workflow_stage
-                    </span>
-                  )}
-                </div>
-                <ul className="space-y-1">
-                  {p.sample_prompts.map((s, i) => (
-                    <li key={i} className="truncate font-mono text-xs text-muted-foreground">
-                      {s}
-                    </li>
-                  ))}
-                </ul>
+                {p.distinct.workflow_stage.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1 text-[11px]">
+                    <span className="text-muted-foreground">stages:</span>
+                    {p.distinct.workflow_stage.map((s) => (
+                      <Badge key={s} className="px-1.5 py-0 text-[10px]">
+                        {s}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+                {samples.length > 0 && (
+                  <ul className="space-y-0.5">
+                    {samples.map((s, i) => (
+                      <li
+                        key={i}
+                        className="truncate font-mono text-[11px] text-muted-foreground"
+                      >
+                        {s}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </>
             )}
           </div>
-        )}
-      </Panel>
+        ) : null}
+      </div>
     </div>
   );
 }

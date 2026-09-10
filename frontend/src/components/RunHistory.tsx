@@ -5,6 +5,7 @@ import {
 } from "@/api/hooks";
 import { OutcomeBanner } from "@/components/OutcomeBanner";
 import { Badge } from "@/components/ui/badge";
+import { jobStatusVariant } from "@/lib/statusStyles";
 import { Button } from "@/components/ui/button";
 import {
   calendarDay,
@@ -154,11 +155,11 @@ export function RunHistory({
                         {formatHumanDateTime(run.run_id)}
                       </span>
                       {isLatest && (
-                        <Badge variant="ready" data-testid="history-latest-badge">
+                        <Badge variant="info" data-testid="history-latest-badge">
                           Latest
                         </Badge>
                       )}
-                      <Badge variant={run.status === "ok" ? "outline" : "warn"}>
+                      <Badge variant={jobStatusVariant(run.status)}>
                         {run.status ?? "—"}
                       </Badge>
                       <span className="text-xs text-muted-foreground">

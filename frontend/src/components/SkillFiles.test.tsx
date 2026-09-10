@@ -38,10 +38,12 @@ test("lists the capability's skill files", async () => {
   expect(screen.getByText("fx-recon-triage")).toBeInTheDocument();
 });
 
-test("empty state points at the two ways to add one", async () => {
+test("empty state is a single short line", async () => {
   mock([]);
   renderWithProviders(<SkillFiles capabilityId="fobo" />);
   await waitFor(() => expect(screen.getByText(/No skill files yet/)).toBeInTheDocument());
+  expect(screen.getByRole("status")).toHaveTextContent(/upload a/);
+  expect(screen.queryByText(/cannot tell you what your docs already cover/i)).not.toBeInTheDocument();
 });
 
 test("pasting a skill file POSTs filename + content", async () => {
@@ -49,7 +51,7 @@ test("pasting a skill file POSTs filename + content", async () => {
   renderWithProviders(<SkillFiles capabilityId="fobo" />);
   await waitFor(() => screen.getByText(/No skill files yet/));
 
-  await userEvent.click(screen.getByText(/or paste one/i));
+  await userEvent.click(screen.getByText(/Paste skill content/i));
   await userEvent.type(screen.getByLabelText(/skill filename/i), "fx-recon-triage.md");
   await userEvent.type(screen.getByLabelText(/skill file content/i), "---{Enter}name: x{Enter}---");
   await userEvent.click(screen.getByRole("button", { name: /save skill file/i }));

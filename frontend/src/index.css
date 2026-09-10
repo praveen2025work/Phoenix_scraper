@@ -1,19 +1,65 @@
 @import "tailwindcss";
 
 @theme {
-  --color-background: hsl(168 18% 97%);
-  --color-foreground: hsl(200 28% 12%);
+  /* Brand: Barclays — Accent #00AEEF, Primary (light) #0077A8, Navy #00395D
+     Surfaces are neutral white / cool slate — never cyan/teal/green wash. */
+  --color-background: hsl(0 0% 100%);
+  --color-foreground: hsl(203 100% 18%); /* #00395D navy */
   --color-card: hsl(0 0% 100%);
-  --color-muted: hsl(170 16% 92%);
-  --color-muted-foreground: hsl(200 12% 38%);
-  --color-border: hsl(175 14% 82%);
-  --color-primary: hsl(174 55% 28%);
-  --color-primary-foreground: hsl(165 40% 98%);
-  --color-accent: hsl(168 22% 90%);
+  --color-muted: hsl(210 16% 95%);
+  --color-muted-foreground: hsl(215 14% 38%);
+  --color-border: hsl(214 16% 86%);
+  --color-primary: hsl(197 100% 33%); /* #0077A8 — light chrome */
+  --color-primary-foreground: hsl(0 0% 100%);
+  --color-accent: hsl(199 55% 94%); /* soft Barclays blue tint */
   --color-destructive: hsl(4 72% 48%);
-  --color-rail: hsl(172 20% 93%);
-  --color-surface: hsl(170 24% 94%);
-  --color-surface-strong: hsl(174 32% 90%);
+  --color-success: hsl(145 55% 28%);
+  --color-warn: hsl(36 85% 36%);
+  --color-rail: hsl(210 14% 97%);
+  --color-surface: hsl(210 12% 98%);
+  --color-surface-strong: hsl(199 40% 95%);
+
+  /* Candidate / job status badges — light: distinct hue per status */
+  --color-status-new: hsl(205 78% 93%);
+  --color-status-new-fg: hsl(205 72% 26%);
+  --color-status-new-border: hsl(205 48% 68%);
+  --color-status-accumulating: hsl(262 48% 93%);
+  --color-status-accumulating-fg: hsl(262 48% 30%);
+  --color-status-accumulating-border: hsl(262 35% 70%);
+  --color-status-insufficient: hsl(210 14% 91%);
+  --color-status-insufficient-fg: hsl(210 18% 28%);
+  --color-status-insufficient-border: hsl(210 12% 66%);
+  --color-status-ready: hsl(152 52% 90%);
+  --color-status-ready-fg: hsl(152 68% 20%);
+  --color-status-ready-border: hsl(152 42% 48%);
+  --color-status-accepted: hsl(199 58% 90%);
+  --color-status-accepted-fg: hsl(199 72% 24%);
+  --color-status-accepted-border: hsl(199 45% 48%);
+  --color-status-promoted: hsl(278 42% 92%);
+  --color-status-promoted-fg: hsl(278 48% 28%);
+  --color-status-promoted-border: hsl(278 32% 64%);
+  --color-status-rejected: hsl(4 70% 93%);
+  --color-status-rejected-fg: hsl(4 68% 32%);
+  --color-status-rejected-border: hsl(4 50% 66%);
+  --color-status-snoozed: hsl(32 85% 92%);
+  --color-status-snoozed-fg: hsl(28 75% 28%);
+  --color-status-snoozed-border: hsl(32 55% 60%);
+  --color-status-stale: hsl(30 12% 90%);
+  --color-status-stale-fg: hsl(30 12% 30%);
+  --color-status-stale-border: hsl(30 8% 64%);
+  --color-status-ok: hsl(145 50% 90%);
+  --color-status-ok-fg: hsl(145 60% 22%);
+  --color-status-ok-border: hsl(145 40% 48%);
+  --color-status-partial: hsl(42 90% 90%);
+  --color-status-partial-fg: hsl(36 80% 26%);
+  --color-status-partial-border: hsl(38 60% 54%);
+  --color-status-error: hsl(4 72% 93%);
+  --color-status-error-fg: hsl(4 72% 32%);
+  --color-status-error-border: hsl(4 55% 64%);
+  --color-status-info: hsl(214 70% 92%);
+  --color-status-info-fg: hsl(214 65% 28%);
+  --color-status-info-border: hsl(214 45% 64%);
+
   --radius-base: 0.625rem;
   --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Source Serif 4", "Iowan Old Style", "Palatino Linotype", serif;
@@ -25,59 +71,209 @@
 
 @media (prefers-color-scheme: dark) {
   @theme {
-    --color-background: hsl(200 22% 8%);
-    --color-foreground: hsl(165 18% 94%);
-    --color-card: hsl(200 20% 11%);
-    --color-muted: hsl(195 16% 16%);
-    --color-muted-foreground: hsl(175 10% 68%);
-    --color-border: hsl(190 14% 22%);
-    --color-primary: hsl(168 42% 52%);
-    --color-primary-foreground: hsl(200 28% 8%);
-    --color-accent: hsl(195 16% 18%);
-    --color-rail: hsl(200 20% 10%);
-    --color-surface: hsl(198 18% 13%);
-    --color-surface-strong: hsl(174 22% 16%);
+    --color-background: hsl(0 0% 4%); /* #0A0A0A */
+    --color-foreground: hsl(210 20% 96%);
+    --color-card: hsl(0 0% 9%);
+    --color-muted: hsl(0 0% 12%);
+    --color-muted-foreground: hsl(210 10% 68%);
+    --color-border: hsl(0 0% 18%);
+    --color-primary: hsl(196 100% 47%); /* #00AEEF */
+    --color-primary-foreground: hsl(203 100% 10%);
+    --color-accent: hsl(199 30% 14%);
+    --color-success: hsl(145 42% 55%);
+    --color-warn: hsl(38 80% 55%);
+    --color-rail: hsl(0 0% 7%);
+    --color-surface: hsl(0 0% 10%);
+    --color-surface-strong: hsl(199 28% 14%);
+
+    --color-status-new: hsl(205 40% 18%);
+    --color-status-new-fg: hsl(205 70% 78%);
+    --color-status-new-border: hsl(205 35% 36%);
+    --color-status-accumulating: hsl(262 28% 18%);
+    --color-status-accumulating-fg: hsl(262 55% 80%);
+    --color-status-accumulating-border: hsl(262 25% 38%);
+    --color-status-insufficient: hsl(210 12% 18%);
+    --color-status-insufficient-fg: hsl(210 14% 75%);
+    --color-status-insufficient-border: hsl(210 10% 34%);
+    --color-status-ready: hsl(152 32% 16%);
+    --color-status-ready-fg: hsl(152 55% 72%);
+    --color-status-ready-border: hsl(152 30% 34%);
+    --color-status-accepted: hsl(199 35% 16%);
+    --color-status-accepted-fg: hsl(199 70% 72%);
+    --color-status-accepted-border: hsl(199 30% 34%);
+    --color-status-promoted: hsl(278 28% 18%);
+    --color-status-promoted-fg: hsl(278 50% 80%);
+    --color-status-promoted-border: hsl(278 24% 38%);
+    --color-status-rejected: hsl(4 40% 18%);
+    --color-status-rejected-fg: hsl(4 70% 78%);
+    --color-status-rejected-border: hsl(4 35% 36%);
+    --color-status-snoozed: hsl(32 40% 16%);
+    --color-status-snoozed-fg: hsl(36 75% 72%);
+    --color-status-snoozed-border: hsl(32 35% 34%);
+    --color-status-stale: hsl(30 8% 18%);
+    --color-status-stale-fg: hsl(30 10% 72%);
+    --color-status-stale-border: hsl(30 6% 34%);
+    --color-status-ok: hsl(145 30% 16%);
+    --color-status-ok-fg: hsl(145 50% 72%);
+    --color-status-ok-border: hsl(145 28% 34%);
+    --color-status-partial: hsl(38 40% 16%);
+    --color-status-partial-fg: hsl(40 75% 72%);
+    --color-status-partial-border: hsl(38 35% 34%);
+    --color-status-error: hsl(4 40% 18%);
+    --color-status-error-fg: hsl(4 70% 78%);
+    --color-status-error-border: hsl(4 35% 36%);
+    --color-status-info: hsl(214 35% 18%);
+    --color-status-info-fg: hsl(214 65% 78%);
+    --color-status-info-border: hsl(214 30% 36%);
   }
 }
 
 :root[data-theme="dark"] {
-  --color-background: hsl(200 22% 8%);
-  --color-foreground: hsl(165 18% 94%);
-  --color-card: hsl(200 20% 11%);
-  --color-muted: hsl(195 16% 16%);
-  --color-muted-foreground: hsl(175 10% 68%);
-  --color-border: hsl(190 14% 22%);
-  --color-primary: hsl(168 42% 52%);
-  --color-primary-foreground: hsl(200 28% 8%);
-  --color-accent: hsl(195 16% 18%);
-  --color-rail: hsl(200 20% 10%);
-  --color-surface: hsl(198 18% 13%);
-  --color-surface-strong: hsl(174 22% 16%);
+  --color-background: hsl(0 0% 4%); /* #0A0A0A */
+  --color-foreground: hsl(210 20% 96%);
+  --color-card: hsl(0 0% 9%);
+  --color-muted: hsl(0 0% 12%);
+  --color-muted-foreground: hsl(210 10% 68%);
+  --color-border: hsl(0 0% 18%);
+  --color-primary: hsl(196 100% 47%); /* #00AEEF */
+  --color-primary-foreground: hsl(203 100% 10%);
+  --color-accent: hsl(199 30% 14%);
+  --color-success: hsl(145 42% 55%);
+  --color-warn: hsl(38 80% 55%);
+  --color-rail: hsl(0 0% 7%);
+  --color-surface: hsl(0 0% 10%);
+  --color-surface-strong: hsl(199 28% 14%);
+
+  --color-status-new: hsl(205 40% 18%);
+  --color-status-new-fg: hsl(205 70% 78%);
+  --color-status-new-border: hsl(205 35% 36%);
+  --color-status-accumulating: hsl(262 28% 18%);
+  --color-status-accumulating-fg: hsl(262 55% 80%);
+  --color-status-accumulating-border: hsl(262 25% 38%);
+  --color-status-insufficient: hsl(210 12% 18%);
+  --color-status-insufficient-fg: hsl(210 14% 75%);
+  --color-status-insufficient-border: hsl(210 10% 34%);
+  --color-status-ready: hsl(152 32% 16%);
+  --color-status-ready-fg: hsl(152 55% 72%);
+  --color-status-ready-border: hsl(152 30% 34%);
+  --color-status-accepted: hsl(199 35% 16%);
+  --color-status-accepted-fg: hsl(199 70% 72%);
+  --color-status-accepted-border: hsl(199 30% 34%);
+  --color-status-promoted: hsl(278 28% 18%);
+  --color-status-promoted-fg: hsl(278 50% 80%);
+  --color-status-promoted-border: hsl(278 24% 38%);
+  --color-status-rejected: hsl(4 40% 18%);
+  --color-status-rejected-fg: hsl(4 70% 78%);
+  --color-status-rejected-border: hsl(4 35% 36%);
+  --color-status-snoozed: hsl(32 40% 16%);
+  --color-status-snoozed-fg: hsl(36 75% 72%);
+  --color-status-snoozed-border: hsl(32 35% 34%);
+  --color-status-stale: hsl(30 8% 18%);
+  --color-status-stale-fg: hsl(30 10% 72%);
+  --color-status-stale-border: hsl(30 6% 34%);
+  --color-status-ok: hsl(145 30% 16%);
+  --color-status-ok-fg: hsl(145 50% 72%);
+  --color-status-ok-border: hsl(145 28% 34%);
+  --color-status-partial: hsl(38 40% 16%);
+  --color-status-partial-fg: hsl(40 75% 72%);
+  --color-status-partial-border: hsl(38 35% 34%);
+  --color-status-error: hsl(4 40% 18%);
+  --color-status-error-fg: hsl(4 70% 78%);
+  --color-status-error-border: hsl(4 35% 36%);
+  --color-status-info: hsl(214 35% 18%);
+  --color-status-info-fg: hsl(214 65% 78%);
+  --color-status-info-border: hsl(214 30% 36%);
 }
 
 :root[data-theme="light"] {
-  --color-background: hsl(168 18% 97%);
-  --color-foreground: hsl(200 28% 12%);
+  --color-background: hsl(0 0% 100%);
+  --color-foreground: hsl(203 100% 18%); /* #00395D */
   --color-card: hsl(0 0% 100%);
-  --color-muted: hsl(170 16% 92%);
-  --color-muted-foreground: hsl(200 12% 38%);
-  --color-border: hsl(175 14% 82%);
-  --color-primary: hsl(174 55% 28%);
-  --color-primary-foreground: hsl(165 40% 98%);
-  --color-accent: hsl(168 22% 90%);
-  --color-rail: hsl(172 20% 93%);
-  --color-surface: hsl(170 24% 94%);
-  --color-surface-strong: hsl(174 32% 90%);
+  --color-muted: hsl(210 16% 95%);
+  --color-muted-foreground: hsl(215 14% 38%);
+  --color-border: hsl(214 16% 86%);
+  --color-primary: hsl(197 100% 33%); /* #0077A8 */
+  --color-primary-foreground: hsl(0 0% 100%);
+  --color-accent: hsl(199 55% 94%);
+  --color-success: hsl(145 55% 28%);
+  --color-warn: hsl(36 85% 36%);
+  --color-rail: hsl(210 14% 97%);
+  --color-surface: hsl(210 12% 98%);
+  --color-surface-strong: hsl(199 40% 95%);
+
+  --color-status-new: hsl(205 78% 93%);
+  --color-status-new-fg: hsl(205 72% 26%);
+  --color-status-new-border: hsl(205 48% 68%);
+  --color-status-accumulating: hsl(262 48% 93%);
+  --color-status-accumulating-fg: hsl(262 48% 30%);
+  --color-status-accumulating-border: hsl(262 35% 70%);
+  --color-status-insufficient: hsl(210 14% 91%);
+  --color-status-insufficient-fg: hsl(210 18% 28%);
+  --color-status-insufficient-border: hsl(210 12% 66%);
+  --color-status-ready: hsl(152 52% 90%);
+  --color-status-ready-fg: hsl(152 68% 20%);
+  --color-status-ready-border: hsl(152 42% 48%);
+  --color-status-accepted: hsl(199 58% 90%);
+  --color-status-accepted-fg: hsl(199 72% 24%);
+  --color-status-accepted-border: hsl(199 45% 48%);
+  --color-status-promoted: hsl(278 42% 92%);
+  --color-status-promoted-fg: hsl(278 48% 28%);
+  --color-status-promoted-border: hsl(278 32% 64%);
+  --color-status-rejected: hsl(4 70% 93%);
+  --color-status-rejected-fg: hsl(4 68% 32%);
+  --color-status-rejected-border: hsl(4 50% 66%);
+  --color-status-snoozed: hsl(32 85% 92%);
+  --color-status-snoozed-fg: hsl(28 75% 28%);
+  --color-status-snoozed-border: hsl(32 55% 60%);
+  --color-status-stale: hsl(30 12% 90%);
+  --color-status-stale-fg: hsl(30 12% 30%);
+  --color-status-stale-border: hsl(30 8% 64%);
+  --color-status-ok: hsl(145 50% 90%);
+  --color-status-ok-fg: hsl(145 60% 22%);
+  --color-status-ok-border: hsl(145 40% 48%);
+  --color-status-partial: hsl(42 90% 90%);
+  --color-status-partial-fg: hsl(36 80% 26%);
+  --color-status-partial-border: hsl(38 60% 54%);
+  --color-status-error: hsl(4 72% 93%);
+  --color-status-error-fg: hsl(4 72% 32%);
+  --color-status-error-border: hsl(4 55% 64%);
+  --color-status-info: hsl(214 70% 92%);
+  --color-status-info-fg: hsl(214 65% 28%);
+  --color-status-info-border: hsl(214 45% 64%);
 }
 
 body {
+  /* Subtle Barclays blue glow only — no green/teal page wash */
   background:
-    radial-gradient(1200px 480px at 12% -10%, hsl(174 40% 55% / 0.08), transparent 55%),
-    radial-gradient(900px 420px at 88% 0%, hsl(200 30% 50% / 0.06), transparent 50%),
+    radial-gradient(1100px 420px at 10% -8%, hsl(196 100% 47% / 0.06), transparent 55%),
+    radial-gradient(800px 360px at 92% 0%, hsl(203 100% 18% / 0.03), transparent 50%),
     var(--color-background);
   color: var(--color-foreground);
   font: 15px/1.55 var(--font-sans);
   letter-spacing: -0.01em;
+}
+
+@media (prefers-color-scheme: dark) {
+  body {
+    background:
+      radial-gradient(1000px 400px at 8% -10%, hsl(196 100% 47% / 0.12), transparent 55%),
+      radial-gradient(700px 320px at 95% 0%, hsl(197 100% 33% / 0.08), transparent 50%),
+      var(--color-background);
+  }
+}
+
+:root[data-theme="dark"] body {
+  background:
+    radial-gradient(1000px 400px at 8% -10%, hsl(196 100% 47% / 0.12), transparent 55%),
+    radial-gradient(700px 320px at 95% 0%, hsl(197 100% 33% / 0.08), transparent 50%),
+    var(--color-background);
+}
+
+:root[data-theme="light"] body {
+  background:
+    radial-gradient(1100px 420px at 10% -8%, hsl(196 100% 47% / 0.06), transparent 55%),
+    radial-gradient(800px 360px at 92% 0%, hsl(203 100% 18% / 0.03), transparent 50%),
+    var(--color-background);
 }
 
 h1,
@@ -118,20 +314,19 @@ h3 {
 }
 
 .product-rail {
-  background: color-mix(in oklab, var(--color-rail) 92%, transparent);
-  backdrop-filter: blur(8px);
+  background: var(--color-rail);
 }
 
-@media (min-width: 768px) {
-  .product-rail {
-    width: 11.5rem;
-    min-height: calc(100vh - 3.5rem);
-  }
+.product-journey ol {
+  scrollbar-width: none;
+}
+
+.product-journey ol::-webkit-scrollbar {
+  display: none;
 }
 
 .app-shell-main {
   min-width: 0;
-  flex: 1;
   position: relative;
   z-index: 0;
 }

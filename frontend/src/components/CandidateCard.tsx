@@ -1,47 +1,35 @@
 import { Link, useParams } from "react-router-dom";
 import type { Candidate } from "@/api/hooks";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/StatusBadge";
 import { Card, CardContent } from "@/components/ui/card";
 
-function decisionLabel(rung: string): string {
-  return rung === "deterministic" ? "Make deterministic" : "Promote to skill";
+function evidenceLine(candidate: Candidate): string {
+  const ev = candidate.current_evidence ?? {};
+  if (candidate.rung === "deterministic") {
+    return `${Math.round((ev.determinism_score ?? 0) * 100)}% determinism`;
+  }
+  return `${ev.count ?? 0} asks · ${ev.n_users ?? 0} users`;
 }
 
 export function CandidateCard({ candidate }: { candidate: Candidate }) {
   const { id } = useParams();
-  const ev = candidate.current_evidence ?? {};
-  const isDet = candidate.rung === "deterministic";
+  const href = `/c/${id}/candidate/${encodeURIComponent(candidate.candidate_id)}`;
   return (
-    <Card>
-      <CardContent className="space-y-2 p-4 text-sm">
+    <Card className="border-border/80 shadow-none transition-colors hover:border-primary/40">
+      <CardContent className="p-0 text-sm">
         <Link
-          to={`/c/${id}/candidate/${encodeURIComponent(candidate.candidate_id)}`}
-          className="text-base font-medium hover:underline"
+          to={href}
+          className="block space-y-1 p-2.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
         >
-          {candidate.title || candidate.candidate_id}
+          <div className="flex flex-wrap items-start justify-between gap-x-2 gap-y-1">
+            <span className="min-w-0 flex-1 font-medium leading-snug text-foreground">
+              {candidate.title || candidate.candidate_id}
+            </span>
+            <StatusBadge status={candidate.status} className="shrink-0 px-1.5 py-0" />
+          </div>
+          <p className="text-xs text-muted-foreground">{evidenceLine(candidate)}</p>
+          <span className="inline-block text-xs font-medium text-primary">Review evidence</span>
         </Link>
-        <div className="flex flex-wrap gap-1.5">
-          <Badge variant="outline">{decisionLabel(candidate.rung)}</Badge>
-          {candidate.subtype && <Badge variant="outline">{candidate.subtype}</Badge>}
-          {candidate.matched_skill && (
-            <Badge variant="outline">→ {candidate.matched_skill}</Badge>
-          )}
-        </div>
-        <p className="text-sm text-muted-foreground">
-          {isDet
-            ? `determinism ${Math.round((ev.determinism_score ?? 0) * 100)}% · ` +
-              `${ev.n_templates ?? "?"} templates · ${ev.n_answer_spans ?? 0} answers`
-            : `${ev.count ?? 0} asks · ${ev.n_users ?? 0} users`}
-        </p>
-        <p className="text-sm font-medium text-foreground">
-          {candidate.status === "ready"
-            ? "Ready — open to accept, then write the file"
-            : candidate.status === "accepted"
-              ? isDet
-                ? "Accepted — open to write the deterministic draft"
-                : "Accepted — open to write the skill file"
-              : "Open to review evidence & decide"}
-        </p>
       </CardContent>
     </Card>
   );
