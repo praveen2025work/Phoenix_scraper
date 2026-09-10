@@ -1,10 +1,14 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
 import { CapabilityDetail } from "./CapabilityDetail";
 import { renderWithProviders } from "@/test/renderWithProviders";
 
 afterEach(() => vi.restoreAllMocks());
+
+const RUN_ID = "2026-09-08T10:00:00+00:00";
+const PREV_RUN = "2026-09-07T10:00:00+00:00";
+const OLDER_RUN = "2026-09-01T10:00:00+00:00";
 
 const capBody = {
   capability: { id: "fobo", name: "FOBO", status: "active", filter: {}, window_days: 30 },
@@ -15,7 +19,7 @@ const capBody = {
     filter: { workflow_stage: "fobo_recon" },
     window_days: 30,
     last_run: {
-      run_id: "2026-09-08T10:00:00+00:00",
+      run_id: RUN_ID,
       status: "ok",
       n_spans: 100,
       n_in_scope_spans: 40,
@@ -26,52 +30,328 @@ const capBody = {
     },
     candidates: {},
   },
-  skill_files: [],
+  skill_files: ["fobo-break-triage.md"],
 };
 
-function mock() {
+const resultsBody = {
+  capability_id: "fobo",
+  run_id: RUN_ID,
+  status: "ok",
+  window_start: "2026-09-01T00:00:00+00:00",
+  window_end: "2026-09-08T00:00:00+00:00",
+  notes: [],
+  warnings: ["TRUNCATED: scrape hit limit"],
+  skill_hashes: { "fobo-break-triage.md": "abcd".repeat(16) },
+  funnel: {
+    n_spans: 100,
+    n_in_scope_spans: 40,
+    n_clusters: 3,
+    n_uncovered: 1,
+    n_unmatched: 0,
+    n_rung1_candidates: 1,
+    n_rung2_candidates: 0,
+    empty_at: null,
+    empty_reason: null,
+  },
+  uncovered: [
+    {
+      cluster_id: "c1",
+      representative: "why is recon break unmatched",
+      count: 12,
+      n_users: 4,
+      source_file: "fobo-break-triage.md",
+      status: "new",
+    },
+  ],
+  suggested_skill_updates: [
+    {
+      skill_name: "fobo-break-triage",
+      source_file: "fobo-break-triage.md",
+      uncovered_asks: 12,
+      n_users: 4,
+      n_new_prompts: 1,
+      new_prompts: ["why is recon break unmatched"],
+      new_keywords: ["unmatched"],
+    },
+  ],
+  rung1_candidates: [
+    {
+      candidate_id: "fobo:s:a",
+      capability_id: "fobo",
+      rung: "skill",
+      subtype: "new_skill",
+      status: "ready",
+      title: "why recon break",
+      matched_skill: null,
+      current_evidence: { count: 40, n_users: 6 },
+      cluster_id: "a",
+    },
+  ],
+  rung2_candidates: [],
+  previous_run_id: PREV_RUN,
+};
+
+const olderResultsBody = {
+  ...resultsBody,
+  run_id: OLDER_RUN,
+  previous_run_id: null,
+  uncovered: [
+    {
+      cluster_id: "c-old",
+      representative: "older uncovered ask",
+      count: 3,
+      n_users: 1,
+      status: "new",
+    },
+  ],
+  suggested_skill_updates: [],
+  rung1_candidates: [],
+  warnings: [],
+};
+
+const compareBody = {
+  capability_id: "fobo",
+  from_run: {
+    run_id: PREV_RUN,
+    window_start: null,
+    window_end: null,
+    skill_hashes: { "fobo-break-triage.md": "old".repeat(16) },
+    n_gaps: 3,
+  },
+  to_run: {
+    run_id: RUN_ID,
+    window_start: null,
+    window_end: null,
+    skill_hashes: { "fobo-break-triage.md": "abcd".repeat(16) },
+    n_gaps: 1,
+  },
+  skill_hash_changes: {
+    added: [],
+    removed: [],
+    changed: [
+      {
+        filename: "fobo-break-triage.md",
+        from: "old".repeat(16),
+        to: "abcd".repeat(16),
+      },
+    ],
+    unchanged: [],
+  },
+  gaps_closed: [
+    {
+      cluster_id: "old1",
+      representative: "old gap closed",
+      count: 5,
+      n_users: 2,
+      skill_name: null,
+      covered: false,
+      reason: "unmatched",
+    },
+  ],
+  gaps_new: [],
+  candidates_advancing: [
+    {
+      candidate_id: "fobo:s:a",
+      rung: "skill",
+      title: "why recon break",
+      from_status: "accumulating",
+      to_status: "ready",
+      change: "advanced",
+    },
+  ],
+};
+
+const skillsBody = [
+  {
+    filename: "fobo-break-triage.md",
+    bytes: 100,
+    valid: true,
+    name: "fobo-break-triage",
+    description: "triage",
+    n_example_prompts: 2,
+  },
+];
+
+const runsBody = [
+  {
+    capability_id: "fobo",
+    run_id: RUN_ID,
+    window_start: "2026-09-01T00:00:00+00:00",
+    window_end: "2026-09-08T00:00:00+00:00",
+    n_spans: 100,
+    n_in_scope_spans: 40,
+    n_clusters: 3,
+    n_rung1_candidates: 1,
+    n_rung2_candidates: 0,
+    status: "ok",
+  },
+  {
+    capability_id: "fobo",
+    run_id: PREV_RUN,
+    window_start: "2026-08-31T00:00:00+00:00",
+    window_end: "2026-09-07T00:00:00+00:00",
+    n_spans: 80,
+    n_in_scope_spans: 30,
+    n_clusters: 2,
+    n_rung1_candidates: 0,
+    n_rung2_candidates: 0,
+    status: "ok",
+  },
+  {
+    capability_id: "fobo",
+    run_id: OLDER_RUN,
+    window_start: "2026-08-25T00:00:00+00:00",
+    window_end: "2026-09-01T00:00:00+00:00",
+    n_spans: 50,
+    n_in_scope_spans: 20,
+    n_clusters: 1,
+    n_rung1_candidates: 0,
+    n_rung2_candidates: 0,
+    status: "partial",
+  },
+];
+
+function mock(opts?: { jobState?: string }) {
+  const jobState = opts?.jobState ?? "done";
   return vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
-    const p = new URL(String(url), "http://x").pathname;
+    const u = new URL(String(url), "http://x");
+    const p = decodeURIComponent(u.pathname);
     if (p === "/capabilities/fobo") return json(capBody);
-    if (p === "/capabilities/fobo/candidates")
-      return json([
-        {
-          candidate_id: "fobo:s:a",
-          capability_id: "fobo",
-          rung: "skill",
-          subtype: "new_skill",
-          status: "ready",
-          title: "why recon break",
-          matched_skill: null,
-          current_evidence: { count: 40, n_users: 6 },
-          cluster_id: "a",
-        },
-      ]);
+    if (p === "/capabilities/fobo/skills") return json(skillsBody);
+    if (p === "/capabilities/fobo/runs") return json(runsBody);
+    if (p === "/capabilities/fobo/candidates") return json(resultsBody.rung1_candidates);
+    if (p === `/capabilities/fobo/runs/${OLDER_RUN}/results`) return json(olderResultsBody);
+    if (p.endsWith("/results") && p.includes("/runs/")) return json(resultsBody);
+    if (p === "/capabilities/fobo/runs/compare") return json(compareBody);
     if (p === "/capabilities/fobo/jobs" && init?.method === "POST")
-      return json({ job_id: "job-1", state: "queued" });
-    if (p === "/capabilities/fobo/jobs/job-1")
-      return json({ state: "done", run_id: "2026-09-08T11:00:00+00:00", error: null });
-    return new Response("null", { status: 404 });
+      return json({
+        job_id: "job-1",
+        state: "queued",
+        stage: "queued",
+        progress: 0,
+        message: null,
+      });
+    if (p === "/capabilities/fobo/jobs/job-1") {
+      if (jobState === "running") {
+        return json({
+          state: "running",
+          stage: "scraping",
+          progress: 0.35,
+          message: "Pulling spans…",
+          run_id: null,
+          error: null,
+        });
+      }
+      return json({
+        state: "done",
+        stage: "done",
+        progress: 1,
+        message: "Complete",
+        run_id: RUN_ID,
+        error: null,
+      });
+    }
+    if (p === "/capabilities/preview" && init?.method === "POST")
+      return json({
+        n_spans: 10,
+        n_llm_spans: 8,
+        n_users: 2,
+        n_sessions: 3,
+        n_spans_in_store: 100,
+        window_days: 7,
+        distinct: { workflow_stage: [], asset_class: [], project: [] },
+        sample_prompts: [],
+      });
+    return new Response(JSON.stringify({ detail: `no mock for ${p}` }), {
+      status: 404,
+      headers: { "content-type": "application/json" },
+    });
   });
 }
+
 const json = (b: unknown) =>
   new Response(JSON.stringify(b), { status: 200, headers: { "content-type": "application/json" } });
 
-test("renders the header, run summary, and the two rung tabs", async () => {
+test("lands on Results for the last run with skill gaps first", async () => {
   mock();
   renderWithProviders(<CapabilityDetail />, { route: "/c/fobo", path: "/c/:id" });
-  await waitFor(() => expect(screen.getByText(/\/ FOBO/)).toBeInTheDocument());
-  expect(screen.getByText(/workflow_stage=fobo_recon/)).toBeInTheDocument();
-  expect(screen.getByRole("tab", { name: /Rung 1/i })).toBeInTheDocument();
-  expect(screen.getByRole("tab", { name: /Rung 2/i })).toBeInTheDocument();
-  expect(screen.getByText("why recon break")).toBeInTheDocument();
+  await waitFor(() => expect(screen.getByTestId("run-results")).toBeInTheDocument());
+  expect(screen.getByTestId("outcome-framing")).toHaveTextContent(/Gaps first/i);
+  expect(screen.getByRole("heading", { name: /^Skill gaps$/i })).toBeInTheDocument();
+  expect(screen.getAllByText(/why is recon break unmatched/i).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/Promote to skill/i).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/Make deterministic/i).length).toBeGreaterThan(0);
+  expect(screen.getAllByText("why recon break").length).toBeGreaterThan(0);
+  expect(screen.getByText(/TRUNCATED/)).toBeInTheDocument();
+  await waitFor(() =>
+    expect(screen.getByTestId("promotion-queue")).toHaveTextContent(
+      /Accepted — write file next/i,
+    ),
+  );
+  expect(screen.getByTestId("latest-run-badge")).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: /^Usage$/i })).toHaveAttribute(
+    "href",
+    "/c/fobo/analytics",
+  );
 });
 
-test("Run now enqueues a background job and polls it", async () => {
-  const spy = mock();
+test("shows version comparison against the previous run", async () => {
+  mock();
   renderWithProviders(<CapabilityDetail />, { route: "/c/fobo", path: "/c/:id" });
+  await waitFor(() =>
+    expect(screen.getByText(/fobo-break-triage.md updated/i)).toBeInTheDocument(),
+  );
+  expect(screen.getAllByText(/Since last version/i).length).toBeGreaterThan(0);
+  expect(screen.getByText(/old gap closed/i)).toBeInTheDocument();
+  expect(screen.getByText(/accumulating → ready/i)).toBeInTheDocument();
+  expect(screen.getByTestId("compare-picker")).toBeInTheDocument();
+});
+
+test("History step lists runs by day; clicking opens that version's Results", async () => {
+  mock();
+  renderWithProviders(<CapabilityDetail />, { route: "/c/fobo", path: "/c/:id" });
+  await waitFor(() => screen.getByTestId("run-results"));
+
+  const nav = screen.getByRole("navigation", { name: /Run workflow/i });
+  await userEvent.click(within(nav).getByRole("button", { name: /^History$/i }));
+  await waitFor(() => expect(screen.getByTestId("run-history")).toBeInTheDocument());
+  expect(screen.getByText(/Version history/i)).toBeInTheDocument();
+  expect(screen.getByText(/Same-day versions don't block each other/i)).toBeInTheDocument();
+  expect(screen.getByTestId("history-latest-badge")).toBeInTheDocument();
+  expect(screen.getByTestId(`history-run-${OLDER_RUN}`)).toBeInTheDocument();
+
+  await userEvent.click(screen.getByTestId(`history-run-${OLDER_RUN}`));
+  await waitFor(() => expect(screen.getByTestId("run-results")).toBeInTheDocument());
+  expect(screen.getByText(/older uncovered ask/i)).toBeInTheDocument();
+  expect(screen.getByTestId("older-run-badge")).toBeInTheDocument();
+  expect(screen.getByTestId("older-run-note")).toHaveTextContent(/older snapshot/i);
+});
+
+test("Run next version returns to Setup with required from/to", async () => {
+  mock();
+  renderWithProviders(<CapabilityDetail />, { route: "/c/fobo", path: "/c/:id" });
+  await waitFor(() => screen.getByRole("button", { name: /Run next version/i }));
+  await userEvent.click(screen.getByRole("button", { name: /Run next version/i }));
+  await waitFor(() => expect(screen.getByTestId("run-setup")).toBeInTheDocument());
+  expect(screen.getByTestId("setup-howto")).toHaveTextContent(/Expected outcome/i);
+  expect(screen.getByLabelText(/window start date/i)).toBeInTheDocument();
+  expect(screen.getByLabelText(/window end date/i)).toBeInTheDocument();
+  expect(screen.getByText(/Advanced filter/i)).toBeInTheDocument();
+});
+
+test("Run now enqueues a closed from/to job and shows Running", async () => {
+  const spy = mock({ jobState: "running" });
+  renderWithProviders(<CapabilityDetail />, { route: "/c/fobo", path: "/c/:id" });
+  await waitFor(() => screen.getByRole("button", { name: /Run next version/i }));
+  await userEvent.click(screen.getByRole("button", { name: /Run next version/i }));
   await waitFor(() => screen.getByRole("button", { name: /run now/i }));
+
+  await userEvent.clear(screen.getByLabelText(/window start date/i));
+  await userEvent.type(screen.getByLabelText(/window start date/i), "2026-05-01");
+  await userEvent.clear(screen.getByLabelText(/window end date/i));
+  await userEvent.type(screen.getByLabelText(/window end date/i), "2026-06-01");
   await userEvent.click(screen.getByRole("button", { name: /run now/i }));
+
   await waitFor(() =>
     expect(
       spy.mock.calls.some(
@@ -81,45 +361,16 @@ test("Run now enqueues a background job and polls it", async () => {
       ),
     ).toBe(true),
   );
-  await waitFor(() =>
-    expect(spy.mock.calls.some(([u]) => String(u).includes("/jobs/job-1"))).toBe(true),
+  const post = spy.mock.calls.find(
+    ([u, i]) =>
+      String(u).endsWith("/capabilities/fobo/jobs") &&
+      (i as RequestInit).method === "POST",
   );
-});
+  const body = JSON.parse((post![1] as RequestInit).body as string);
+  expect(body.from).toBe("2026-05-01T00:00:00.000Z");
+  expect(body.to).toBe("2026-06-01T23:59:59.999Z");
 
-test("an explicit from/to range wins over the days field", async () => {
-  const spy = mock();
-  renderWithProviders(<CapabilityDetail />, { route: "/c/fobo", path: "/c/:id" });
-  await waitFor(() => screen.getByRole("button", { name: /run now/i }));
-  await userEvent.type(screen.getByLabelText(/window start date/i), "2026-05-01");
-  await userEvent.type(screen.getByLabelText(/window end date/i), "2026-06-01");
-  await userEvent.click(screen.getByRole("button", { name: /run now/i }));
-  await waitFor(() => {
-    const post = spy.mock.calls.find(
-      ([u, i]) =>
-        String(u).endsWith("/capabilities/fobo/jobs") &&
-        (i as RequestInit).method === "POST",
-    );
-    expect(post).toBeTruthy();
-    expect(JSON.parse((post![1] as RequestInit).body as string)).toEqual({
-      from: "2026-05-01",
-      to: "2026-06-01",
-    });
-  });
-});
-
-test("the days field sends a `from` window on the enqueue", async () => {
-  const spy = mock();
-  renderWithProviders(<CapabilityDetail />, { route: "/c/fobo", path: "/c/:id" });
-  await waitFor(() => screen.getByRole("button", { name: /run now/i }));
-  await userEvent.type(screen.getByLabelText(/days to analyse/i), "90");
-  await userEvent.click(screen.getByRole("button", { name: /run now/i }));
-  await waitFor(() => {
-    const post = spy.mock.calls.find(
-      ([u, i]) =>
-        String(u).endsWith("/capabilities/fobo/jobs") &&
-        (i as RequestInit).method === "POST",
-    );
-    expect(post).toBeTruthy();
-    expect(JSON.parse((post![1] as RequestInit).body as string)).toHaveProperty("from");
-  });
+  await waitFor(() => expect(screen.getByTestId("run-progress")).toBeInTheDocument());
+  expect(screen.getByText(/Pulling spans/i)).toBeInTheDocument();
+  expect(screen.queryByTestId("lane-board")).not.toBeInTheDocument();
 });

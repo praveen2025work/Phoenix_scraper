@@ -1,4 +1,7 @@
-const BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
+// Prefer 127.0.0.1 over localhost: on macOS localhost often resolves to ::1 first,
+// while the API typically binds IPv4-only (127.0.0.1:8000) → fetch fails with
+// "Failed to fetch" and ApiKeyGate incorrectly shows the key form.
+const BASE = import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8000";
 const KEY = "pheonix_api_key";
 
 export function apiKey(): string | null {

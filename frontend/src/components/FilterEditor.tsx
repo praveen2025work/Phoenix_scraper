@@ -32,10 +32,15 @@ export function FilterEditor({
   capabilityId,
   initial,
   windowDays,
+  windowFrom,
+  windowTo,
 }: {
   capabilityId: string;
   initial: SpanFilter;
   windowDays: number;
+  /** Operator-picked run window — preview must use this when set, not only windowDays. */
+  windowFrom?: string;
+  windowTo?: string;
 }) {
   const [filter, setFilter] = useState<SpanFilter>(initial);
   const [anyText, setAnyText] = useState((initial.search_any ?? []).join("\n"));
@@ -46,7 +51,15 @@ export function FilterEditor({
     .map((s) => s.trim())
     .filter(Boolean);
   const draft: SpanFilter = { ...filter, search_any: searchAny };
-  const preview = useFilterPreview(useDebounced(draft), windowDays);
+  const preview = useFilterPreview(useDebounced(draft), {
+    windowDays,
+    from: windowFrom
+      ? new Date(`${windowFrom}T00:00:00.000Z`).toISOString()
+      : undefined,
+    to: windowTo
+      ? new Date(`${windowTo}T23:59:59.999Z`).toISOString()
+      : undefined,
+  });
   const p = preview.data;
 
   function set(key: keyof SpanFilter, value: string) {
@@ -107,7 +120,11 @@ export function FilterEditor({
 
       <Panel
         title="Preview"
-        subtitle={`what this filter catches in the last ${windowDays} days — nothing is saved or run`}
+        subtitle={
+          windowFrom && windowTo
+            ? `what this filter catches ${windowFrom} → ${windowTo} — nothing is saved or run`
+            : `what this filter catches in the last ${windowDays} days — nothing is saved or run`
+        }
         isLoading={preview.isLoading}
         error={preview.error}
       >

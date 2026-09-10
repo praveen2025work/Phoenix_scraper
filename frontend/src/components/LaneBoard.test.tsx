@@ -28,8 +28,8 @@ test("groups candidates into status columns", () => {
     />,
     { route: "/c/fobo", path: "/c/:id" },
   );
-  expect(screen.getByRole("heading", { name: /ready \(1\)/i })).toBeInTheDocument();
-  expect(screen.getByRole("heading", { name: /accumulating \(1\)/i })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: /Ready to decide \(1\)/i })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: /Building evidence \(1\)/i })).toBeInTheDocument();
   expect(screen.getByText("why recon break")).toBeInTheDocument();
 });
 

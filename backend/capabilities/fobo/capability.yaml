@@ -1,0 +1,17 @@
+id: fobo
+name: FOBO reconciliation
+description: ''
+filter:
+  project: pnl-agent
+  workflow_stage: fobo_recon
+  asset_class: null
+  model_name: null
+  search: null
+  search_any: []
+window_days: 30
+thresholds:
+  # Demo-friendly ladder (defaults are 15/3/5 — too high for interactive demos).
+  rung1_min_count: 5
+  rung1_min_users: 2
+  rung1_sustained_runs: 2
+status: active

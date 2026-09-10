@@ -1,5 +1,6 @@
 """Tests for run_capability_analysis and run_capabilities (offline)."""
 
+import json
 from datetime import UTC, datetime, timedelta
 
 import pandas as pd
@@ -67,7 +68,25 @@ class TestRunCapabilityAnalysis:
             now=NOW,
         )
         assert result.run.n_in_scope_spans == 0
+        assert any("funnel empty at in_scope" in n for n in result.run.notes)
         assert any("no spans matched" in n.lower() for n in result.run.notes)
+
+    def test_records_skill_file_hashes_on_the_run(
+        self, seeded_store, fobo_capability, tmp_path
+    ) -> None:
+        settings, cap = fobo_capability
+        skills = tmp_path / "caps" / "fobo" / "skills"
+        skills.mkdir(parents=True, exist_ok=True)
+        (skills / "fobo-break-triage.md").write_text(
+            "---\nname: fobo-break-triage\ndescription: triage\n---\n\n# body\n",
+            encoding="utf-8",
+        )
+        result = run_capability_analysis(seeded_store, settings, cap, now=NOW)
+        assert "fobo-break-triage.md" in result.run.skill_hashes
+        assert len(result.run.skill_hashes["fobo-break-triage.md"]) == 64
+        row = seeded_store.capability_runs_frame("fobo").iloc[0]
+        stored = json.loads(row["skill_hashes_json"])
+        assert stored == result.run.skill_hashes
 
     def test_records_the_run_and_snapshots(self, seeded_store, fobo_capability) -> None:
         settings, cap = fobo_capability
@@ -241,12 +260,23 @@ class TestRunCapabilityAnalysis:
         assert len(d_cands) >= 1
 
 
+def _span_row(i: int, at: datetime) -> dict:
+    """The columns flatten_phoenix_row actually requires, in Phoenix's flat shape."""
+    return {
+        "context.span_id": f"px-{i:04d}",
+        "context.trace_id": f"tr-{i:04d}",
+        "start_time": at.isoformat(),
+        "attributes.metadata.workflow_stage": "fobo_recon",
+    }
+
+
 class _FakeClient:
     """Stand-in for PhoenixClientWrapper; never touches the network."""
 
-    def __init__(self, *, available=True, fail_projects=()):
+    def __init__(self, *, available=True, fail_projects=(), frames=None):
         self._available = available
         self._fail = set(fail_projects)
+        self._frames = list(frames or [])
         self.scraped: list[str] = []
         self.calls: list[dict] = []
 
@@ -261,6 +291,8 @@ class _FakeClient:
         self.calls.append({"project": project, "start": start, "end": end, "limit": limit})
         if project in self._fail:
             raise RuntimeError(f"boom for {project}")
+        if self._frames:
+            return self._frames.pop(0)
         return pd.DataFrame()  # no new spans
 
 
@@ -331,14 +363,45 @@ class TestRunCapabilities:
     def test_scrape_without_a_window_still_uses_the_watermark(
         self, seeded_store, tmp_path, settings
     ) -> None:
-        """No explicit window -> unchanged incremental behaviour (start from watermark)."""
+        """No explicit window -> unchanged incremental behaviour (start from watermark).
+
+        The end is still pinned to the run clock: `_fetch_window` can only halve a
+        window that has two ends, so leaving it open would disable the subdivision
+        that recovers a full page.
+        """
         s = self._two_caps(tmp_path, settings)
         client = _FakeClient()
 
         run_capabilities(seeded_store, s, capability_ids=["fobo"], client=client, now=NOW)
 
         assert client.calls[0]["start"] is None
-        assert client.calls[0]["end"] is None
+        assert client.calls[0]["end"] == NOW
+
+    def test_open_ended_run_is_bounded_so_a_full_page_can_subdivide(
+        self, seeded_store, tmp_path, settings
+    ) -> None:
+        """A `from` with no `to` is the UI's default shape, and it used to truncate.
+
+        The SPA sends `{from}` alone, so window_end arrived as None, and
+        `_fetch_window` refuses to bisect a half-open interval. Every run silently
+        stopped at `scrape_limit` spans — Phoenix offers no cursor, so the rest were
+        simply lost, and the analysis then filtered a store that never held them.
+        """
+        s = self._two_caps(tmp_path, settings).model_copy(update={"scrape_limit": 2})
+        at = NOW - timedelta(days=1)
+        client = _FakeClient(frames=[
+            pd.DataFrame([_span_row(0, at), _span_row(1, at)]),  # == limit -> subdivide
+            pd.DataFrame([_span_row(0, at)]),
+            pd.DataFrame([_span_row(1, at)]),
+        ])
+
+        run_capabilities(
+            seeded_store, s, capability_ids=["fobo"], client=client,
+            window_start=NOW - timedelta(days=90), window_end=None, now=NOW,
+        )
+
+        assert len(client.calls) == 3  # halved instead of giving up at depth 0
+        assert client.calls[0]["end"] == NOW
 
     def test_scrape_outcome_is_recorded_on_the_run(
         self, seeded_store, tmp_path, settings

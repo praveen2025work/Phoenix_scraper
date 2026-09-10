@@ -67,6 +67,8 @@ test("the period every panel describes is stated, not left to be guessed", async
   await waitFor(() =>
     expect(screen.getByText(/2026-08-01.*2026-09-05/)).toBeInTheDocument(),
   );
+  expect(screen.getByText(/2026-08-01 → 2026-09-05 \(this version's window\)/)).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: /Usage for this version/i })).toBeInTheDocument();
 });
 
 test("with no run yet, the fallback period is named as such", async () => {

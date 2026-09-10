@@ -11,6 +11,7 @@ class TestJobStore:
         job = tmp_store.get_job("j1")
         assert job["capability_id"] == "fobo"
         assert job["state"] == "queued"
+        assert job["stage"] == "queued" and job["progress"] == 0.0
         assert job["params"] == {"replace_today": True, "from": None}
         assert job["run_id"] is None and job["started_at"] is None
 
@@ -31,17 +32,34 @@ class TestJobStore:
         first = tmp_store.claim_next_job()
         assert first["job_id"] == "j1"
         assert first["state"] == "running" and first["started_at"] is not None
+        assert first["stage"] == "scraping"
         assert tmp_store.get_job("j1")["state"] == "running"
         assert tmp_store.claim_next_job()["job_id"] == "j2"
         assert tmp_store.claim_next_job() is None
 
+    def test_update_job_progress(self, tmp_store) -> None:
+        tmp_store.enqueue_job("j1", "fobo", {})
+        tmp_store.claim_next_job()
+        tmp_store.update_job_progress(
+            "j1", stage="analyzing", progress=0.5, message="Clustering"
+        )
+        job = tmp_store.get_job("j1")
+        assert job["stage"] == "analyzing"
+        assert job["progress"] == 0.5
+        assert job["message"] == "Clustering"
+
     def test_finish_job_sets_terminal_fields(self, tmp_store) -> None:
         tmp_store.enqueue_job("j1", "fobo", {})
         tmp_store.claim_next_job()
-        tmp_store.finish_job("j1", run_id="2026-07-21T12:00:00+00:00", state="done")
+        tmp_store.finish_job(
+            "j1", run_id="2026-07-21T12:00:00+00:00", state="done",
+            message="Run complete",
+        )
         job = tmp_store.get_job("j1")
-        assert job["state"] == "done"
+        assert job["state"] == "done" and job["stage"] == "done"
+        assert job["progress"] == 1.0
         assert job["run_id"] == "2026-07-21T12:00:00+00:00"
+        assert job["message"] == "Run complete"
         assert job["finished_at"] is not None and job["error"] is None
 
     def test_finish_job_error_records_message(self, tmp_store) -> None:
@@ -61,6 +79,7 @@ class TestJobStore:
         n = tmp_store.reset_orphaned_jobs()
         assert n == 2                                    # 'q' running + 'd' queued
         assert tmp_store.get_job("q")["state"] == "error"
+        assert tmp_store.get_job("q")["stage"] == "error"
         assert tmp_store.get_job("d")["state"] == "error"
         assert tmp_store.get_job("r")["state"] == "done"
 

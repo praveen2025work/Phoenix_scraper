@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { vi } from "vitest";
+import { JourneyProvider } from "@/journey/JourneyContext";
 
 export function renderWithProviders(
   ui: ReactElement,
@@ -11,15 +12,17 @@ export function renderWithProviders(
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={[route]}>
-        {path ? (
-          <Routes>
-            <Route path={path} element={ui} />
-          </Routes>
-        ) : (
-          ui
-        )}
-      </MemoryRouter>
+      <JourneyProvider>
+        <MemoryRouter initialEntries={[route]}>
+          {path ? (
+            <Routes>
+              <Route path={path} element={ui} />
+            </Routes>
+          ) : (
+            ui
+          )}
+        </MemoryRouter>
+      </JourneyProvider>
     </QueryClientProvider>,
   );
 }

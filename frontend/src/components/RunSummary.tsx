@@ -28,8 +28,8 @@ export function RunSummary({ run }: { run: RunLike | null }) {
       </p>
       <p className="text-muted-foreground">
         {run.n_spans ?? 0} spans, {run.n_in_scope_spans ?? 0} in scope →{" "}
-        {run.n_clusters ?? 0} clusters · Rung 1: {run.n_rung1_candidates ?? 0} · Rung 2:{" "}
-        {run.n_rung2_candidates ?? 0}
+        {run.n_clusters ?? 0} clusters · promote to skill:{" "}
+        {run.n_rung1_candidates ?? 0} · make deterministic: {run.n_rung2_candidates ?? 0}
       </p>
       {notes.map((n) => (
         <p key={n} className="text-xs text-muted-foreground">

@@ -1,5 +1,6 @@
 """Tests for the capability_runs / snapshots / members tables on Store."""
 
+import json
 from datetime import UTC, datetime
 
 from phoenix_scraper.models import CapabilityRun
@@ -51,6 +52,13 @@ class TestRecordAndRead:
         assert row["run_id"] == run.run_id
         assert row["n_in_scope_spans"] == 210
         assert row["status"] == "ok"
+        assert row["skill_hashes_json"] == "{}"
+
+    def test_skill_hashes_round_trip(self, tmp_store) -> None:
+        run = _run(skill_hashes={"a.md": "abc123"})
+        tmp_store.record_capability_run(run, [], [], history_limit=20)
+        row = tmp_store.capability_runs_frame("fobo").iloc[0]
+        assert json.loads(row["skill_hashes_json"]) == {"a.md": "abc123"}
 
     def test_snapshot_and_members_round_trip(self, tmp_store) -> None:
         run = _run()

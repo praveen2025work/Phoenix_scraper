@@ -308,8 +308,25 @@ class TestSearchPatterns:
         assert body["n_spans_in_store"] >= body["n_spans"]
         assert "fobo_recon" in body["distinct"]["workflow_stage"]
         assert body["sample_prompts"]
+        assert "from" in body and "to" in body
         # nothing recorded
         assert c.get("/capabilities/fobo/runs").json() == []
+
+    def test_preview_accepts_operator_from_to_window(self, ctx) -> None:
+        c, _ = ctx
+        c.post("/demo/seed")
+        far = c.post(
+            "/capabilities/preview",
+            json={
+                "filter": {},
+                "from": "2020-01-01T00:00:00+00:00",
+                "to": "2020-01-08T00:00:00+00:00",
+            },
+        ).json()
+        assert far["from"].startswith("2020-01-01")
+        assert far["to"].startswith("2020-01-08")
+        # Demo spans are recent; a 2020 window should match nothing.
+        assert far["n_spans"] == 0
 
     def test_preview_window_days_must_be_positive(self, ctx) -> None:
         c, _ = ctx

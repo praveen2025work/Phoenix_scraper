@@ -162,6 +162,8 @@ class CapabilityRun(_Frozen):
     n_rung2_candidates: int = 0  # written 0 until Phase D
     status: Literal["ok", "partial", "failed"] = "ok"
     notes: tuple[str, ...] = ()
+    # filename -> sha256 hex of each capabilities/<id>/skills/*.md at run start
+    skill_hashes: dict[str, str] = Field(default_factory=dict)
 
 
 class CapabilityRunResult(_Frozen):

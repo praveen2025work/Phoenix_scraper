@@ -11,7 +11,10 @@ export function QualitySection({ id }: { id: string }) {
 
   return (
     <section className="space-y-4">
-      <h3 className="text-sm font-semibold text-muted-foreground">Answer quality</h3>
+      <h2 className="text-base font-semibold tracking-tight">Answer quality</h2>
+      <p className="text-sm text-muted-foreground">
+      Validation pass rates and failures in this window.
+    </p>
 
       <Panel
         title="Validation scoreboard"

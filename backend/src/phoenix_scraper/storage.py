@@ -189,6 +189,8 @@ CREATE TABLE IF NOT EXISTS capability_runs (
     n_rung2_candidates INTEGER NOT NULL DEFAULT 0,
     status             TEXT NOT NULL DEFAULT 'ok',
     notes_json         TEXT NOT NULL DEFAULT '[]',
+    -- filename -> sha256 of each capability skills/*.md at run start (Phase C diffs)
+    skill_hashes_json  TEXT NOT NULL DEFAULT '{}',
     PRIMARY KEY (capability_id, run_id)
 );
 
@@ -281,6 +283,10 @@ CREATE TABLE IF NOT EXISTS capability_jobs (
     capability_id TEXT NOT NULL,
     state         TEXT NOT NULL DEFAULT 'queued'
                   CHECK (state IN ('queued', 'running', 'done', 'error')),
+    -- Fine-grained UI progress: queued -> scraping -> analyzing -> matching -> done|error
+    stage         TEXT NOT NULL DEFAULT 'queued',
+    progress      REAL NOT NULL DEFAULT 0,
+    message       TEXT,
     params_json   TEXT NOT NULL DEFAULT '{}',
     run_id        TEXT,
     error         TEXT,
@@ -301,6 +307,10 @@ CREATE INDEX IF NOT EXISTS idx_capability_jobs_state
 _ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("capability_cluster_snapshots", "asset_classes", "TEXT NOT NULL DEFAULT '[]'"),
     ("capabilities", "filter_search_any", "TEXT NOT NULL DEFAULT '[]'"),
+    ("capability_jobs", "stage", "TEXT NOT NULL DEFAULT 'queued'"),
+    ("capability_jobs", "progress", "REAL NOT NULL DEFAULT 0"),
+    ("capability_jobs", "message", "TEXT"),
+    ("capability_runs", "skill_hashes_json", "TEXT NOT NULL DEFAULT '{}'"),
 )
 
 
@@ -706,8 +716,8 @@ class Store:
     def enqueue_job(self, job_id: str, capability_id: str, params: dict) -> None:
         self._conn.execute(
             "INSERT INTO capability_jobs "
-            "(job_id, capability_id, state, params_json, enqueued_at) "
-            "VALUES (?,?,'queued',?,?)",
+            "(job_id, capability_id, state, stage, progress, message, params_json, "
+            "enqueued_at) VALUES (?,?,'queued','queued',0,NULL,?,?)",
             (job_id, capability_id, json.dumps(params), _iso(datetime.now(UTC))),
         )
         self._conn.commit()
@@ -734,7 +744,8 @@ class Store:
             return None
         now = _iso(datetime.now(UTC))
         self._conn.execute(
-            "UPDATE capability_jobs SET state = 'running', started_at = ? "
+            "UPDATE capability_jobs SET state = 'running', started_at = ?, "
+            "stage = 'scraping', progress = 0.05, message = 'Starting scrape' "
             "WHERE job_id = ?",
             (now, row["job_id"]),
         )
@@ -742,28 +753,72 @@ class Store:
         job = _job_from_row(row)
         job["state"] = "running"
         job["started_at"] = now
+        job["stage"] = "scraping"
+        job["progress"] = 0.05
+        job["message"] = "Starting scrape"
         return job
+
+    def update_job_progress(
+        self,
+        job_id: str,
+        *,
+        stage: str,
+        progress: float,
+        message: str | None = None,
+    ) -> None:
+        self._conn.execute(
+            "UPDATE capability_jobs SET stage = ?, progress = ?, message = ? "
+            "WHERE job_id = ?",
+            (stage, float(progress), message, job_id),
+        )
+        self._conn.commit()
 
     def finish_job(
         self, job_id: str, *, run_id: str | None, state: str,
-        error: str | None = None,
+        error: str | None = None, message: str | None = None,
     ) -> None:
+        stage = "done" if state == "done" else "error"
         self._conn.execute(
-            "UPDATE capability_jobs SET state = ?, run_id = ?, error = ?, "
-            "finished_at = ? WHERE job_id = ?",
-            (state, run_id, error, _iso(datetime.now(UTC)), job_id),
+            "UPDATE capability_jobs SET state = ?, stage = ?, progress = 1.0, "
+            "run_id = ?, error = ?, message = ?, finished_at = ? WHERE job_id = ?",
+            (
+                state, stage, run_id, error,
+                message if message is not None else error,
+                _iso(datetime.now(UTC)), job_id,
+            ),
         )
         self._conn.commit()
 
     def reset_orphaned_jobs(self) -> int:
         cur = self._conn.execute(
-            "UPDATE capability_jobs SET state = 'error', "
-            "error = 'interrupted by restart', finished_at = ? "
+            "UPDATE capability_jobs SET state = 'error', stage = 'error', "
+            "progress = 1.0, error = 'interrupted by restart', "
+            "message = 'interrupted by restart', finished_at = ? "
             "WHERE state IN ('queued', 'running')",
             (_iso(datetime.now(UTC)),),
         )
         self._conn.commit()
         return cur.rowcount
+
+    def candidates_observed_in_run(
+        self, capability_id: str, run_id: str
+    ) -> pd.DataFrame:
+        """Candidates that have an observation row for this capability run."""
+        return pd.read_sql_query(
+            "SELECT c.* FROM candidates c "
+            "WHERE c.capability_id = ? AND c.candidate_id IN ("
+            "  SELECT candidate_id FROM candidate_observations WHERE run_id = ?"
+            ") ORDER BY c.rung, c.status, c.last_seen_at DESC",
+            self._conn, params=[capability_id, run_id],
+        )
+
+    def get_capability_run(self, capability_id: str, run_id: str) -> dict | None:
+        """One capability_runs row by primary key, or None."""
+        row = self._conn.execute(
+            "SELECT * FROM capability_runs WHERE capability_id = ? AND run_id = ?",
+            (capability_id, run_id),
+        ).fetchone()
+        return dict(row) if row is not None else None
 
     # ---- capability runs ------------------------------------------------------
     def span_count(self) -> int:
@@ -782,13 +837,14 @@ class Store:
             "INSERT OR REPLACE INTO capability_runs (capability_id, run_id, "
             "started_at, finished_at, window_start, window_end, n_spans, "
             "n_in_scope_spans, n_clusters, n_rung1_candidates, n_rung2_candidates, "
-            "status, notes_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "status, notes_json, skill_hashes_json) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 run.capability_id, run.run_id, _iso(run.started_at),
                 _iso(run.finished_at), _iso(run.window_start), _iso(run.window_end),
                 run.n_spans, run.n_in_scope_spans, run.n_clusters,
                 run.n_rung1_candidates, run.n_rung2_candidates, run.status,
-                json.dumps(list(run.notes)),
+                json.dumps(list(run.notes)), json.dumps(dict(run.skill_hashes)),
             ),
         )
         c.execute(
@@ -1103,10 +1159,14 @@ def _capability_from_row(row: sqlite3.Row) -> Capability:
 
 
 def _job_from_row(row: sqlite3.Row) -> dict:
+    keys = set(row.keys())
     return {
         "job_id": row["job_id"],
         "capability_id": row["capability_id"],
         "state": row["state"],
+        "stage": row["stage"] if "stage" in keys else "queued",
+        "progress": float(row["progress"]) if "progress" in keys and row["progress"] is not None else 0.0,
+        "message": row["message"] if "message" in keys else None,
         "params": json.loads(row["params_json"]),
         "run_id": row["run_id"],
         "error": row["error"],

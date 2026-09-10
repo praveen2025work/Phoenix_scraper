@@ -15,8 +15,10 @@ Rung 1 / Rung 2 candidate detection is Phase C / D — the run rows carry
 `n_rung1_candidates` / `n_rung2_candidates`, written 0 here.
 """
 
+import hashlib
 import json
 import logging
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
 import pandas as pd
@@ -50,6 +52,8 @@ from .storage import Store
 
 logger = logging.getLogger(__name__)
 
+ProgressCb = Callable[[str, float, str], None]
+
 
 def load_capability_skills(settings: Settings, capability: Capability) -> list[SkillEntry]:
     """This capability's own loose ``skills/*.md`` + catalog + PHEONIX_SKILLS_DIRS,
@@ -74,6 +78,53 @@ def load_capability_skills(settings: Settings, capability: Capability) -> list[S
             seen.add(skill.name)
             unique.append(skill)
     return unique
+
+
+def capability_skill_file_hashes(settings: Settings, capability: Capability) -> dict[str, str]:
+    """sha256 of each ``capabilities/<id>/skills/*.md`` (filename -> hex digest)."""
+    hashes: dict[str, str] = {}
+    for directory in capability_skill_dirs(settings.capabilities_dir, capability.id):
+        if not directory.is_dir():
+            continue
+        for path in sorted(directory.glob("*.md")):
+            hashes[path.name] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return hashes
+
+
+def _emit(on_progress: ProgressCb | None, stage: str, progress: float, message: str) -> None:
+    if on_progress is not None:
+        on_progress(stage, progress, message)
+
+
+def _funnel_empty_notes(
+    *,
+    n_store: int,
+    n_in_scope: int,
+    n_clusters: int,
+    n_covered: int,
+    window_start: datetime,
+    window_end: datetime,
+) -> list[str]:
+    """Explain the first funnel stage that dropped to zero (for Results empty states)."""
+    if n_in_scope == 0:
+        return [
+            f"funnel empty at in_scope: no spans matched this capability between "
+            f"{window_start:%Y-%m-%d} and {window_end:%Y-%m-%d} — "
+            f"the store holds {n_store} spans overall; "
+            "check the capability filter, or the window may predate what was scraped"
+        ]
+    if n_clusters == 0:
+        return [
+            f"funnel empty at clusters: {n_in_scope} in-scope spans produced 0 "
+            "prompt clusters (nothing to match against skills)"
+        ]
+    # Only "clear" when every cluster is matched AND coverage-covered.
+    if n_covered == n_clusters:
+        return [
+            f"funnel clear at gaps: all {n_clusters} clusters are covered by uploaded "
+            "skills — no skill-gap cards for this version"
+        ]
+    return []
 
 
 def _clusters_frame(clusters: list) -> pd.DataFrame:
@@ -150,6 +201,7 @@ def run_capability_analysis(
     notes: list[str] | None = None,
     info_notes: list[str] | None = None,
     now: datetime | None = None,
+    on_progress: ProgressCb | None = None,
 ) -> CapabilityRunResult:
     """Analyse the capability's in-scope spans over its window and record the run.
 
@@ -162,11 +214,15 @@ def run_capability_analysis(
     window_start = window_start or (window_end - timedelta(days=capability.window_days))
     run_notes = list(notes or []) + list(info_notes or [])
     scrape_partial = bool(notes)  # only scrape failures force status='partial'
+    skill_hashes = capability_skill_file_hashes(settings, capability)
+
+    _emit(on_progress, "analyzing", 0.45, f"Analysing {capability.id}")
 
     filters = capability_query_filters(
         capability, start=window_start, end=window_end, limit=ANALYSIS_SPAN_LIMIT
     )
     in_scope = store.spans_frame(filters)
+    n_store = store.span_count()
 
     if not in_scope.empty:
         pricing, default_pricing = load_pricing(settings.pricing_path)
@@ -174,15 +230,6 @@ def run_capability_analysis(
         if new_costs:
             store.update_span_costs(new_costs)
             in_scope = store.spans_frame(filters)
-    else:
-        # Without this the run records status='ok' with zero clusters, which the UI
-        # renders exactly like a healthy run that simply had nothing to promote.
-        run_notes.append(
-            f"no spans matched this capability between "
-            f"{window_start:%Y-%m-%d} and {window_end:%Y-%m-%d} — "
-            f"the store holds {store.span_count()} spans overall; "
-            "check the capability filter, or the window may predate what was scraped"
-        )
 
     if settings.evaluate_on_analyze and not in_scope.empty:
         try:
@@ -193,6 +240,7 @@ def run_capability_analysis(
 
     clusters = build_clusters(in_scope, fuzz_threshold=settings.cluster_fuzz_threshold)
     skills = load_capability_skills(settings, capability)
+    _emit(on_progress, "matching", 0.7, f"Matching skills for {capability.id}")
     matches, proposals = match_clusters(
         clusters, skills, threshold=settings.skill_match_threshold
     )
@@ -204,6 +252,21 @@ def run_capability_analysis(
     )
     annotated = annotate_coverage(
         clusters_df, matches_df, skills, threshold=settings.skill_coverage_threshold
+    )
+    n_covered = (
+        int(annotated["covered"].sum())
+        if not annotated.empty and "covered" in annotated.columns
+        else 0
+    )
+    run_notes.extend(
+        _funnel_empty_notes(
+            n_store=n_store,
+            n_in_scope=int(len(in_scope)),
+            n_clusters=len(clusters),
+            n_covered=n_covered,
+            window_start=window_start,
+            window_end=window_end,
+        )
     )
     efficiency = cluster_efficiency(in_scope, clusters_df, _members_frame(clusters))
 
@@ -271,13 +334,14 @@ def run_capability_analysis(
         finished_at=datetime.now(UTC),
         window_start=window_start,
         window_end=window_end,
-        n_spans=store.span_count(),
+        n_spans=n_store,
         n_in_scope_spans=int(len(in_scope)),
         n_clusters=len(clusters),
         n_rung1_candidates=rung1.n_candidates,
         n_rung2_candidates=rung2.n_candidates,
         status="partial" if scrape_partial else "ok",
         notes=tuple(run_notes),
+        skill_hashes=skill_hashes,
     )
     store.record_capability_run(
         run,
@@ -358,9 +422,9 @@ def _scrape_projects(
             )
         if report.truncated:
             problems.setdefault(project, []).append(
-                f"scrape of {project} hit the {settings.scrape_limit}-span limit and "
-                "could not be narrowed further — Phoenix holds spans this run never "
-                "saw; raise PHEONIX_SCRAPE_LIMIT or run a shorter window"
+                f"TRUNCATED: scrape of {project} hit the {settings.scrape_limit}-span "
+                "limit and could not be narrowed further — Phoenix holds spans this "
+                "run never saw; raise PHEONIX_SCRAPE_LIMIT or run a shorter window"
             )
     return problems, info
 
@@ -376,10 +440,22 @@ def run_capabilities(
     window_end: datetime | None = None,
     replace_today: bool = False,
     now: datetime | None = None,
+    on_progress: ProgressCb | None = None,
 ) -> list[CapabilityRunResult]:
     """Sync -> scrape each distinct project once -> run each capability, isolating
-    failures so one capability never aborts the others."""
+    failures so one capability never aborts the others.
+
+    ``on_progress`` is reliable for single-capability callers (the SPA job path).
+    Multi-capability orchestration reuses the same stage fractions per cap, so a
+    progress bar may briefly regress between capabilities.
+    """
     started_at = now or datetime.now(UTC)
+    # Resolve the open end BEFORE scraping, not just before analysing. `_fetch_window`
+    # halves a window whenever a page comes back full, and it can only halve a window
+    # that has two ends — so an unbounded end silently caps every pull at scrape_limit
+    # and Phoenix, which offers no cursor, drops the rest. Callers routinely leave it
+    # open: the SPA sends `from` alone and `pheonix run --days N` sets only the start.
+    window_end = window_end or started_at
     capabilities = _target_capabilities(settings, capability_ids, all_active)
     for cap in capabilities:
         store.upsert_capability(cap)
@@ -387,6 +463,7 @@ def run_capabilities(
     projects = {
         (cap.filter.project or settings.project) for cap in capabilities
     }
+    _emit(on_progress, "scraping", 0.1, "Pulling spans from Phoenix")
     scrape_problems, scrape_info = _scrape_projects(
         store, settings, projects, client,
         window_start=window_start, window_end=window_end,
@@ -404,6 +481,7 @@ def run_capabilities(
                     window_start=window_start, window_end=window_end,
                     replace_today=replace_today, notes=cap_notes,
                     info_notes=cap_info, now=started_at,
+                    on_progress=on_progress,
                 )
             )
         except Exception as exc:  # noqa: BLE001 — record the failure, keep going
@@ -413,10 +491,11 @@ def run_capabilities(
                 capability_id=cap.id,
                 started_at=started_at,
                 finished_at=datetime.now(UTC),
-                window_start=window_start or (started_at - timedelta(days=cap.window_days)),
-                window_end=window_end or started_at,
+                window_start=window_start or (window_end - timedelta(days=cap.window_days)),
+                window_end=window_end,
                 status="failed",
                 notes=(*cap_notes, f"analysis failed: {exc}"),
+                skill_hashes=capability_skill_file_hashes(settings, cap),
             )
             store.record_capability_run(
                 failed, [], [], history_limit=settings.run_history_limit

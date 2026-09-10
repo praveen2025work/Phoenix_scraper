@@ -30,7 +30,12 @@ export function CoverageSection({ id }: { id: string }) {
 
   return (
     <section className="space-y-4">
-      <h3 className="text-sm font-semibold text-muted-foreground">Coverage &amp; skills</h3>
+      <h2 className="text-base font-semibold tracking-tight">
+        Coverage &amp; skills
+      </h2>
+      <p className="text-sm text-muted-foreground">
+        Which asks your skills already handle — and where they still miss.
+      </p>
 
       <Panel
         title="Question types"

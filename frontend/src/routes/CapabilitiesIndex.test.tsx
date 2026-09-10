@@ -22,8 +22,16 @@ test("lists capability cards with last-run + candidate badges", async () => {
   renderWithProviders(<CapabilitiesIndex />);
   await waitFor(() => expect(screen.getByText("FOBO")).toBeInTheDocument());
   expect(screen.getByText(/stage=fobo_recon/)).toBeInTheDocument();
-  expect(screen.getByText(/Rung 1: 2 ready/)).toBeInTheDocument();
-  expect(screen.getByText(/Rung 2: 1 ready/)).toBeInTheDocument();
+  expect(screen.getByText(/Promote to skill:/i)).toBeInTheDocument();
+  expect(screen.getByText(/Make deterministic:/i)).toBeInTheDocument();
+  expect(screen.getByText("2")).toBeInTheDocument();
+  expect(screen.getByText("1")).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: /Open & review gaps/i })).toHaveAttribute(
+    "href",
+    "/c/fobo",
+  );
+  expect(screen.getByTestId("home-outcome")).toHaveTextContent(/Choose a capability/i);
+  expect(screen.getByText(/Your capabilities/i)).toBeInTheDocument();
 });
 
 test("empty state when there are no capabilities", async () => {

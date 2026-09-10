@@ -16,9 +16,21 @@ from .storage import Store
 
 logger = logging.getLogger(__name__)
 
+_TRUNCATION_MARKERS = ("TRUNCATED:", "could not be narrowed", "never saw")
+
 
 def _parse_dt(value: str | None) -> datetime | None:
     return datetime.fromisoformat(value) if value else None
+
+
+def _job_finish_message(notes: tuple[str, ...] | list[str], *, ok: bool) -> str:
+    """Surface truncation hard-warnings first; otherwise a short stage summary."""
+    for note in notes:
+        if any(marker in note for marker in _TRUNCATION_MARKERS):
+            return note[:500]
+    if ok:
+        return "Run complete"
+    return "Run finished with errors"
 
 
 class JobWorker:
@@ -60,6 +72,13 @@ class JobWorker:
 
     def _run(self, store: Store, job: dict) -> None:
         params = job["params"]
+        job_id = job["job_id"]
+
+        def on_progress(stage: str, progress: float, message: str) -> None:
+            store.update_job_progress(
+                job_id, stage=stage, progress=progress, message=message
+            )
+
         try:
             client = PhoenixClientWrapper(self.settings)
             results = run_capabilities(
@@ -68,12 +87,19 @@ class JobWorker:
                 window_start=_parse_dt(params.get("from")),
                 window_end=_parse_dt(params.get("to")),
                 replace_today=bool(params.get("replace_today", False)),
+                on_progress=on_progress,
             )
-            run_id = results[0].run.run_id if results else None
-            store.finish_job(job["job_id"], run_id=run_id, state="done")
-        except Exception as exc:  # noqa: BLE001 — infra failure -> job error
-            logger.exception("capability job %s failed", job["job_id"])
+            run = results[0].run if results else None
+            run_id = run.run_id if run else None
+            notes = list(run.notes) if run else []
             store.finish_job(
-                job["job_id"], run_id=None, state="error",
+                job_id, run_id=run_id, state="done",
+                message=_job_finish_message(notes, ok=True),
+            )
+        except Exception as exc:  # noqa: BLE001 — infra failure -> job error
+            logger.exception("capability job %s failed", job_id)
+            store.finish_job(
+                job_id, run_id=None, state="error",
                 error=f"{type(exc).__name__}: {exc}"[:2000],
+                message=f"{type(exc).__name__}: {exc}"[:500],
             )

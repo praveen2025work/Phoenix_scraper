@@ -41,7 +41,7 @@ export function SkillFiles({ capabilityId }: { capabilityId: string }) {
     <div className="space-y-4">
       <Panel
         title="Skill files"
-        subtitle="capabilities/<id>/skills/*.md — read fresh on every run"
+        subtitle="What you already handle — matched against asks on every run"
         isLoading={skills.isLoading}
         error={skills.error}
       >
@@ -77,16 +77,20 @@ export function SkillFiles({ capabilityId }: { capabilityId: string }) {
             ))}
           </ul>
         ) : (
-          <p className="text-sm text-muted-foreground">
-            No skill files yet. Upload one below, or promote a ready Rung-1 candidate to
-            generate a draft.
+          <p className="text-sm text-muted-foreground" role="status">
+            No skill files yet. Upload a{" "}
+            <code className="text-xs">.md</code> below (needs a{" "}
+            <code className="text-xs">name:</code> in frontmatter), then click{" "}
+            <strong>Run now</strong> above. Without skills, the run can still cluster
+            asks and suggest new skills — but it cannot tell you what your docs already
+            cover.
           </p>
         )}
       </Panel>
 
       <Panel
         title="Add a skill file"
-        subtitle="markdown with YAML frontmatter — needs at least a `name:` field"
+        subtitle="Markdown with YAML frontmatter — needs at least a name: field"
       >
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
@@ -126,7 +130,7 @@ export function SkillFiles({ capabilityId }: { capabilityId: string }) {
                            font-mono text-xs"
               />
               <Button
-                size="sm"
+                size="lg"
                 disabled={!filename.trim() || !content.trim() || upload.isPending}
                 onClick={() => send(filename.trim(), content)}
               >
