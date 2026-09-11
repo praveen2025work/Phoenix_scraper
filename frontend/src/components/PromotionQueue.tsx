@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
+import { CircleCheck, FilePen, Scale, type LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/api/client";
 import { type Candidate, useCandidates } from "@/api/hooks";
@@ -15,19 +16,22 @@ const CARD_ORDER: QueueKind[] = ["decide", "write", "done"];
 
 const CARD_META: Record<
   QueueKind,
-  { title: string; subtitle: string }
+  { title: string; subtitle: string; Icon: LucideIcon }
 > = {
   decide: {
     title: "Decide",
     subtitle: "Accept, reject, or snooze",
+    Icon: Scale,
   },
   write: {
     title: "Write file",
     subtitle: "Materialize the draft",
+    Icon: FilePen,
   },
   done: {
     title: "Done",
     subtitle: "Already written",
+    Icon: CircleCheck,
   },
 };
 
@@ -109,10 +113,15 @@ function QueueCard({
     >
       <header
         className={cn(
-          "flex flex-wrap items-baseline gap-x-2 gap-y-0.5 border-b border-primary/25",
+          "flex flex-wrap items-center gap-x-2 gap-y-0.5 border-b border-primary/25",
           "border-l-4 border-l-primary bg-surface-strong px-3 py-2",
         )}
       >
+        <meta.Icon
+          size={16}
+          className="shrink-0 text-primary"
+          aria-hidden="true"
+        />
         <h4
           id={`promotion-card-${kind}-title`}
           className="text-sm font-semibold text-foreground"

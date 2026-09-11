@@ -1,5 +1,6 @@
 import type { JobDto } from "@/api/hooks";
 import { OutcomeBanner } from "@/components/OutcomeBanner";
+import { StatusBadge } from "@/components/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Panel } from "@/components/Panel";
@@ -52,7 +53,10 @@ export function RunProgress({
               const past = !errored && i < currentIdx;
               return (
                 <li key={s}>
-                  <Badge variant={active ? "info" : past ? "ok" : "outline"}>
+                  <Badge
+                    variant={active ? "info" : past ? "ok" : "outline"}
+                    className="uppercase tracking-wide"
+                  >
                     <span className="tabular-nums opacity-80">{i + 1}.</span>{" "}
                     {STAGE_LABEL[s]}
                     {s === stage ? ` (${s})` : ""}
@@ -60,7 +64,7 @@ export function RunProgress({
                 </li>
               );
             })}
-            {errored && <Badge variant="error">error</Badge>}
+            {errored && <StatusBadge status="error" />}
           </ol>
 
           <div

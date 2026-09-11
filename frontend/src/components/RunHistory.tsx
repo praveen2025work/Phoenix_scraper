@@ -4,8 +4,7 @@ import {
   useCapabilityRuns,
 } from "@/api/hooks";
 import { OutcomeBanner } from "@/components/OutcomeBanner";
-import { Badge } from "@/components/ui/badge";
-import { jobStatusVariant } from "@/lib/statusStyles";
+import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import {
   calendarDay,
@@ -155,13 +154,13 @@ export function RunHistory({
                         {formatHumanDateTime(run.run_id)}
                       </span>
                       {isLatest && (
-                        <Badge variant="info" data-testid="history-latest-badge">
+                        <StatusBadge status="latest" data-testid="history-latest-badge">
                           Latest
-                        </Badge>
+                        </StatusBadge>
                       )}
-                      <Badge variant={jobStatusVariant(run.status)}>
+                      <StatusBadge status={run.status ?? "—"}>
                         {run.status ?? "—"}
-                      </Badge>
+                      </StatusBadge>
                       <span className="text-xs text-muted-foreground">
                         {formatHumanDate(run.window_start)} →{" "}
                         {formatHumanDate(run.window_end)}

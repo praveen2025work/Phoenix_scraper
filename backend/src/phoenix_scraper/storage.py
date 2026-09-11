@@ -5,6 +5,7 @@ import sqlite3
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
@@ -191,6 +192,8 @@ CREATE TABLE IF NOT EXISTS capability_runs (
     notes_json         TEXT NOT NULL DEFAULT '[]',
     -- filename -> sha256 of each capability skills/*.md at run start (Phase C diffs)
     skill_hashes_json  TEXT NOT NULL DEFAULT '{}',
+    -- Precomputed Analytics/Usage panels for this run (JSON object); NULL until built
+    analytics_snapshot_json TEXT,
     PRIMARY KEY (capability_id, run_id)
 );
 
@@ -311,6 +314,7 @@ _ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("capability_jobs", "progress", "REAL NOT NULL DEFAULT 0"),
     ("capability_jobs", "message", "TEXT"),
     ("capability_runs", "skill_hashes_json", "TEXT NOT NULL DEFAULT '{}'"),
+    ("capability_runs", "analytics_snapshot_json", "TEXT"),
 )
 
 
@@ -820,6 +824,38 @@ class Store:
         ).fetchone()
         return dict(row) if row is not None else None
 
+    def get_analytics_snapshot(
+        self, capability_id: str, run_id: str
+    ) -> dict[str, Any] | None:
+        """Parsed analytics_snapshot_json for a run, or None if missing/empty."""
+        row = self._conn.execute(
+            "SELECT analytics_snapshot_json FROM capability_runs "
+            "WHERE capability_id = ? AND run_id = ?",
+            (capability_id, run_id),
+        ).fetchone()
+        if row is None or not row["analytics_snapshot_json"]:
+            return None
+        try:
+            parsed = json.loads(row["analytics_snapshot_json"])
+        except (TypeError, json.JSONDecodeError):
+            return None
+        return parsed if isinstance(parsed, dict) and parsed else None
+
+    def set_analytics_snapshot(
+        self, capability_id: str, run_id: str, snapshot: dict[str, Any]
+    ) -> None:
+        """Persist a precomputed Analytics panel payload on an existing run."""
+        cur = self._conn.execute(
+            "UPDATE capability_runs SET analytics_snapshot_json = ? "
+            "WHERE capability_id = ? AND run_id = ?",
+            (json.dumps(snapshot), capability_id, run_id),
+        )
+        self._conn.commit()
+        if cur.rowcount == 0:
+            raise ValueError(
+                f"No capability run found: {capability_id}/{run_id}"
+            )
+
     # ---- capability runs ------------------------------------------------------
     def span_count(self) -> int:
         return self._count("spans")
@@ -830,21 +866,39 @@ class Store:
         snapshot_rows: list[dict],
         member_rows: list[tuple[str, str]],
         history_limit: int,
+        *,
+        analytics_snapshot: dict | None = None,
     ) -> None:
         """Write the run row, replace this run's snapshots + members, prune."""
         c = self._conn
+        # Preserve an existing analytics snapshot when the caller does not pass one
+        # (e.g. failed-run REPLACE) — successful analysis always passes a fresh dict.
+        snap_json: str | None
+        if analytics_snapshot is not None:
+            snap_json = json.dumps(analytics_snapshot)
+        else:
+            existing = c.execute(
+                "SELECT analytics_snapshot_json FROM capability_runs "
+                "WHERE capability_id = ? AND run_id = ?",
+                (run.capability_id, run.run_id),
+            ).fetchone()
+            if existing is not None and "analytics_snapshot_json" in existing.keys():
+                snap_json = existing["analytics_snapshot_json"]
+            else:
+                snap_json = None
         c.execute(
             "INSERT OR REPLACE INTO capability_runs (capability_id, run_id, "
             "started_at, finished_at, window_start, window_end, n_spans, "
             "n_in_scope_spans, n_clusters, n_rung1_candidates, n_rung2_candidates, "
-            "status, notes_json, skill_hashes_json) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "status, notes_json, skill_hashes_json, analytics_snapshot_json) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 run.capability_id, run.run_id, _iso(run.started_at),
                 _iso(run.finished_at), _iso(run.window_start), _iso(run.window_end),
                 run.n_spans, run.n_in_scope_spans, run.n_clusters,
                 run.n_rung1_candidates, run.n_rung2_candidates, run.status,
                 json.dumps(list(run.notes)), json.dumps(dict(run.skill_hashes)),
+                snap_json,
             ),
         )
         c.execute(

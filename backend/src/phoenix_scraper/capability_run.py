@@ -29,6 +29,7 @@ from .capability import (
     load_all_capabilities,
     load_capability,
 )
+from .capability_skills import load_capability_skills
 from .cluster import build_clusters
 from .config import Settings
 from .costs import compute_span_costs, load_pricing
@@ -40,13 +41,11 @@ from .models import (
     Capability,
     CapabilityRun,
     CapabilityRunResult,
-    SkillEntry,
 )
 from .phoenix_client import PhoenixClientWrapper
 from .pipeline import ANALYSIS_SPAN_LIMIT
 from .scraper import scrape_once
 from .skill_coverage import annotate_coverage
-from .skills import load_all_skills, scan_skill_files
 from .skills_mapper import match_clusters
 from .storage import Store
 
@@ -54,30 +53,13 @@ logger = logging.getLogger(__name__)
 
 ProgressCb = Callable[[str, float, str], None]
 
-
-def load_capability_skills(settings: Settings, capability: Capability) -> list[SkillEntry]:
-    """This capability's own loose ``skills/*.md`` + catalog + PHEONIX_SKILLS_DIRS,
-    de-duped by name.
-
-    The capability's own files come FIRST, so a `skills/<name>.md` **overrides** a
-    shared-catalog entry of the same name for this capability only. That is the
-    whole point of the per-capability directory: coverage tells you "add this
-    example to `fobo-break-triage`", and dropping that file here has to actually
-    take effect. Letting the catalog win made the fix a silent no-op.
-    """
-    cap_skill_files = [
-        path
-        for directory in capability_skill_dirs(settings.capabilities_dir, capability.id)
-        for path in sorted(directory.glob("*.md"))
-    ]
-    combined = scan_skill_files(cap_skill_files) + load_all_skills(settings)
-    seen: set[str] = set()
-    unique: list[SkillEntry] = []
-    for skill in combined:
-        if skill.name not in seen:
-            seen.add(skill.name)
-            unique.append(skill)
-    return unique
+# Re-export for callers that imported from capability_run historically.
+__all__ = [
+    "capability_skill_file_hashes",
+    "load_capability_skills",
+    "run_capabilities",
+    "run_capability_analysis",
+]
 
 
 def capability_skill_file_hashes(settings: Settings, capability: Capability) -> dict[str, str]:
@@ -349,6 +331,44 @@ def run_capability_analysis(
         [(c.cluster_id, sid) for c in clusters for sid in c.span_ids],
         history_limit=settings.run_history_limit,
     )
+    # Analytics snapshot after cluster rows exist so coverage/efficiency reuse them.
+    # Always persist at least an overview so Usage unlocks when the run completes.
+    try:
+        from .analytics_snapshot import (
+            build_analytics_snapshot,
+            build_minimal_analytics_snapshot,
+        )
+
+        try:
+            analytics = build_analytics_snapshot(
+                store, settings, capability,
+                run_id=run_id,
+                window_start=window_start,
+                window_end=window_end,
+            )
+        except Exception as exc:  # noqa: BLE001 — fall back to overview-only
+            logger.warning(
+                "full analytics snapshot failed for %s run %s (%s); "
+                "storing overview-only so Usage still unlocks",
+                capability.id, run_id, exc,
+                exc_info=True,
+            )
+            analytics = build_minimal_analytics_snapshot(
+                store, capability,
+                run_id=run_id,
+                window_start=window_start,
+                window_end=window_end,
+                n_clusters=len(clusters),
+                n_matches=len(matches),
+                n_proposals=len(proposals),
+            )
+        store.set_analytics_snapshot(capability.id, run_id, analytics)
+    except Exception as exc:  # noqa: BLE001 — last resort; SPA may still live-fallback
+        logger.warning(
+            "analytics snapshot skipped for %s run %s: %s",
+            capability.id, run_id, exc,
+            exc_info=True,
+        )
     return CapabilityRunResult(
         run=run,
         clusters=tuple(clusters),

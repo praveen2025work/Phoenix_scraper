@@ -25,16 +25,25 @@ test("job statuses map to ok/partial/error", () => {
   expect(jobStatusVariant("partial")).toBe("partial");
   expect(jobStatusVariant("error")).toBe("error");
   expect(jobStatusVariant("failed")).toBe("error");
+  expect(jobStatusVariant("queued")).toBe("info");
+  expect(jobStatusVariant("running")).toBe("info");
+  expect(jobStatusVariant("done")).toBe("ok");
   expect(jobStatusVariant(null)).toBe("outline");
 });
 
 test("statusBadgeVariant covers candidate and job keys", () => {
   expect(statusBadgeVariant("ready")).toBe("ready");
   expect(statusBadgeVariant("ok")).toBe("ok");
+  expect(statusBadgeVariant("active")).toBe("default");
+  expect(statusBadgeVariant("paused")).toBe("warn");
+  expect(statusBadgeVariant("latest")).toBe("info");
+  expect(statusBadgeVariant("older")).toBe("outline");
 });
 
 test("StatusBadge renders status text and data attribute", () => {
   render(<StatusBadge status="accepted" />);
   const el = screen.getByText("accepted");
   expect(el).toHaveAttribute("data-status", "accepted");
+  expect(el.className).toMatch(/uppercase/);
+  expect(el.className).toMatch(/tracking-wide/);
 });

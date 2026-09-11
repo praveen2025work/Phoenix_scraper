@@ -27,6 +27,7 @@ const capBody = {
       n_rung1_candidates: 1,
       n_rung2_candidates: 0,
       notes: [],
+      analytics_ready: true,
     },
     candidates: {},
   },
@@ -42,6 +43,7 @@ const resultsBody = {
   notes: [],
   warnings: ["TRUNCATED: scrape hit limit"],
   skill_hashes: { "fobo-break-triage.md": "abcd".repeat(16) },
+  analytics_ready: true,
   funnel: {
     n_spans: 100,
     n_in_scope_spans: 40,
@@ -185,6 +187,7 @@ const runsBody = [
     n_rung1_candidates: 1,
     n_rung2_candidates: 0,
     status: "ok",
+    analytics_ready: true,
   },
   {
     capability_id: "fobo",
@@ -197,6 +200,7 @@ const runsBody = [
     n_rung1_candidates: 0,
     n_rung2_candidates: 0,
     status: "ok",
+    analytics_ready: true,
   },
   {
     capability_id: "fobo",
@@ -209,6 +213,7 @@ const runsBody = [
     n_rung1_candidates: 0,
     n_rung2_candidates: 0,
     status: "partial",
+    analytics_ready: true,
   },
 ];
 
@@ -356,7 +361,7 @@ test("lands on Results for the last run with skill gaps first", async () => {
       { name: /^History$/i },
     ),
   ).toBeInTheDocument();
-  expect(screen.getByRole("link", { name: /^Usage$/i })).toHaveAttribute(
+  expect(screen.getByTestId("usage-button")).toHaveAttribute(
     "href",
     "/c/fobo/analytics",
   );

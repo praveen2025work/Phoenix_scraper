@@ -1,5 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./client";
+import {
+  type AnalyticsSnapshotDto,
+  snapshotKeyForPath,
+  useAnalyticsSnapshot,
+} from "@/routes/analytics/snapshotContext";
+
+export type { AnalyticsSnapshotDto };
 
 export interface CapabilitySummary {
   id: string;
@@ -201,6 +208,8 @@ export interface RunResultsDto {
   notes: string[];
   warnings: string[];
   skill_hashes: Record<string, string>;
+  /** True when a precomputed Usage snapshot exists for this run. */
+  analytics_ready?: boolean;
   funnel: RunFunnel;
   uncovered: UncoveredRow[];
   suggested_skill_updates: SkillUpdateRow[];
@@ -217,9 +226,20 @@ export const useRunResults = (capabilityId: string, runId: string | null) =>
         `/capabilities/${enc(capabilityId)}/runs/${enc(runId ?? "")}/results`,
       ),
     enabled: !!runId,
+    // Snapshot is written just before the job flips to done; poll briefly so Usage
+    // enables even if the first Results fetch races ahead of analytics_ready.
+    refetchInterval: (query) => {
+      const d = query.state.data;
+      if (!d) return false;
+      if (d.analytics_ready) return false;
+      if (d.status === "failed" || d.status === "error") return false;
+      // ~30s of retries; then stop (snapshot write may have failed).
+      if ((query.state.dataUpdatedCount ?? 0) > 20) return false;
+      return 1500;
+    },
   });
 
-/** One row from GET /capabilities/{id}/runs (raw capability_runs frame). */
+/** One row from GET /capabilities/{id}/runs (run summary, no snapshot blob). */
 export interface CapabilityRunRow {
   capability_id: string;
   run_id: string;
@@ -233,8 +253,12 @@ export interface CapabilityRunRow {
   n_rung1_candidates?: number;
   n_rung2_candidates?: number;
   status?: string;
+  notes?: string[];
   notes_json?: string;
+  skill_hashes?: Record<string, string>;
   skill_hashes_json?: string;
+  /** True when a precomputed Usage snapshot exists for this run. */
+  analytics_ready?: boolean;
 }
 
 /** Past versions for a capability, newest first. */
@@ -244,6 +268,22 @@ export const useCapabilityRuns = (capabilityId: string, enabled = true) =>
     queryFn: () =>
       api.get<CapabilityRunRow[]>(`/capabilities/${enc(capabilityId)}/runs`),
     enabled: !!capabilityId && enabled,
+  });
+
+/** Precomputed Usage panels for one run — 404 until analytics_ready. */
+export const useRunAnalytics = (
+  capabilityId: string,
+  runId: string | null,
+  enabled = true,
+) =>
+  useQuery({
+    queryKey: ["run-analytics", capabilityId, runId],
+    queryFn: () =>
+      api.get<AnalyticsSnapshotDto>(
+        `/capabilities/${enc(capabilityId)}/runs/${enc(runId ?? "")}/analytics`,
+      ),
+    enabled: !!capabilityId && !!runId && enabled,
+    retry: false,
   });
 
 export interface GapRow {
@@ -416,38 +456,73 @@ export const useCreateCapability = () => {
   });
 };
 
-export const useOverview = (capabilityId: string) =>
-  useQuery({
+export const useOverview = (capabilityId: string) => {
+  const snap = useAnalyticsSnapshot();
+  const panel = snap?.panels?.overview as Record<string, number> | undefined;
+  const live = useQuery({
     queryKey: ["overview", capabilityId],
     queryFn: () =>
       api.get<Record<string, number>>(`/overview?capability=${enc(capabilityId)}`),
+    enabled: panel === undefined,
   });
+  if (panel !== undefined) {
+    return { ...live, data: panel, isLoading: false, error: null, isError: false };
+  }
+  return live;
+};
 
-export const useCoverage = (capabilityId: string) =>
-  useQuery({
+export const useCoverage = (capabilityId: string) => {
+  const snap = useAnalyticsSnapshot();
+  const panel = snap?.panels?.skills_coverage as Record<string, unknown>[] | undefined;
+  const live = useQuery({
     queryKey: ["coverage", capabilityId],
     queryFn: () =>
       api.get<Record<string, unknown>[]>(
         `/skills/coverage?capability=${enc(capabilityId)}`,
       ),
+    enabled: panel === undefined,
   });
+  if (panel !== undefined) {
+    return { ...live, data: panel, isLoading: false, error: null, isError: false };
+  }
+  return live;
+};
 
-export const useRunDeltas = (capabilityId: string) =>
-  useQuery({
+export const useRunDeltas = (capabilityId: string) => {
+  const snap = useAnalyticsSnapshot();
+  const panel = snap?.panels?.delta as Record<string, unknown>[] | undefined;
+  const live = useQuery({
     queryKey: ["capdelta", capabilityId],
     queryFn: () =>
       api.get<Record<string, unknown>[]>(
         `/capabilities/${enc(capabilityId)}/runs/delta`,
       ),
+    enabled: panel === undefined,
   });
+  if (panel !== undefined) {
+    return { ...live, data: panel, isLoading: false, error: null, isError: false };
+  }
+  return live;
+};
 
 export type Row = Record<string, unknown>;
 
 /** Generic scoped-analytics query: GET <path> with ?capability=<id> merged in. */
 export function useScoped<T = Row[]>(key: string, path: string, capabilityId: string) {
+  const snap = useAnalyticsSnapshot();
+  const panelKey = snapshotKeyForPath(path);
+  const panel =
+    panelKey && snap?.panels && panelKey in snap.panels
+      ? (snap.panels[panelKey] as T)
+      : undefined;
   const sep = path.includes("?") ? "&" : "?";
-  return useQuery({
+  const live = useQuery({
     queryKey: [key, capabilityId, path],
     queryFn: () => api.get<T>(`${path}${sep}capability=${enc(capabilityId)}`),
+    enabled: panel === undefined,
   });
+  if (panel !== undefined) {
+    return { ...live, data: panel, isLoading: false, error: null, isError: false };
+  }
+  return live;
 }

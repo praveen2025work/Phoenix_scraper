@@ -27,9 +27,6 @@ const RUN_STATUS_HINT: Record<string, string> = {
   failed: "Run failed",
 };
 
-const linkMuted =
-  "text-sm text-muted-foreground underline-offset-2 hover:text-foreground hover:underline";
-
 /** Version + actions + funnel — embeds in capability chrome panel on Results. */
 export function RunResultsChrome({
   capabilityId,
@@ -45,6 +42,12 @@ export function RunResultsChrome({
   const data = results.data;
   const latestRunId = runs.data?.[0]?.run_id ?? null;
   const isLatest = !latestRunId || latestRunId === runId;
+  // Prefer precomputed snapshot; unlock Usage on ok/partial even if snapshot lagged
+  // so operators are never stuck (Analytics can live-fallback for missing panels).
+  const analyticsReady =
+    Boolean(data?.analytics_ready) ||
+    data?.status === "ok" ||
+    data?.status === "partial";
 
   if (results.isLoading) {
     return (
@@ -72,17 +75,21 @@ export function RunResultsChrome({
             Version · {formatHumanDateTime(data.run_id)}
           </h2>
           {isLatest ? (
-            <Badge variant="info" data-testid="latest-run-badge" className="px-1.5 py-0">
+            <StatusBadge
+              status="latest"
+              data-testid="latest-run-badge"
+              className="px-1.5 py-0"
+            >
               Latest
-            </Badge>
+            </StatusBadge>
           ) : (
-            <Badge
-              variant="outline"
+            <StatusBadge
+              status="older"
               data-testid="older-run-badge"
               className="px-1.5 py-0"
             >
               Older
-            </Badge>
+            </StatusBadge>
           )}
           <span className="text-xs text-muted-foreground sm:text-sm">
             {formatHumanDate(data.window_start)} →{" "}
@@ -101,13 +108,25 @@ export function RunResultsChrome({
             </StatusBadge>
           )}
         </div>
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <div className="flex flex-wrap items-center gap-2">
           <Button size="default" onClick={onRunNext}>
             Run next version
           </Button>
-          <Link to={`/c/${capabilityId}/analytics`} className={linkMuted}>
-            Usage
-          </Link>
+          {analyticsReady ? (
+            <Button asChild variant="outline" size="default" data-testid="usage-button">
+              <Link to={`/c/${capabilityId}/analytics`}>Usage</Link>
+            </Button>
+          ) : (
+            <Button
+              variant="outline"
+              size="default"
+              disabled
+              title="Available after a run finishes"
+              data-testid="usage-button"
+            >
+              Usage
+            </Button>
+          )}
         </div>
       </div>
 

@@ -6,10 +6,11 @@ import shutil
 import uuid
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
+import pandas as pd
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
-import pandas as pd
 
 from . import capability as capability_mod
 from . import skill_coverage
@@ -120,7 +121,7 @@ def capability_router(settings: Settings) -> APIRouter:
 
     def _summary(store: Store, cap: Capability) -> dict:
         runs = store.capability_runs_frame(cap.id, limit=1)
-        last = runs.iloc[0].to_dict() if len(runs) else None
+        last = _run_summary(runs.iloc[0].to_dict()) if len(runs) else None
         cands = store.candidates_frame(cap.id)
         by: dict[str, dict[str, int]] = {"skill": {}, "deterministic": {}}
         for row in cands.to_dict("records"):
@@ -370,12 +371,26 @@ def _preview_window(
     return now - timedelta(days=days), now, days
 
 
-def _run_summary(row: dict) -> dict:
+def _parse_analytics_panels(raw: object) -> dict[str, Any] | None:
+    """Parse analytics_snapshot_json into a non-empty panels dict, or None."""
+    if not isinstance(raw, str) or raw in ("", "null", "None", "{}"):
+        return None
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, json.JSONDecodeError):
+        return None
+    return parsed if isinstance(parsed, dict) and parsed else None
+
+
+def _run_summary(row: dict[str, Any]) -> dict[str, Any]:
     out = dict(row)
     out["notes"] = json.loads(row.get("notes_json") or "[]")
     out["skill_hashes"] = json.loads(row.get("skill_hashes_json") or "{}")
+    out["analytics_ready"] = _parse_analytics_panels(row.get("analytics_snapshot_json")) is not None
     out.pop("notes_json", None)
     out.pop("skill_hashes_json", None)
+    # Never inline the full panel payload on list/summary responses.
+    out.pop("analytics_snapshot_json", None)
     return out
 
 
@@ -516,6 +531,7 @@ def _build_run_results(
         "notes": notes,
         "warnings": warnings,
         "skill_hashes": summary.get("skill_hashes") or {},
+        "analytics_ready": bool(summary.get("analytics_ready")),
         "funnel": funnel,
         "uncovered": _records(uncovered),
         "suggested_skill_updates": _records(updates),
@@ -702,6 +718,12 @@ def _register_run_routes(router: APIRouter, settings: Settings, _store) -> None:
         from .api import _frame_response
         with _store() as store:
             df = store.capability_runs_frame(cap_id)
+        if fmt == "json":
+            # Summaries only — never ship analytics_snapshot_json on the list.
+            return [_run_summary(r) for r in df.to_dict("records")]
+        # CSV keeps scalar columns; drop the blob.
+        if "analytics_snapshot_json" in df.columns:
+            df = df.drop(columns=["analytics_snapshot_json"])
         return _frame_response(df, fmt, "capability_runs")
 
     # Registered before /runs/{run_id} so "delta" / "compare" are not read as run ids.
@@ -741,6 +763,27 @@ def _register_run_routes(router: APIRouter, settings: Settings, _store) -> None:
             if row is None:
                 raise HTTPException(status_code=404, detail="No such run")
             return _build_run_results(store, settings, cap_id, run_id, row)
+
+    @router.get("/capabilities/{cap_id}/runs/{run_id}/analytics")
+    def run_analytics(cap_id: str, run_id: str) -> dict[str, Any]:
+        """Precomputed Usage/Analytics panels for this run — 404 until ready."""
+        with _store() as store:
+            row = store.get_capability_run(cap_id, run_id)
+            if row is None:
+                raise HTTPException(status_code=404, detail="No such run")
+            snapshot = _parse_analytics_panels(row.get("analytics_snapshot_json"))
+            if snapshot is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Analytics snapshot not ready for this run",
+                )
+            return {
+                "capability_id": cap_id,
+                "run_id": run_id,
+                "window_start": row.get("window_start"),
+                "window_end": row.get("window_end"),
+                "panels": snapshot,
+            }
 
     @router.get("/capabilities/{cap_id}/runs/{run_id}")
     def one_run(cap_id: str, run_id: str) -> dict:

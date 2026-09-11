@@ -467,7 +467,7 @@ export function CandidateDetail() {
             return (
               <Button
                 key={action}
-                size={action === "accept" ? "lg" : "default"}
+                size="default"
                 variant={
                   action === "reject"
                     ? "destructive"
@@ -527,10 +527,10 @@ export function CandidateDetail() {
               ))}
             </ul>
             <div className="flex flex-wrap gap-2">
-              <Button asChild size="lg">
+              <Button asChild size="default">
                 <Link to={`/c/${id}?step=results`}>Back to Results</Link>
               </Button>
-              <Button asChild variant="outline">
+              <Button asChild size="default" variant="outline">
                 <Link to={`/c/${id}?step=setup`}>Setup skills</Link>
               </Button>
             </div>
@@ -557,13 +557,13 @@ export function CandidateDetail() {
             )}
             <div className="flex flex-wrap gap-2">
               <Button
-                size="lg"
+                size="default"
                 disabled={!canWrite || promote.isPending}
                 onClick={doPromote}
               >
                 {writeLabel}
               </Button>
-              <Button variant="outline" onClick={showPreview}>
+              <Button size="default" variant="outline" onClick={showPreview}>
                 Preview files first
               </Button>
             </div>
@@ -627,7 +627,7 @@ export function CandidateDetail() {
                   Cancel
                 </Button>
               </DialogClose>
-              <Button type="submit" size="lg" disabled={decide.isPending}>
+              <Button type="submit" size="default" disabled={decide.isPending}>
                 Confirm
               </Button>
             </div>

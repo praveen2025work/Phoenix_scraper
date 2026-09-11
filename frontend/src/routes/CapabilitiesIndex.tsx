@@ -8,7 +8,7 @@ import {
 } from "@/api/hooks";
 import { OutcomeBanner } from "@/components/OutcomeBanner";
 import { PageHeader } from "@/components/PageHeader";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -44,9 +44,7 @@ function CapabilityCard({ cap }: { cap: CapabilitySummary }) {
           <Link to={`/c/${cap.id}`} className="hover:underline">
             {cap.name}
           </Link>
-          <Badge variant={cap.status === "active" ? "default" : "warn"}>
-            {cap.status}
-          </Badge>
+          <StatusBadge status={cap.status} />
         </CardTitle>
         <p className="text-xs text-muted-foreground">{filterSummary(cap.filter)}</p>
       </CardHeader>

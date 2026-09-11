@@ -10,7 +10,7 @@ import { RunProgress } from "@/components/RunProgress";
 import { RunResults, RunResultsChrome } from "@/components/RunResults";
 import { SkillFiles } from "@/components/SkillFiles";
 import { WizardSteps, type WizardStep } from "@/components/WizardSteps";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -91,6 +91,7 @@ export function CapabilityDetail() {
       qc.invalidateQueries({ queryKey: ["candidates", id] });
       qc.invalidateQueries({ queryKey: ["run-results", id] });
       qc.invalidateQueries({ queryKey: ["capability-runs", id] });
+      qc.invalidateQueries({ queryKey: ["run-analytics", id] });
       setResultRunId(data.run_id);
       setJobId(null);
       setForceSetup(false);
@@ -272,13 +273,11 @@ export function CapabilityDetail() {
             {title}
           </h1>
           {summary && (
-            <Badge
-              variant={summary.status === "active" ? "default" : "warn"}
-              className="px-1.5 py-0 text-[10px] font-medium"
+            <StatusBadge
+              status={summary.status}
+              className="px-1.5 py-0 text-[10px]"
               data-testid="capability-status-badge"
-            >
-              {summary.status}
-            </Badge>
+            />
           )}
           <span
             className="min-w-0 max-w-full truncate text-[11px] text-muted-foreground sm:max-w-md"

@@ -24,6 +24,17 @@ const JOB_STATUS_VARIANT: Record<string, StatusBadgeVariant> = {
   partial: "partial",
   error: "error",
   failed: "error",
+  queued: "info",
+  running: "info",
+  done: "ok",
+};
+
+/** Capability / meta chip statuses → badge variant. */
+const META_STATUS_VARIANT: Record<string, StatusBadgeVariant> = {
+  active: "default",
+  paused: "warn",
+  latest: "info",
+  older: "outline",
 };
 
 /** Column / label text color for lane headers. */
@@ -52,6 +63,7 @@ export function statusBadgeVariant(status: string): StatusBadgeVariant {
   return (
     CANDIDATE_STATUS_VARIANT[status] ??
     JOB_STATUS_VARIANT[status] ??
+    META_STATUS_VARIANT[status] ??
     "outline"
   );
 }
