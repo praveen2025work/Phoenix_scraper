@@ -41,8 +41,49 @@ def test_enqueue_returns_202_and_persists(ctx) -> None:
     body = r.json()
     assert body["state"] == "queued" and body["capability_id"] == "plex"
     assert body["stage"] == "queued" and body["progress"] == 0.0
+    assert body["message"]  # offline / queue hint — never leave the SPA blank
     listed = c.get("/capabilities/plex/jobs").json()
     assert [j["job_id"] for j in listed] == [body["job_id"]]
+
+
+def test_enqueue_with_live_worker_leaves_queued(tmp_path: Path) -> None:
+    """create_app_default-style serving must claim jobs without a manual drain."""
+    import time
+
+    from phoenix_scraper import capability as cap_mod
+    from phoenix_scraper.models import CapabilityFilter
+
+    settings = Settings(
+        db_path=tmp_path / "api.db", export_dir=tmp_path / "e",
+        skills_catalog=REPO_ROOT / "config" / "skills_catalog.yaml",
+        pricing_path=REPO_ROOT / "config" / "pricing.yaml",
+        capabilities_dir=tmp_path / "caps",
+    ).model_copy(update={"phoenix_endpoint": None})
+    cap_mod.scaffold_capability(
+        tmp_path / "caps", "plex", name="PLEX",
+        cap_filter=CapabilityFilter(workflow_stage="plex"), window_days=30,
+    )
+    app = create_app(settings, run_jobs=True)
+    with TestClient(app) as c:
+        health = c.get("/health").json()
+        assert health["jobs"] == "running"
+        c.post("/demo/seed")
+        job_id = c.post("/capabilities/plex/jobs", json=WINDOW).json()["job_id"]
+        deadline = time.time() + 5.0
+        state = "queued"
+        while time.time() < deadline:
+            state = c.get(f"/capabilities/plex/jobs/{job_id}").json()["state"]
+            if state != "queued":
+                break
+            time.sleep(0.05)
+        assert state in {"running", "done"}, f"job stuck in {state!r}"
+        # Wait for completion so lifespan shutdown is clean.
+        while time.time() < deadline:
+            if c.get(f"/capabilities/plex/jobs/{job_id}").json()["state"] in {
+                "done", "error",
+            }:
+                break
+            time.sleep(0.05)
 
 
 def test_enqueue_requires_closed_window(ctx) -> None:

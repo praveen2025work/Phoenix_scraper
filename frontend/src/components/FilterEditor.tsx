@@ -10,14 +10,32 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 const TEXT_FIELDS: { key: keyof SpanFilter; label: string; hint: string }[] = [
-  { key: "project", label: "project", hint: "pnl-agent" },
-  { key: "workflow_stage", label: "workflow stage", hint: "fobo_recon" },
-  { key: "asset_class", label: "asset class", hint: "fx" },
-  { key: "model_name", label: "model", hint: "claude-sonnet" },
-  { key: "search", label: "search", hint: "recon" },
+  { key: "project", label: "project", hint: "e.g. pnl-agent" },
+  { key: "workflow_stage", label: "workflow stage", hint: "e.g. fobo_recon" },
+  { key: "asset_class", label: "asset class", hint: "e.g. fx" },
+  { key: "model_name", label: "model", hint: "e.g. claude-sonnet" },
+  { key: "search", label: "search", hint: "e.g. recon" },
 ];
 
 const MAX_SAMPLE_PROMPTS = 3;
+
+/** Always include every key so save/preview never drop `project` by omission. */
+const EMPTY_FILTER: SpanFilter = {
+  project: null,
+  workflow_stage: null,
+  asset_class: null,
+  model_name: null,
+  search: null,
+  search_any: [],
+};
+
+function normalizeFilter(initial: SpanFilter): SpanFilter {
+  return {
+    ...EMPTY_FILTER,
+    ...initial,
+    search_any: initial.search_any ?? [],
+  };
+}
 
 /** Debounce so every keystroke doesn't fire a preview request. */
 function useDebounced<T>(value: T, ms = 400): T {
@@ -43,15 +61,33 @@ export function FilterEditor({
   windowFrom?: string;
   windowTo?: string;
 }) {
-  const [filter, setFilter] = useState<SpanFilter>(initial);
+  const [filter, setFilter] = useState<SpanFilter>(() => normalizeFilter(initial));
   const [anyText, setAnyText] = useState((initial.search_any ?? []).join("\n"));
   const patch = usePatchCapability(capabilityId);
+
+  // Sync when the *saved* filter changes (load / Sync / refetch). Depend on a
+  // stable serialization so a new object identity from the parent does not
+  // wipe in-progress typing.
+  const savedFilterKey = JSON.stringify({
+    project: initial.project ?? null,
+    workflow_stage: initial.workflow_stage ?? null,
+    asset_class: initial.asset_class ?? null,
+    model_name: initial.model_name ?? null,
+    search: initial.search ?? null,
+    search_any: initial.search_any ?? [],
+  });
+  useEffect(() => {
+    setFilter(normalizeFilter(initial));
+    setAnyText((initial.search_any ?? []).join("\n"));
+    // initial is covered by savedFilterKey
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [savedFilterKey]);
 
   const searchAny = anyText
     .split("\n")
     .map((s) => s.trim())
     .filter(Boolean);
-  const draft: SpanFilter = { ...filter, search_any: searchAny };
+  const draft: SpanFilter = { ...normalizeFilter(filter), search_any: searchAny };
   const preview = useFilterPreview(useDebounced(draft), {
     windowDays,
     from: windowFrom
@@ -95,6 +131,8 @@ export function FilterEditor({
                 onChange={(e) => set(f.key, e.target.value)}
                 placeholder={f.hint}
                 aria-label={f.label}
+                autoComplete="off"
+                name={`capability-filter-${String(f.key)}`}
                 className="mt-0.5 h-8"
               />
             </label>

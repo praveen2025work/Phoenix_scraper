@@ -309,7 +309,10 @@ A **capability** is a named analysis scope — a saved span filter + an owned
 directory of skill files — for one workflow (FOBO recon, PLEX, …).
 `capabilities/<id>/capability.yaml` on disk is the source of truth; the
 `capabilities` table mirrors it (`window_days > 0` and `status ∈ {active,paused}`
-are enforced).
+are enforced). `filter.project` (when set) drives both the Phoenix scrape and
+in-scope matching — it wins over `PHEONIX_PROJECT`. FOBO ships as `pnl-agent` /
+`fobo_recon`; if your live traces use another project name, change the Advanced
+filter (or yaml) accordingly rather than leaving yaml and env fighting.
 
 ```bash
 uv run pheonix capability new fobo --name "FOBO reconciliation" \

@@ -717,14 +717,33 @@ class Store:
         return cur.rowcount > 0
 
     # ---- capability jobs (async run queue) -----------------------------------
-    def enqueue_job(self, job_id: str, capability_id: str, params: dict) -> None:
+    def enqueue_job(
+        self,
+        job_id: str,
+        capability_id: str,
+        params: dict,
+        *,
+        message: str | None = None,
+    ) -> None:
         self._conn.execute(
             "INSERT INTO capability_jobs "
             "(job_id, capability_id, state, stage, progress, message, params_json, "
-            "enqueued_at) VALUES (?,?,'queued','queued',0,NULL,?,?)",
-            (job_id, capability_id, json.dumps(params), _iso(datetime.now(UTC))),
+            "enqueued_at) VALUES (?,?,'queued','queued',0,?,?,?)",
+            (
+                job_id,
+                capability_id,
+                message,
+                json.dumps(params),
+                _iso(datetime.now(UTC)),
+            ),
         )
         self._conn.commit()
+
+    def running_job_count(self) -> int:
+        row = self._conn.execute(
+            "SELECT COUNT(*) AS n FROM capability_jobs WHERE state = 'running'"
+        ).fetchone()
+        return int(row["n"] if row is not None else 0)
 
     def get_job(self, job_id: str) -> dict | None:
         row = self._conn.execute(
@@ -749,7 +768,7 @@ class Store:
         now = _iso(datetime.now(UTC))
         self._conn.execute(
             "UPDATE capability_jobs SET state = 'running', started_at = ?, "
-            "stage = 'scraping', progress = 0.05, message = 'Starting scrape' "
+            "stage = 'scraping', progress = 0.05, message = 'Starting run' "
             "WHERE job_id = ?",
             (now, row["job_id"]),
         )
@@ -759,7 +778,7 @@ class Store:
         job["started_at"] = now
         job["stage"] = "scraping"
         job["progress"] = 0.05
-        job["message"] = "Starting scrape"
+        job["message"] = "Starting run"
         return job
 
     def update_job_progress(

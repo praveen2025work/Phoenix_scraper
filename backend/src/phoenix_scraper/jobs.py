@@ -39,11 +39,15 @@ class JobWorker:
         self.poll_seconds = poll_seconds
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
+        # Set by enqueue (and start) so a new job is claimed immediately instead of
+        # waiting up to poll_seconds — UI otherwise sits on "Waiting for worker…".
+        self._wake = threading.Event()
 
     def start(self) -> None:
         if self._thread is not None and self._thread.is_alive():
             return
         self._stop.clear()
+        self._wake.set()  # drain any jobs left queued across a reload
         self._thread = threading.Thread(
             target=self._loop, name="pheonix-jobs", daemon=True
         )
@@ -51,14 +55,30 @@ class JobWorker:
 
     def stop(self, timeout: float = 5.0) -> None:
         self._stop.set()
+        self._wake.set()  # unblock _loop if it is waiting
         if self._thread is not None:
             self._thread.join(timeout)
             self._thread = None
 
+    def notify(self) -> None:
+        """Wake the poll loop after a job is enqueued."""
+        self._wake.set()
+
+    def is_alive(self) -> bool:
+        return self._thread is not None and self._thread.is_alive()
+
     def _loop(self) -> None:
-        while not self._stop.wait(self.poll_seconds):
+        while not self._stop.is_set():
+            # Wait for notify() or the periodic poll; clear so the next wait blocks.
+            self._wake.wait(self.poll_seconds)
+            self._wake.clear()
+            if self._stop.is_set():
+                break
             try:
-                self.drain_once()
+                # Drain the whole queue in one wake — a busy prior run may have
+                # left several jobs queued behind it.
+                while not self._stop.is_set() and self.drain_once() is not None:
+                    pass
             except Exception:  # noqa: BLE001 — the worker thread must never die
                 logger.exception("job worker iteration failed")
 

@@ -1,5 +1,6 @@
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import React from "react";
 import { afterEach, expect, test, vi } from "vitest";
 import { FilterEditor } from "./FilterEditor";
 import { renderWithProviders } from "@/test/renderWithProviders";
@@ -88,4 +89,60 @@ test("Save filter PATCHes the capability", async () => {
       ),
     ).toBe(true),
   );
+});
+
+test("shows the capability project value, not only the placeholder", async () => {
+  mock();
+  renderWithProviders(
+    <FilterEditor
+      capabilityId="fobo"
+      initial={{ project: "pnl-agent", workflow_stage: "fobo_recon" }}
+      windowDays={30}
+    />,
+  );
+  expect(screen.getByLabelText(/^project$/i)).toHaveValue("pnl-agent");
+  expect(screen.getByLabelText(/workflow stage/i)).toHaveValue("fobo_recon");
+});
+
+test("Save always submits project so a partial form cannot drop it", async () => {
+  const spy = mock();
+  renderWithProviders(
+    <FilterEditor
+      capabilityId="fobo"
+      initial={{ project: "pnl-agent", workflow_stage: "fobo_recon" }}
+      windowDays={30}
+    />,
+  );
+  await userEvent.click(screen.getByRole("button", { name: /save filter/i }));
+  await waitFor(() => {
+    const patch = spy.mock.calls.find(
+      ([u, i]) =>
+        String(u).endsWith("/capabilities/fobo") && (i as RequestInit).method === "PATCH",
+    );
+    expect(patch).toBeTruthy();
+    const body = JSON.parse((patch![1] as RequestInit).body as string);
+    expect(body.filter.project).toBe("pnl-agent");
+    expect(body.filter.workflow_stage).toBe("fobo_recon");
+  });
+});
+
+test("reloads draft when the saved filter prop changes", async () => {
+  mock();
+  function Harness() {
+    const [saved, setSaved] = React.useState<Record<string, string | null>>({
+      project: "pnl-agent",
+    });
+    return (
+      <div>
+        <button type="button" onClick={() => setSaved({ project: null })}>
+          clear saved
+        </button>
+        <FilterEditor capabilityId="fobo" initial={saved} windowDays={30} />
+      </div>
+    );
+  }
+  renderWithProviders(<Harness />);
+  expect(screen.getByLabelText("project")).toHaveValue("pnl-agent");
+  await userEvent.click(screen.getByRole("button", { name: /clear saved/i }));
+  await waitFor(() => expect(screen.getByLabelText("project")).toHaveValue(""));
 });

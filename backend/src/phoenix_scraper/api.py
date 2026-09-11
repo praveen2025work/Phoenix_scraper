@@ -246,7 +246,15 @@ def create_app(
 
     @app.get("/health")
     def health() -> dict[str, str]:
-        return {"status": "ok", "version": __version__}
+        # SPA / ops can tell "API up but jobs will never leave queued" from a
+        # healthy worker. Tests use run_jobs=False → jobs=disabled.
+        if worker is None:
+            jobs = "disabled"
+        elif worker.is_alive():
+            jobs = "running"
+        else:
+            jobs = "dead"
+        return {"status": "ok", "version": __version__, "jobs": jobs}
 
     @app.get("/", include_in_schema=False)
     def root() -> dict[str, str]:

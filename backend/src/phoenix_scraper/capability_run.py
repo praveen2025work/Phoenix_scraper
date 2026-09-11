@@ -389,6 +389,24 @@ def _target_capabilities(
     return []
 
 
+def _scrape_project_for(capability: Capability, settings: Settings) -> str:
+    """Phoenix project to scrape for this capability.
+
+    When ``filter.project`` is set it wins over ``PHEONIX_PROJECT`` so scrape and
+    in-scope analysis stay on the same project (FOBO defaults to ``pnl-agent``).
+    Empty ``filter.project`` falls back to ``PHEONIX_PROJECT`` for the pull only —
+    it does NOT mean "all Phoenix projects". Analysis then uses the filter as
+    written (no project clause = every project already in the store for the window).
+    """
+    named = (capability.filter.project or "").strip() or (settings.project or "").strip()
+    if not named:
+        raise ValueError(
+            f"capability {capability.id!r} has no filter.project and PHEONIX_PROJECT "
+            "is unset/blank — set one before scraping"
+        )
+    return named
+
+
 def _scrape_projects(
     store: Store,
     settings: Settings,
@@ -480,10 +498,21 @@ def run_capabilities(
     for cap in capabilities:
         store.upsert_capability(cap)
 
-    projects = {
-        (cap.filter.project or settings.project) for cap in capabilities
-    }
-    _emit(on_progress, "scraping", 0.1, "Pulling spans from Phoenix")
+    projects = {_scrape_project_for(cap, settings) for cap in capabilities}
+    project_list = ", ".join(sorted(projects)) or "(none)"
+    offline = (
+        "no Phoenix client was supplied" if client is None else client.unavailable_reason()
+    )
+    if offline is not None:
+        _emit(
+            on_progress, "scraping", 0.1,
+            f"Skipping scrape ({offline}) — analysing stored spans",
+        )
+    else:
+        _emit(
+            on_progress, "scraping", 0.1,
+            f"Pulling spans from Phoenix ({project_list})",
+        )
     scrape_problems, scrape_info = _scrape_projects(
         store, settings, projects, client,
         window_start=window_start, window_end=window_end,
@@ -491,7 +520,7 @@ def run_capabilities(
 
     results: list[CapabilityRunResult] = []
     for cap in capabilities:
-        project = cap.filter.project or settings.project
+        project = _scrape_project_for(cap, settings)
         cap_notes = list(scrape_problems.get(project, []))
         cap_info = list(scrape_info.get(project, []))
         try:

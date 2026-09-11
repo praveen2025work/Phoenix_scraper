@@ -59,5 +59,32 @@ def test_start_stop_is_safe_and_idempotent(job_settings) -> None:
     w = JobWorker(job_settings, poll_seconds=0.05)
     w.start()
     w.start()  # idempotent
+    assert w.is_alive()
     w.stop()
     w.stop()   # safe when already stopped
+    assert not w.is_alive()
+
+
+def test_notify_wakes_worker_to_claim_job(job_settings, seeded_store) -> None:
+    """Enqueue + notify must claim without waiting for the poll interval."""
+    import time
+
+    w = JobWorker(job_settings, poll_seconds=30.0)  # would stall without notify
+    w.start()
+    try:
+        seeded_store.enqueue_job("j-wake", "fobo", {})
+        w.notify()
+        deadline = time.time() + 3.0
+        while time.time() < deadline:
+            job = seeded_store.get_job("j-wake")
+            if job and job["state"] != "queued":
+                break
+            time.sleep(0.05)
+        assert seeded_store.get_job("j-wake")["state"] in {"running", "done", "error"}
+        # Let the run finish so stop() doesn't join a busy thread too early.
+        while time.time() < deadline:
+            if seeded_store.get_job("j-wake")["state"] in {"done", "error"}:
+                break
+            time.sleep(0.05)
+    finally:
+        w.stop()

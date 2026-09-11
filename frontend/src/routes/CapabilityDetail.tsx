@@ -2,7 +2,13 @@ import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import { useCapability, useEnqueueRun, useJob, useSkillFiles } from "@/api/hooks";
+import {
+  type SpanFilter,
+  useCapability,
+  useEnqueueRun,
+  useJob,
+  useSkillFiles,
+} from "@/api/hooks";
 import { FilterEditor } from "@/components/FilterEditor";
 import { OutcomeBanner } from "@/components/OutcomeBanner";
 import { RunHistory } from "@/components/RunHistory";
@@ -71,6 +77,12 @@ export function CapabilityDetail() {
 
   const job = useJob(id, jobId);
   const summary = cap.data?.summary;
+  // Prefer capability.filter (full model_dump) so Advanced never seeds without
+  // project — a missing project + Save would wipe pnl-agent and fall back to
+  // PHEONIX_PROJECT on the next run.
+  const spanFilter = (cap.data?.capability?.filter ??
+    summary?.filter ??
+    {}) as SpanFilter;
   const lastRunId =
     summary?.last_run && typeof summary.last_run === "object"
       ? String((summary.last_run as { run_id?: string }).run_id ?? "")
@@ -249,7 +261,7 @@ export function CapabilityDetail() {
   const skillCount = skills.data?.length ?? cap.data?.skill_files?.length ?? 0;
   const title = summary?.name ?? id;
   const filterLine = filterOneLiner(
-    (summary?.filter ?? {}) as Record<string, unknown>,
+    spanFilter as Record<string, unknown>,
   );
 
   return (
@@ -396,8 +408,9 @@ export function CapabilityDetail() {
               </summary>
               <div className="mt-3">
                 <FilterEditor
+                  key={id}
                   capabilityId={id}
-                  initial={(summary?.filter ?? {}) as Record<string, never>}
+                  initial={spanFilter}
                   windowDays={DEFAULT_WINDOW_DAYS}
                   windowFrom={from || undefined}
                   windowTo={to || undefined}

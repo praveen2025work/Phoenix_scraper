@@ -2,6 +2,9 @@ id: fobo
 name: FOBO reconciliation
 description: ''
 filter:
+  # Source of truth for scrape AND in-scope analysis. If your Phoenix traces
+  # live elsewhere (e.g. agent1-finance), set project here — do not leave this
+  # as pnl-agent while relying on PHEONIX_PROJECT alone.
   project: pnl-agent
   workflow_stage: fobo_recon
   asset_class: null

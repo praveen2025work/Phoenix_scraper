@@ -243,7 +243,17 @@ def capability_router(settings: Settings) -> APIRouter:
             cap = store.get_capability(cap_id)
         if cap is None:
             raise HTTPException(status_code=404, detail=f"No capability {cap_id!r}")
-        updates = dict(body.model_dump(exclude_none=True))
+        # Filter PATCHes from the SPA may omit keys the form never touched. A full
+        # replace via model_dump() would then default those to null and wipe e.g.
+        # FOBO's project=pnl-agent, after which runs fall back to PHEONIX_PROJECT
+        # ("default" / env) and in-scope matching goes to zero. Merge only fields
+        # the client actually set (explicit null still clears).
+        updates = dict(body.model_dump(exclude_none=True, exclude={"filter"}))
+        if body.filter is not None:
+            updates["filter"] = {
+                **cap.filter.model_dump(),
+                **body.filter.model_dump(exclude_unset=True),
+            }
         try:
             # Re-validate rather than model_copy: model_copy skips validation, so a
             # patched `filter` would stay a plain dict and blow up on dump_capability.

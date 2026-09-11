@@ -1,6 +1,6 @@
 # Root Makefile — thin wrappers that cd into backend/ or frontend/.
 # See backend/README.md and frontend/README.md for the full command set.
-.PHONY: setup demo seed scrape analyze evaluate coverage report api test lint clean \
+.PHONY: setup demo seed scrape analyze evaluate coverage report api api-reload test lint clean \
 	ui ui-build ui-types ui-test ui-e2e stack
 
 setup:            ## install backend deps (uv) and frontend deps (npm)
@@ -29,8 +29,14 @@ report:           ## write markdown report + exports to backend/data/exports
 	cd backend && uv run pheonix report
 
 api:              ## start the API on :8000 with the job worker (allows the :5173 SPA)
-	cd backend && uv run uvicorn --factory phoenix_scraper.api:create_app_default \
-	  --port 8000 --reload
+	cd backend && PHEONIX_CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173 \
+	  .venv/bin/uvicorn --factory phoenix_scraper.api:create_app_default \
+	  --host 127.0.0.1 --port 8000
+
+api-reload:       ## same as `make api` but auto-reloads on backend code changes
+	cd backend && PHEONIX_CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173 \
+	  .venv/bin/uvicorn --factory phoenix_scraper.api:create_app_default \
+	  --host 127.0.0.1 --port 8000 --reload
 
 test:             ## backend test suite with coverage
 	cd backend && uv run pytest --cov=phoenix_scraper --cov-report=term-missing

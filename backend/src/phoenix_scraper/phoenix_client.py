@@ -173,6 +173,16 @@ class PhoenixClientWrapper:
     ) -> pd.DataFrame:
         from phoenix.client.types.spans import SpanQuery
 
+        # The Phoenix SDK POSTs /v1/spans with params={"project_name": ...} only when
+        # a name is set. An empty project omits the param and pulls EVERY project —
+        # refuse that rather than silently over-scraping the whole Phoenix instance.
+        project = (project or "").strip()
+        if not project:
+            raise ValueError(
+                "Phoenix scrape requires a project name (capability filter.project "
+                "or PHEONIX_PROJECT); refusing an unscoped /v1/spans call"
+            )
+
         logger.info(
             "Phoenix GET spans: endpoint=%s project=%s window=%s..%s limit=%d timeout=%ds",
             self._settings.phoenix_endpoint, project,

@@ -59,6 +59,29 @@ class TestCapabilityCrud:
         got = client.get("/capabilities/fobo").json()["capability"]
         assert got["window_days"] == 14 and got["status"] == "paused"
 
+    def test_patch_filter_omitting_project_preserves_existing(self, client: TestClient) -> None:
+        """SPA used to omit unset keys; that must not wipe capability.yaml project."""
+        _create(client, filter={"project": "pnl-agent", "workflow_stage": "fobo_recon"})
+        r = client.patch(
+            "/capabilities/fobo",
+            json={"filter": {"workflow_stage": "fobo_recon", "search_any": []}},
+        )
+        assert r.status_code == 200, r.text
+        got = client.get("/capabilities/fobo").json()["capability"]["filter"]
+        assert got["project"] == "pnl-agent"
+        assert got["workflow_stage"] == "fobo_recon"
+
+    def test_patch_filter_can_clear_project_explicitly(self, client: TestClient) -> None:
+        _create(client, filter={"project": "pnl-agent", "workflow_stage": "fobo_recon"})
+        r = client.patch(
+            "/capabilities/fobo",
+            json={"filter": {"project": None, "workflow_stage": "fobo_recon"}},
+        )
+        assert r.status_code == 200, r.text
+        got = client.get("/capabilities/fobo").json()["capability"]["filter"]
+        assert got["project"] is None
+        assert got["workflow_stage"] == "fobo_recon"
+
     def test_get_missing_is_404(self, client: TestClient) -> None:
         assert client.get("/capabilities/ghost").status_code == 404
 

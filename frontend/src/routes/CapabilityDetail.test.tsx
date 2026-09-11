@@ -11,12 +11,18 @@ const PREV_RUN = "2026-09-07T10:00:00+00:00";
 const OLDER_RUN = "2026-09-01T10:00:00+00:00";
 
 const capBody = {
-  capability: { id: "fobo", name: "FOBO", status: "active", filter: {}, window_days: 30 },
+  capability: {
+    id: "fobo",
+    name: "FOBO",
+    status: "active",
+    filter: { project: "pnl-agent", workflow_stage: "fobo_recon" },
+    window_days: 30,
+  },
   summary: {
     id: "fobo",
     name: "FOBO",
     status: "active",
-    filter: { workflow_stage: "fobo_recon" },
+    filter: { project: "pnl-agent", workflow_stage: "fobo_recon" },
     window_days: 30,
     last_run: {
       run_id: RUN_ID,
@@ -289,6 +295,9 @@ test("lands on Results for the last run with skill gaps first", async () => {
   expect(screen.queryByText(/Gaps first/i)).not.toBeInTheDocument();
   expect(within(chrome).getByRole("heading", { level: 1, name: /^FOBO$/i })).toBeInTheDocument();
   expect(within(chrome).getByTestId("capability-status-badge")).toHaveTextContent(/active/i);
+  expect(within(chrome).getByTestId("capability-filter-line")).toHaveTextContent(
+    /project=pnl-agent/,
+  );
   expect(within(chrome).getByTestId("capability-filter-line")).toHaveTextContent(
     /workflow_stage=fobo_recon/,
   );

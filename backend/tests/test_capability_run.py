@@ -340,6 +340,56 @@ class TestRunCapabilities:
         run_capabilities(seeded_store, s, all_active=True, client=client, now=NOW)
         assert sorted(client.scraped) == ["proj-1", "proj-2"]
 
+    def test_filter_project_wins_over_settings_project(
+        self, seeded_store, tmp_path, settings
+    ) -> None:
+        """Named capability filter.project must drive scrape, not PHEONIX_PROJECT.
+
+        Otherwise FOBO (pnl-agent) can scrape agent1-finance while in-scope still
+        filters pnl-agent → 0 matches.
+        """
+        root = tmp_path / "caps"
+        cap_mod.scaffold_capability(
+            root, "fobo", name="FOBO",
+            cap_filter=CapabilityFilter(project="pnl-agent", workflow_stage="fobo_recon"),
+        )
+        s = settings.model_copy(
+            update={"capabilities_dir": root, "project": "agent1-finance"}
+        )
+        client = _FakeClient()
+        run_capabilities(
+            seeded_store, s, capability_ids=["fobo"], client=client, now=NOW,
+        )
+        assert client.scraped == ["pnl-agent"]
+
+    def test_empty_filter_project_scrapes_settings_project(
+        self, seeded_store, tmp_path, settings
+    ) -> None:
+        """Clearing the capability project must NOT mean 'all Phoenix projects'.
+
+        Scrape falls back to PHEONIX_PROJECT; analysis with an empty filter then
+        sees every stored project in the window (still not an unscoped Phoenix pull).
+        """
+        root = tmp_path / "caps"
+        cap_mod.scaffold_capability(
+            root, "fobo", name="FOBO", cap_filter=CapabilityFilter()
+        )
+        s = settings.model_copy(
+            update={"capabilities_dir": root, "project": "agent1-finance"}
+        )
+        client = _FakeClient()
+        ws = datetime(2026, 6, 7, tzinfo=UTC)
+        we = datetime(2026, 7, 31, 23, 59, 59, tzinfo=UTC)
+
+        run_capabilities(
+            seeded_store, s, capability_ids=["fobo"], client=client,
+            window_start=ws, window_end=we, now=NOW,
+        )
+
+        assert client.scraped == ["agent1-finance"]
+        assert client.calls[0]["start"] == ws
+        assert client.calls[0]["end"] == we
+
     def test_run_window_is_pushed_down_to_the_scrape(
         self, seeded_store, tmp_path, settings
     ) -> None:
