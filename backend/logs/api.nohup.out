@@ -1,0 +1,7 @@
+INFO:     Started server process [8293]
+INFO:     Waiting for application startup.
+2026-09-10 23:46:23,403 WARNING phoenix_scraper.api: marked 1 orphaned capability job(s) as error
+INFO:     Application startup complete.
+ERROR:    [Errno 48] error while attempting to bind on address ('127.0.0.1', 8000): [errno 48] address already in use
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
