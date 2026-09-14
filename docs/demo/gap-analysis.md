@@ -48,7 +48,7 @@ No major *misdiagnosis* of the core problem.
 ### P1 — Product / ops gaps
 
 4. **Scrape dependency** — Wrong `filter.project` / env → 0 in-scope (we mitigated with SoT + UI, but ops mistakes still happen).  
-5. **Single job worker** — Long scrapes queue; no cancel.  
+5. ~~**Single job worker**~~ — **Fixed:** worker pool + cancel API (still one run per capability).  
 6. **Evidence thresholds** — Demo FOBO thresholds are lowered; production thresholds need governance.  
 7. **Skill propose → file write → agent reload** — Loop requires human re-upload / deploy discipline; not fully closed-loop.
 
@@ -106,7 +106,7 @@ Frame this as **Phase 1: see and decide**. Phase 2 is **match quality**. Phase 3
 | Gap | Fix approach |
 | --- | --- |
 | **Wrong project / 0 in-scope** | Keep `filter.project` SoT; Setup warning when preview in-scope = 0; refuse Run or hard-warn if env/capability project mismatch. |
-| **Single worker / no cancel** | Job cancel API + cooperative abort in scrape loop; later: multi-worker queue. |
+| **Single worker / no cancel** | **Done:** `PHEONIX_JOB_WORKERS` pool (default 2), one run per capability, `POST .../jobs/{id}/cancel` with cooperative abort. |
 | **Demo thresholds in prod** | Capability-level “profile”: `demo` vs `production` threshold presets; gate ready bar on production profile for FOBO sign-off. |
 | **Skill propose → reload** | After upload, show “skills frozen for next run” + one-click “Run next version”; document agent-side reload if skills are also consumed live. |
 

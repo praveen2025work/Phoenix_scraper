@@ -167,6 +167,21 @@ export function useJob(capabilityId: string, jobId: string | null, pollMs = 1500
   });
 }
 
+/** Cancel a queued job immediately, or cooperatively abort a running one. */
+export function useCancelJob(capabilityId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (jobId: string) =>
+      api.post<JobDto>(
+        `/capabilities/${enc(capabilityId)}/jobs/${enc(jobId)}/cancel`,
+        {},
+      ),
+    onSuccess: (_data, jobId) => {
+      qc.invalidateQueries({ queryKey: ["job", capabilityId, jobId] });
+    },
+  });
+}
+
 export interface RunFunnel {
   n_spans: number;
   n_in_scope_spans: number;

@@ -23,27 +23,46 @@ function stageIndex(stage: string): number {
 export function RunProgress({
   job,
   onBackToSetup,
+  onCancel,
+  cancelPending = false,
 }: {
   job: JobDto | undefined;
   onBackToSetup: () => void;
+  onCancel?: () => void;
+  cancelPending?: boolean;
 }) {
   const stage = job?.stage ?? "queued";
   const progress = Math.max(0, Math.min(1, job?.progress ?? 0));
   const pct = Math.round(progress * 100);
+  const cancelled = job?.error === "cancelled";
   const errored = job?.state === "error" || stage === "error";
   const message = job?.message || (errored ? job?.error : null) || "Waiting for worker…";
   const currentIdx = stageIndex(stage);
+  const canCancel =
+    !!onCancel && !!job && (job.state === "queued" || job.state === "running");
 
   return (
     <div className="space-y-5" data-testid="run-progress">
-      <OutcomeBanner title={errored ? "Something went wrong" : "Next step"}>
-        {errored
-          ? "Fix the issue below, then return to Setup and run again."
-          : "Stay on this screen until the version is ready — Results will open automatically."}
+      <OutcomeBanner
+        title={
+          cancelled ? "Run cancelled" : errored ? "Something went wrong" : "Next step"
+        }
+      >
+        {cancelled
+          ? "Return to Setup when you want to run again."
+          : errored
+            ? "Fix the issue below, then return to Setup and run again."
+            : "Stay on this screen until the version is ready — Results will open automatically."}
       </OutcomeBanner>
 
       <Panel
-        title={errored ? "Run failed" : "Finding questions your skills miss…"}
+        title={
+          cancelled
+            ? "Cancelled"
+            : errored
+              ? "Run failed"
+              : "Finding questions your skills miss…"
+        }
         subtitle="Scrape → cluster → match against uploaded skill files"
       >
         <div className="space-y-5">
@@ -91,11 +110,24 @@ export function RunProgress({
             </p>
           )}
 
-          {errored && (
-            <Button size="lg" variant="outline" onClick={onBackToSetup}>
-              Back to Setup
-            </Button>
-          )}
+          <div className="flex flex-wrap gap-3">
+            {canCancel && (
+              <Button
+                size="lg"
+                variant="outline"
+                disabled={cancelPending}
+                onClick={onCancel}
+                data-testid="cancel-run"
+              >
+                {cancelPending ? "Cancelling…" : "Cancel run"}
+              </Button>
+            )}
+            {errored && (
+              <Button size="lg" variant="outline" onClick={onBackToSetup}>
+                Back to Setup
+              </Button>
+            )}
+          </div>
         </div>
       </Panel>
     </div>

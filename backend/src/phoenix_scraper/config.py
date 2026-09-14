@@ -96,6 +96,9 @@ class Settings(BaseSettings):
     # Read timeout (seconds) for Phoenix API calls. The first scrape scans the
     # project's full history and can exceed the 30s default on large projects.
     http_timeout: float = 30.0
+    # Background capability-run worker pool size (PHEONIX_JOB_WORKERS). One run
+    # per capability at a time; pool lets different capabilities progress in parallel.
+    job_workers: int = 2
     # DEBUG surfaces every Phoenix request and each window slice of a big scrape.
     log_level: str = "INFO"
 

@@ -9,8 +9,9 @@ how Rung 1 promotes gaps, how hashes validate across runs, and how the Decide
 ## 1. What a “skill” is
 
 A skill is a markdown file with YAML frontmatter (`name` required; `description`,
-`keywords`, `example_prompts` optional). Matching and coverage are **lexical**
-(keyword + rapidfuzz) — no embeddings.
+`keywords`, `example_prompts` optional). Matching and coverage are **classical
+ML / pattern matching only** — keyword overlap + rapidfuzz + TF-IDF cosine
+(`text_similarity.py`). No generative LLM and no remote embedding service.
 
 Sources, in load order for a capability:
 
@@ -75,9 +76,12 @@ block** only — it does **not** overwrite the hand-authored skill file
 
 After clustering (`cluster.build_clusters`), `skills_mapper.match_clusters`:
 
-- Score = `0.5 * keyword_ratio + 0.5 * fuzzy_ratio` against each skill.
+- Score = `0.35 * keyword_ratio + 0.35 * fuzzy_ratio + 0.30 * tfidf_ratio`
+  against each skill (`MATCH_METHOD = keyword+fuzzy+tfidf`).
 - Keyword ratio: fraction of skill keywords found in signature + representative.
 - Fuzzy ratio: best `token_set_ratio` vs `example_prompts` + description.
+- TF-IDF ratio: best pure-Python TF-IDF cosine of the cluster representative
+  vs the same references (`text_similarity.tfidf_similarity`).
 - **Match** if best score ≥ `skill_match_threshold` (default **0.55**).
 - Else if cluster `count ≥ 2`, emit a **SkillGapProposal** (deduped by proposed name).
 

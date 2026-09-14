@@ -4,6 +4,7 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import {
   type SpanFilter,
+  useCancelJob,
   useCapability,
   useEnqueueRun,
   useJob,
@@ -65,6 +66,7 @@ export function CapabilityDetail() {
   const cap = useCapability(id);
   const skills = useSkillFiles(id);
   const enqueue = useEnqueueRun(id);
+  const cancelJob = useCancelJob(id);
 
   const defaults = useMemo(() => defaultWindow(), []);
   const [from, setFrom] = useState(defaults.from);
@@ -430,6 +432,19 @@ export function CapabilityDetail() {
               setForceSetup(true);
               setForceHistory(false);
             }}
+            onCancel={
+              jobId
+                ? () => {
+                    cancelJob.mutate(jobId, {
+                      onSuccess: () => {
+                        toast.message("Cancel requested");
+                      },
+                      onError: (e) => toast.error((e as Error).message),
+                    });
+                  }
+                : undefined
+            }
+            cancelPending={cancelJob.isPending}
           />
         </div>
       )}

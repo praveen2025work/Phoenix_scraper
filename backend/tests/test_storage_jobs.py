@@ -29,13 +29,25 @@ class TestJobStore:
     def test_claim_next_takes_oldest_queued_and_marks_running(self, tmp_store) -> None:
         tmp_store.enqueue_job("j1", "fobo", {})
         tmp_store.enqueue_job("j2", "fobo", {})
+        tmp_store.enqueue_job("j3", "plex", {})
         first = tmp_store.claim_next_job()
         assert first["job_id"] == "j1"
         assert first["state"] == "running" and first["started_at"] is not None
         assert first["stage"] == "scraping"
         assert tmp_store.get_job("j1")["state"] == "running"
-        assert tmp_store.claim_next_job()["job_id"] == "j2"
+        # Same capability stays blocked while j1 is running; other caps can proceed.
+        second = tmp_store.claim_next_job()
+        assert second["job_id"] == "j3"
         assert tmp_store.claim_next_job() is None
+        tmp_store.finish_job("j1", run_id="x", state="done")
+        assert tmp_store.claim_next_job()["job_id"] == "j2"
+
+    def test_request_cancel_job_flags_running_only(self, tmp_store) -> None:
+        tmp_store.enqueue_job("j1", "fobo", {})
+        assert tmp_store.request_cancel_job("j1") is False
+        tmp_store.claim_next_job()
+        assert tmp_store.request_cancel_job("j1") is True
+        assert tmp_store.get_job("j1")["message"] == "cancel-requested"
 
     def test_update_job_progress(self, tmp_store) -> None:
         tmp_store.enqueue_job("j1", "fobo", {})
@@ -71,10 +83,10 @@ class TestJobStore:
 
     def test_reset_orphaned_jobs(self, tmp_store) -> None:
         tmp_store.enqueue_job("q", "fobo", {})          # queued
-        tmp_store.enqueue_job("r", "fobo", {})
+        tmp_store.enqueue_job("r", "plex", {})
         tmp_store.claim_next_job()                       # 'q' -> running (oldest)
         tmp_store.enqueue_job("d", "fobo", {})
-        tmp_store.claim_next_job()                       # 'r' -> running
+        tmp_store.claim_next_job()                       # 'r' -> running (other cap)
         tmp_store.finish_job("r", run_id="x", state="done")
         n = tmp_store.reset_orphaned_jobs()
         assert n == 2                                    # 'q' running + 'd' queued

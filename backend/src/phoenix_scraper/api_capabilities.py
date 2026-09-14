@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pandas as pd
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator
 
 from . import capability as capability_mod
@@ -865,8 +865,20 @@ def _register_run_routes(router: APIRouter, settings: Settings, _store) -> None:
             raise HTTPException(status_code=404, detail="No such run")
         return _run_summary(row)
 
+    def _queue_hint(store: Store, request: Request) -> str:
+        worker = getattr(request.app.state, "job_worker", None)
+        if worker is None or not worker.is_alive():
+            return (
+                "Queued — job worker offline; restart API with jobs enabled "
+                "(`pheonix serve` / run_jobs=True)"
+            )
+        n_running = store.running_job_count()
+        if n_running > 0:
+            return f"Queued behind {n_running} running job(s)"
+        return "Queued — waiting for worker"
+
     @router.post("/capabilities/{cap_id}/jobs", status_code=202)
-    def enqueue_run_job(cap_id: str, body: JobRequest) -> dict:
+    def enqueue_run_job(cap_id: str, body: JobRequest, request: Request) -> dict:
         try:
             capability_mod.load_capability(root, cap_id)
         except (ValueError, FileNotFoundError) as exc:
@@ -883,14 +895,18 @@ def _register_run_routes(router: APIRouter, settings: Settings, _store) -> None:
             "replace_today": body.replace_today,
         }
         with _store() as store:
-            store.enqueue_job(job_id, cap_id, params)
+            message = _queue_hint(store, request)
+            store.enqueue_job(job_id, cap_id, params, message=message)
+        worker = getattr(request.app.state, "job_worker", None)
+        if worker is not None:
+            worker.notify()
         return {
             "job_id": job_id,
             "capability_id": cap_id,
             "state": "queued",
             "stage": "queued",
             "progress": 0.0,
-            "message": None,
+            "message": message,
         }
 
     @router.get("/capabilities/{cap_id}/jobs")
@@ -907,3 +923,32 @@ def _register_run_routes(router: APIRouter, settings: Settings, _store) -> None:
         if job is None or job["capability_id"] != cap_id:
             raise HTTPException(status_code=404, detail="No such job")
         return job
+
+    @router.post("/capabilities/{cap_id}/jobs/{job_id}/cancel")
+    def cancel_run_job(cap_id: str, job_id: str, request: Request) -> dict:
+        """Cancel a queued job immediately, or cooperatively abort a running one."""
+        with _store() as store:
+            job = store.get_job(job_id)
+            if job is None or job["capability_id"] != cap_id:
+                raise HTTPException(status_code=404, detail="No such job")
+            state = job["state"]
+            if state in {"done", "error"}:
+                raise HTTPException(
+                    status_code=409, detail=f"Job already {state}"
+                )
+            if state == "queued":
+                store.finish_job(
+                    job_id,
+                    run_id=None,
+                    state="error",
+                    error="cancelled",
+                    message="Cancelled by operator",
+                )
+            else:
+                store.request_cancel_job(job_id)
+                worker = getattr(request.app.state, "job_worker", None)
+                if worker is not None:
+                    worker.request_cancel(job_id)
+            updated = store.get_job(job_id)
+        assert updated is not None
+        return updated

@@ -1,12 +1,16 @@
-"""Match prompt clusters to catalog skills; propose new skills for uncovered clusters."""
+"""Match prompt clusters to catalog skills; propose new skills for uncovered clusters.
+
+Scoring is classical only: keyword overlap + rapidfuzz + TF-IDF cosine (no LLM).
+"""
 
 from rapidfuzz import fuzz
 
 from .models import PromptCluster, SkillEntry, SkillGapProposal, SkillMatch
 from .skills import distinctive_words
 from .taxonomy import suggest_level
+from .text_similarity import tfidf_similarity
 
-MATCH_METHOD = "keyword+fuzzy"
+MATCH_METHOD = "keyword+fuzzy+tfidf"
 _PLACEHOLDER_TOKENS = frozenset({"num", "date", "ccy", "book", "desk", "id"})
 _NAME_STOPWORDS = frozenset({
     "there", "why", "is", "are", "was", "were", "an", "a", "the", "for", "on",
@@ -35,9 +39,20 @@ def _fuzzy_ratio(cluster: PromptCluster, skill: SkillEntry) -> float:
     return best / 100.0
 
 
+def _tfidf_ratio(cluster: PromptCluster, skill: SkillEntry) -> float:
+    references = [p for p in (*skill.example_prompts, skill.description) if p]
+    if not references:
+        return 0.0
+    return tfidf_similarity(cluster.representative, list(references))
+
+
 def score_match(cluster: PromptCluster, skill: SkillEntry) -> float:
-    """Combined 0-1 score: half keyword coverage, half best fuzzy similarity."""
-    return 0.5 * _keyword_ratio(cluster, skill) + 0.5 * _fuzzy_ratio(cluster, skill)
+    """Combined 0-1 score: keyword + fuzzy + TF-IDF cosine (no generative LLM)."""
+    return (
+        0.35 * _keyword_ratio(cluster, skill)
+        + 0.35 * _fuzzy_ratio(cluster, skill)
+        + 0.30 * _tfidf_ratio(cluster, skill)
+    )
 
 
 def _proposed_name(cluster: PromptCluster) -> str:
@@ -52,7 +67,10 @@ def _proposed_name(cluster: PromptCluster) -> str:
 
 
 def _description(count: int, scope: str, representative: str) -> str:
-    return f'Proposed skill covering {count} similar prompts ({scope}), e.g. "{representative}".'
+    return (
+        f'Proposed skill covering {count} similar prompts ({scope}), '
+        f'e.g. "{representative}".'
+    )
 
 
 def _build_proposal(cluster: PromptCluster) -> SkillGapProposal:
