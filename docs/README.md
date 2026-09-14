@@ -12,6 +12,7 @@ folder is the current product/engineering reference.
 | [flows.md](./flows.md) | End-to-end run flow + Decide skill vs deterministic lanes (Mermaid) |
 | [span-scrape-and-filter.md](./span-scrape-and-filter.md) | Closed windows, `filter.project` SoT, scrape subdivision, in-scope vs raw spans |
 | [processing-logic.md](./processing-logic.md) | Clustering, prompt shape, Rung 1/2 detection, candidates, promotion, thresholds |
+| [demo/](./demo/) | MD demo pack: 10–15 min script, slide outline, one-pager, gap analysis |
 
 ## Related (existing)
 
