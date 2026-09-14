@@ -9,6 +9,7 @@ from rapidfuzz import fuzz
 
 from .models import PromptCluster
 from .normalize import prompt_signature
+from .prompt_shape import extract_user_prompt
 
 
 def build_clusters(spans_df: pd.DataFrame, fuzz_threshold: int = 90) -> list[PromptCluster]:
@@ -17,17 +18,18 @@ def build_clusters(spans_df: pd.DataFrame, fuzz_threshold: int = 90) -> list[Pro
     Expects the columns produced by Store.spans_frame(): span_id, session_id,
     user_id, input_text, cost_usd, latency_ms, start_time, workflow_stage,
     asset_class. Returns clusters sorted by count descending.
+
+    Bedrock / Anthropic wrappers are reduced to the embedded USER QUERY before
+    signing so skill cards show the question, not the invocation JSON.
     """
     if spans_df is None or spans_df.empty:
         return []
 
-    work = spans_df.assign(
-        _signature=spans_df["input_text"].fillna("").map(prompt_signature)
-    )
+    prompts = spans_df["input_text"].fillna("").map(extract_user_prompt)
+    work = spans_df.assign(_prompt=prompts, _signature=prompts.map(prompt_signature))
     work = work[work["_signature"] != ""]
     if work.empty:
         return []
-
     groups: dict[str, pd.DataFrame] = {
         sig: frame for sig, frame in work.groupby("_signature", sort=True)
     }
@@ -75,9 +77,13 @@ def _merge_signatures(
 def _build_cluster(signature: str, members: pd.DataFrame) -> PromptCluster:
     ordered = members.sort_values(["start_time", "span_id"], kind="stable")
 
-    text_counts = Counter(ordered["input_text"])
+    prompt_col = "_prompt" if "_prompt" in ordered.columns else "input_text"
+    text_counts = Counter(ordered[prompt_col].fillna("").map(str))
+    # Drop empties if any slipped through; fall back to raw input_text.
+    text_counts = Counter({t: n for t, n in text_counts.items() if t.strip()})
+    if not text_counts:
+        text_counts = Counter(ordered["input_text"].fillna("").map(str))
     representative = min(text_counts, key=lambda t: (-text_counts[t], t))
-
     latencies = ordered["latency_ms"].dropna()
     start_times = ordered["start_time"].dropna()
 

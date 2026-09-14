@@ -4,6 +4,7 @@ import type { Candidate } from "@/api/hooks";
 import {
   acceptedSkillCandidates,
   PromotionQueue,
+  segregateByLane,
 } from "./PromotionQueue";
 import { mockFetch, renderWithProviders } from "@/test/renderWithProviders";
 
@@ -36,11 +37,40 @@ test("acceptedSkillCandidates keeps accepted skill rung only", () => {
         status: "accepted",
         rung: "deterministic",
       },
+      {
+        ...base,
+        candidate_id: "a3",
+        status: "accepted",
+        rung: "skill",
+        title: "{'query': 'select:mcp__data-analysis__query_data'}",
+      },
     ]).map((c) => c.candidate_id),
   ).toEqual(["a1"]);
 });
 
-test("renders three section cards with counts and intro", async () => {
+test("segregateByLane rehomes MCP payloads out of skill", () => {
+  const lanes = segregateByLane([
+    base,
+    {
+      ...base,
+      candidate_id: "fobo:s:mcp",
+      title: "{'query': 'select:mcp__database__list_tables'}",
+    },
+    {
+      ...base,
+      candidate_id: "fobo:d:1",
+      rung: "deterministic",
+      title: "SELECT * FROM breaks WHERE session_id = 'x'",
+    },
+  ]);
+  expect(lanes.skill.map((c) => c.candidate_id)).toEqual(["fobo:s:a"]);
+  expect(lanes.deterministic.map((c) => c.candidate_id)).toEqual([
+    "fobo:s:mcp",
+    "fobo:d:1",
+  ]);
+});
+
+test("renders segregated skill and deterministic lanes", async () => {
   mockCandidates([
     base,
     {
@@ -55,6 +85,12 @@ test("renders three section cards with counts and intro", async () => {
       status: "promoted",
       title: "done gap",
     },
+    {
+      ...base,
+      candidate_id: "fobo:s:mcp",
+      status: "ready",
+      title: "{'query': 'select:mcp__data-analysis__query_data'}",
+    },
   ]);
   renderWithProviders(<PromotionQueue capabilityId="fobo" />, {
     route: "/c/fobo",
@@ -63,44 +99,24 @@ test("renders three section cards with counts and intro", async () => {
 
   await waitFor(() =>
     expect(screen.getByTestId("promotion-queue")).toHaveTextContent(
-      /Finish these in order: decide → write the skill file/i,
+      /Skill questions and deterministic payloads stay in separate lanes/i,
     ),
   );
 
-  const decide = screen.getByTestId("promotion-card-decide");
-  const write = screen.getByTestId("promotion-card-write");
-  const done = screen.getByTestId("promotion-card-done");
+  const skillDecide = screen.getByTestId("promotion-card-skill-decide");
+  const detDecide = screen.getByTestId("promotion-card-deterministic-decide");
 
-  expect(within(decide).getByRole("heading", { name: "Decide" })).toBeInTheDocument();
-  expect(within(decide).getByText("why recon break")).toBeInTheDocument();
-  expect(
-    within(decide).getByRole("link", { name: /why recon break.*Decide/i }),
-  ).toBeInTheDocument();
+  expect(within(skillDecide).getByText("why recon break")).toBeInTheDocument();
+  expect(within(skillDecide).queryByText(/mcp__/i)).not.toBeInTheDocument();
+  expect(within(detDecide).getByText(/mcp__/i)).toBeInTheDocument();
 
-  expect(within(write).getByRole("heading", { name: "Write file" })).toBeInTheDocument();
+  expect(screen.getByTestId("promotion-lane-skill")).toBeInTheDocument();
+  expect(screen.getByTestId("promotion-lane-deterministic")).toBeInTheDocument();
+
+  const write = screen.getByTestId("promotion-card-skill-write");
+  const done = screen.getByTestId("promotion-card-skill-done");
   expect(within(write).getByText("accepted gap")).toBeInTheDocument();
-  expect(
-    within(write).getByRole("link", { name: /accepted gap.*Write file/i }),
-  ).toBeInTheDocument();
-
-  expect(within(done).getByRole("heading", { name: "Done" })).toBeInTheDocument();
   expect(within(done).getByText("done gap")).toBeInTheDocument();
-  expect(
-    within(done).getByRole("link", { name: /done gap.*View/i }),
-  ).toBeInTheDocument();
-
-  // All three visible at once (not tab-hidden)
-  expect(screen.getByText("why recon break")).toBeInTheDocument();
-  expect(screen.getByText("accepted gap")).toBeInTheDocument();
-  expect(screen.getByText("done gap")).toBeInTheDocument();
-
-  // DOM order: Decide → Write file → Done
-  const cards = screen.getAllByTestId(/promotion-card-/);
-  expect(cards.map((el) => el.getAttribute("data-testid"))).toEqual([
-    "promotion-card-decide",
-    "promotion-card-write",
-    "promotion-card-done",
-  ]);
 });
 
 test("empty sections show Nothing here", async () => {
@@ -113,13 +129,13 @@ test("empty sections show Nothing here", async () => {
   await screen.findByText("why recon break");
 
   expect(
-    within(screen.getByTestId("promotion-card-write")).getByRole("status"),
+    within(screen.getByTestId("promotion-card-skill-write")).getByRole("status"),
   ).toHaveTextContent("Nothing here");
   expect(
-    within(screen.getByTestId("promotion-card-done")).getByRole("status"),
+    within(screen.getByTestId("promotion-card-skill-done")).getByRole("status"),
   ).toHaveTextContent("Nothing here");
   expect(
-    within(screen.getByTestId("promotion-card-decide")).queryByRole("status"),
+    within(screen.getByTestId("promotion-card-skill-decide")).queryByRole("status"),
   ).not.toBeInTheDocument();
 });
 
@@ -138,11 +154,11 @@ test("Done card uses View CTA", async () => {
   });
 
   await waitFor(() =>
-    expect(screen.getByTestId("promotion-card-done")).toHaveTextContent(
+    expect(screen.getByTestId("promotion-card-skill-done")).toHaveTextContent(
       "done gap",
     ),
   );
   expect(
-    within(screen.getByTestId("promotion-card-done")).getByText("View"),
+    within(screen.getByTestId("promotion-card-skill-done")).getByText("View"),
   ).toBeInTheDocument();
 });

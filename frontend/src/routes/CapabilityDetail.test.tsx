@@ -331,24 +331,30 @@ test("lands on Results for the last run with skill gaps first", async () => {
   await waitFor(() =>
     expect(
       within(screen.getByTestId("promotion-queue")).getByTestId(
-        "promotion-card-decide",
+        "promotion-card-skill-decide",
       ),
     ).toBeInTheDocument(),
   );
   const queue = screen.getByTestId("promotion-queue");
   expect(
-    within(queue).getByRole("heading", { name: "Decide" }),
+    within(queue).getByRole("heading", { name: "Skill lane · Rung 1" }),
   ).toBeInTheDocument();
+  expect(
+    within(queue).getByRole("heading", { name: "Deterministic lane · Rung 2" }),
+  ).toBeInTheDocument();
+  expect(
+    within(queue).getAllByRole("heading", { name: "Decide" }).length,
+  ).toBeGreaterThanOrEqual(1);
   expect(
     within(queue).getByRole("heading", { name: "Write file" }),
   ).toBeInTheDocument();
   expect(
-    within(queue).getByRole("heading", { name: "Done" }),
-  ).toBeInTheDocument();
-  expect(within(queue).getByTestId("promotion-card-write")).toHaveTextContent(
+    within(queue).getAllByRole("heading", { name: "Done" }).length,
+  ).toBeGreaterThanOrEqual(1);
+  expect(within(queue).getByTestId("promotion-card-skill-write")).toHaveTextContent(
     "Nothing here",
   );
-  expect(within(queue).getByTestId("promotion-card-done")).toHaveTextContent(
+  expect(within(queue).getByTestId("promotion-card-skill-done")).toHaveTextContent(
     "Nothing here",
   );
   expect(within(chrome).getByTestId("latest-run-badge")).toBeInTheDocument();

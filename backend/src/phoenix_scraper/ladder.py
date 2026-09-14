@@ -22,6 +22,7 @@ from .models import (
     SkillMatch,
     _Frozen,
 )
+from .prompt_shape import display_title, is_skill_shaped
 
 
 class LadderThresholds(_Frozen):
@@ -122,6 +123,9 @@ def detect_rung1(
     for cluster in clusters:
         if cluster.count < floor:
             continue
+        # Tool/SQL/MCP/file_path blobs belong on Rung 2, not promote-to-skill.
+        if not is_skill_shaped(cluster.representative):
+            continue
         match = match_by_cluster.get(cluster.cluster_id)
         if match is None or match.score < thresholds.skill_match_threshold:
             subtype: Literal["new_skill", "strengthen_skill"] = "new_skill"
@@ -144,7 +148,7 @@ def detect_rung1(
             Rung1Signal(
                 cluster_id=cluster.cluster_id,
                 subtype=subtype,
-                title=cluster.representative.strip()[:200],
+                title=display_title(cluster.representative),
                 signature=cluster.signature,
                 matched_skill=matched_skill,
                 score=score,
@@ -182,7 +186,7 @@ def detect_rung2(
         )
         sig = determinism.score_cluster(
             cluster.cluster_id,
-            cluster.representative.strip()[:200],
+            display_title(cluster.representative) or cluster.representative.strip()[:200],
             cluster.signature,
             match_by_cluster.get(cluster.cluster_id),
             members,

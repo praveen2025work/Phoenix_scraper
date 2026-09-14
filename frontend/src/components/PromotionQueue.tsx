@@ -7,9 +7,11 @@ import { api } from "@/api/client";
 import { type Candidate, useCandidates } from "@/api/hooks";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { displayCandidateTitle, effectiveRung } from "@/lib/promptShape";
 import { cn } from "@/lib/utils";
 
 type QueueKind = "write" | "decide" | "done";
+type Lane = "skill" | "deterministic";
 
 /** Decide → Write file → Done — matches “finish in order” copy. */
 const CARD_ORDER: QueueKind[] = ["decide", "write", "done"];
@@ -35,27 +37,70 @@ const CARD_META: Record<
   },
 };
 
+const LANE_META: Record<
+  Lane,
+  { title: string; subtitle: string; writeLabel: string }
+> = {
+  skill: {
+    title: "Skill lane · Rung 1",
+    subtitle: "User questions → promote to skill",
+    writeLabel: "Write file",
+  },
+  deterministic: {
+    title: "Deterministic lane · Rung 2",
+    subtitle: "Queries / tools / SQL / params → make deterministic",
+    writeLabel: "Write draft",
+  },
+};
+
 /** Accepted skill-rung candidates eligible for sequential promote (Write all). */
 export function acceptedSkillCandidates(items: Candidate[]): Candidate[] {
-  return items.filter((c) => c.status === "accepted" && c.rung === "skill");
+  return items.filter(
+    (c) =>
+      c.status === "accepted" &&
+      effectiveRung(c.rung, c.title || "") === "skill",
+  );
 }
 
-function rowCta(kind: QueueKind, rung: string): string {
+/** Split live candidates into skill vs deterministic lanes (shape-aware). */
+export function segregateByLane(items: Candidate[]): Record<Lane, Candidate[]> {
+  const out: Record<Lane, Candidate[]> = { skill: [], deterministic: [] };
+  for (const c of items) {
+    out[effectiveRung(c.rung, c.title || "")].push(c);
+  }
+  return out;
+}
+
+function byKind(items: Candidate[]): Record<QueueKind, Candidate[]> {
+  return {
+    write: items.filter((c) => c.status === "accepted"),
+    decide: items.filter((c) => c.status === "ready"),
+    done: items.filter((c) => c.status === "promoted"),
+  };
+}
+
+function rowCta(kind: QueueKind, lane: Lane): string {
   if (kind === "write") {
-    return rung === "deterministic" ? "Write draft" : "Write file";
+    return lane === "deterministic" ? "Write draft" : "Write file";
   }
   if (kind === "decide") return "Decide";
   return "View";
+}
+
+function candidateLabel(c: Candidate): string {
+  return displayCandidateTitle(c.title || "") || c.title || c.candidate_id;
 }
 
 function QueueList({
   items,
   capabilityId,
   kind,
+  lane,
 }: {
   items: Candidate[];
   capabilityId: string;
   kind: QueueKind;
+  lane: Lane;
 }) {
   if (items.length === 0) {
     return (
@@ -67,26 +112,29 @@ function QueueList({
 
   return (
     <ul className="divide-y divide-border rounded border border-border/80 bg-background/60">
-      {items.map((c) => (
-        <li key={c.candidate_id}>
-          <Link
-            to={`/c/${capabilityId}/candidate/${encodeURIComponent(c.candidate_id)}`}
-            className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 px-2.5 py-1.5 text-sm hover:bg-muted/40"
-          >
-            <span className="min-w-0 flex-1 font-medium truncate">
-              {c.title || c.candidate_id}
-            </span>
-            <span
-              className={cn(
-                "shrink-0 text-xs font-medium",
-                kind === "done" ? "text-muted-foreground" : "text-foreground",
-              )}
+      {items.map((c) => {
+        const label = candidateLabel(c);
+        return (
+          <li key={c.candidate_id}>
+            <Link
+              to={`/c/${capabilityId}/candidate/${encodeURIComponent(c.candidate_id)}`}
+              className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 px-2.5 py-1.5 text-sm hover:bg-muted/40"
             >
-              {rowCta(kind, c.rung)}
-            </span>
-          </Link>
-        </li>
-      ))}
+              <span className="min-w-0 flex-1 font-medium truncate" title={c.title || undefined}>
+                {label}
+              </span>
+              <span
+                className={cn(
+                  "shrink-0 text-xs font-medium",
+                  kind === "done" ? "text-muted-foreground" : "text-foreground",
+                )}
+              >
+                {rowCta(kind, lane)}
+              </span>
+            </Link>
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -95,21 +143,25 @@ function QueueCard({
   kind,
   items,
   capabilityId,
+  lane,
   footer,
 }: {
   kind: QueueKind;
   items: Candidate[];
   capabilityId: string;
+  lane: Lane;
   footer?: ReactNode;
 }) {
   const meta = CARD_META[kind];
   const empty = items.length === 0;
+  const writeTitle =
+    kind === "write" ? LANE_META[lane].writeLabel : meta.title;
 
   return (
     <article
       className="overflow-hidden rounded-md border border-border bg-card"
-      data-testid={`promotion-card-${kind}`}
-      aria-labelledby={`promotion-card-${kind}-title`}
+      data-testid={`promotion-card-${lane}-${kind}`}
+      aria-labelledby={`promotion-card-${lane}-${kind}-title`}
     >
       <header
         className={cn(
@@ -123,23 +175,67 @@ function QueueCard({
           aria-hidden="true"
         />
         <h4
-          id={`promotion-card-${kind}-title`}
+          id={`promotion-card-${lane}-${kind}-title`}
           className="text-sm font-semibold text-foreground"
         >
-          {meta.title}
+          {writeTitle}
         </h4>
         <Badge variant={empty ? "outline" : "default"}>{items.length}</Badge>
         <span className="text-xs text-muted-foreground">{meta.subtitle}</span>
       </header>
       <div className="space-y-2 p-2.5">
         {footer}
-        <QueueList items={items} capabilityId={capabilityId} kind={kind} />
+        <QueueList items={items} capabilityId={capabilityId} kind={kind} lane={lane} />
       </div>
     </article>
   );
 }
 
-/** Live capability promotion queue — decide, then write the skill file. */
+function LaneSection({
+  lane,
+  items,
+  capabilityId,
+  footer,
+}: {
+  lane: Lane;
+  items: Candidate[];
+  capabilityId: string;
+  footer?: ReactNode;
+}) {
+  const meta = LANE_META[lane];
+  const groups = byKind(items);
+  return (
+    <section
+      className="space-y-2"
+      data-testid={`promotion-lane-${lane}`}
+      aria-labelledby={`promotion-lane-${lane}-title`}
+    >
+      <div>
+        <h4
+          id={`promotion-lane-${lane}-title`}
+          className="text-sm font-semibold text-foreground"
+        >
+          {meta.title}
+        </h4>
+        <p className="text-xs text-muted-foreground">{meta.subtitle}</p>
+      </div>
+      <div className="grid gap-2 lg:grid-cols-3">
+        {CARD_ORDER.map((kind) => (
+          <QueueCard
+            key={`${lane}-${kind}`}
+            kind={kind}
+            lane={lane}
+            items={groups[kind]}
+            capabilityId={capabilityId}
+            footer={kind === "write" ? footer : undefined}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/** Live capability promotion queue — skill lane and deterministic lane, segregated. */
 export function PromotionQueue({ capabilityId }: { capabilityId: string }) {
   const { data, isLoading, error } = useCandidates(capabilityId);
   const [writingAll, setWritingAll] = useState(false);
@@ -160,13 +256,8 @@ export function PromotionQueue({ capabilityId }: { capabilityId: string }) {
     );
   }
 
-  const all = data ?? [];
-  const byKind: Record<QueueKind, Candidate[]> = {
-    write: all.filter((c) => c.status === "accepted"),
-    decide: all.filter((c) => c.status === "ready"),
-    done: all.filter((c) => c.status === "promoted"),
-  };
-  const skillWrite = acceptedSkillCandidates(byKind.write);
+  const lanes = segregateByLane(data ?? []);
+  const skillWrite = acceptedSkillCandidates(lanes.skill);
 
   async function writeAllSkillFiles() {
     if (skillWrite.length === 0 || writingAll) return;
@@ -199,7 +290,7 @@ export function PromotionQueue({ capabilityId }: { capabilityId: string }) {
 
   return (
     <section
-      className="space-y-2"
+      className="space-y-4"
       data-testid="promotion-queue"
       aria-labelledby="promotion-queue-title"
     >
@@ -211,39 +302,41 @@ export function PromotionQueue({ capabilityId }: { capabilityId: string }) {
           Promotion queue
         </h3>
         <p className="text-xs text-muted-foreground">
-          Finish these in order: decide → write the skill file.
+          Skill questions and deterministic payloads stay in separate lanes —
+          decide → write in each.
         </p>
       </div>
 
-      <div className="grid gap-2 lg:grid-cols-3">
-        {CARD_ORDER.map((kind) => (
-          <QueueCard
-            key={kind}
-            kind={kind}
-            items={byKind[kind]}
-            capabilityId={capabilityId}
-            footer={
-              kind === "write" && skillWrite.length >= 2 ? (
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button
-                    size="sm"
-                    disabled={writingAll}
-                    onClick={() => void writeAllSkillFiles()}
-                    data-testid="write-all-skills"
-                  >
-                    {writingAll
-                      ? "Writing…"
-                      : `Write all skill files (${skillWrite.length})`}
-                  </Button>
-                  <span className="text-xs text-muted-foreground">
-                    Writes each accepted skill draft in order.
-                  </span>
-                </div>
-              ) : undefined
-            }
-          />
-        ))}
-      </div>
+      <LaneSection
+        lane="skill"
+        items={lanes.skill}
+        capabilityId={capabilityId}
+        footer={
+          skillWrite.length >= 2 ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                disabled={writingAll}
+                onClick={() => void writeAllSkillFiles()}
+                data-testid="write-all-skills"
+              >
+                {writingAll
+                  ? "Writing…"
+                  : `Write all skill files (${skillWrite.length})`}
+              </Button>
+              <span className="text-xs text-muted-foreground">
+                Writes each accepted skill draft in order.
+              </span>
+            </div>
+          ) : undefined
+        }
+      />
+
+      <LaneSection
+        lane="deterministic"
+        items={lanes.deterministic}
+        capabilityId={capabilityId}
+      />
     </section>
   );
 }

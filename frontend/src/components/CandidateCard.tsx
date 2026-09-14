@@ -2,6 +2,7 @@ import { Link, useParams } from "react-router-dom";
 import type { Candidate } from "@/api/hooks";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Card, CardContent } from "@/components/ui/card";
+import { displayCandidateTitle } from "@/lib/promptShape";
 
 function evidenceLine(candidate: Candidate): string {
   const ev = candidate.current_evidence ?? {};
@@ -14,6 +15,10 @@ function evidenceLine(candidate: Candidate): string {
 export function CandidateCard({ candidate }: { candidate: Candidate }) {
   const { id } = useParams();
   const href = `/c/${id}/candidate/${encodeURIComponent(candidate.candidate_id)}`;
+  const title =
+    displayCandidateTitle(candidate.title || "") ||
+    candidate.title ||
+    candidate.candidate_id;
   return (
     <Card className="border-border/80 shadow-none transition-colors hover:border-primary/40">
       <CardContent className="p-0 text-sm">
@@ -22,8 +27,11 @@ export function CandidateCard({ candidate }: { candidate: Candidate }) {
           className="block space-y-1 p-2.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
         >
           <div className="flex flex-wrap items-start justify-between gap-x-2 gap-y-1">
-            <span className="min-w-0 flex-1 font-medium leading-snug text-foreground">
-              {candidate.title || candidate.candidate_id}
+            <span
+              className="min-w-0 flex-1 font-medium leading-snug text-foreground"
+              title={candidate.title || undefined}
+            >
+              {title}
             </span>
             <StatusBadge status={candidate.status} className="shrink-0 px-1.5 py-0" />
           </div>

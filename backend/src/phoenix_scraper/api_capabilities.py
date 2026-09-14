@@ -18,6 +18,7 @@ from .capability_run import run_capabilities
 from .config import Settings
 from .models import Capability, CapabilityFilter
 from .phoenix_client import PhoenixClientWrapper
+from .prompt_shape import display_title, is_deterministic_shaped, is_skill_shaped
 from .storage import Store
 
 
@@ -515,12 +516,13 @@ def _build_run_results(
             uncovered, skills, max_prompts=settings.max_suggested_prompts
         )
 
+    uncovered = _skill_shaped_uncovered(uncovered)
+
     cands = store.candidates_observed_in_run(cap_id, run_id)
     if cands.empty:
         rung1, rung2 = [], []
     else:
-        rung1 = _candidate_records(cands[cands["rung"] == "skill"])
-        rung2 = _candidate_records(cands[cands["rung"] == "deterministic"])
+        rung1, rung2 = _segregate_candidates(_candidate_records(cands))
 
     n_unmatched = 0
     if not snap.empty and "skill_name" in snap.columns:
@@ -551,12 +553,35 @@ def _build_run_results(
     }
 
 
+def _skill_shaped_uncovered(uncovered) -> pd.DataFrame:  # noqa: ANN001
+    """Drop tool/SQL/MCP blobs from the Skill gaps panel; clean titles."""
+    if uncovered is None or getattr(uncovered, "empty", True):
+        return uncovered
+    if "representative" not in uncovered.columns:
+        return uncovered
+    mask = uncovered["representative"].fillna("").map(is_skill_shaped)
+    filtered = uncovered.loc[mask].copy()
+    if filtered.empty:
+        return filtered
+    filtered["representative"] = filtered["representative"].map(
+        lambda t: display_title(str(t)) or str(t)
+    )
+    return filtered
+
+
 def _gap_rows(snap) -> list[dict]:  # noqa: ANN001
-    """Clusters that are unmatched or matched-but-not-covered (skill gaps)."""
+    """Skill-shaped clusters that are unmatched or matched-but-not-covered.
+
+    Tool/SQL/MCP/file_path blobs are excluded — they are Rung-2 material, not
+    skill gaps.
+    """
     if snap is None or getattr(snap, "empty", True):
         return []
     rows = []
     for rec in snap.to_dict("records"):
+        representative = str(rec.get("representative") or "")
+        if not is_skill_shaped(representative):
+            continue
         skill = rec.get("skill_name")
         unmatched = skill is None or str(skill).strip() == ""
         covered = int(rec.get("covered") or 0) == 1
@@ -564,7 +589,7 @@ def _gap_rows(snap) -> list[dict]:  # noqa: ANN001
             rows.append(
                 {
                     "cluster_id": rec.get("cluster_id"),
-                    "representative": rec.get("representative") or "",
+                    "representative": display_title(representative) or representative,
                     "count": int(rec.get("count") or 0),
                     "n_users": int(rec.get("n_users") or 0),
                     "skill_name": None if unmatched else str(skill),
@@ -573,6 +598,34 @@ def _gap_rows(snap) -> list[dict]:  # noqa: ANN001
                 }
             )
     return rows
+
+
+def _segregate_candidates(rows: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Split candidates into skill vs deterministic lanes.
+
+    Trusts ``rung`` when present, but re-homes mislabeled skill-rung rows whose
+    titles are clearly tool/SQL/MCP payloads into the deterministic lane so
+    Decide never shows them as Promote to skill.
+    """
+    rung1: list[dict] = []
+    rung2: list[dict] = []
+    for row in rows:
+        title = str(row.get("title") or "")
+        cleaned = display_title(title) or title
+        if cleaned != title:
+            row = {**row, "title": cleaned}
+        rung = str(row.get("rung") or "")
+        if rung == "deterministic" or (
+            rung == "skill" and is_deterministic_shaped(title)
+        ):
+            if rung == "skill" and is_deterministic_shaped(title):
+                row = {**row, "rung": "deterministic"}
+            rung2.append(row)
+        elif rung == "skill" or is_skill_shaped(title):
+            rung1.append(row)
+        else:
+            rung2.append(row)
+    return rung1, rung2
 
 
 _STATUS_RANK = {
@@ -619,13 +672,17 @@ def _candidates_advancing(from_cands, to_cands) -> list[dict]:  # noqa: ANN001
     for row in to_cands.to_dict("records"):
         cid = row["candidate_id"]
         to_status = str(row.get("status") or "")
+        title = display_title(str(row.get("title") or "")) or str(row.get("title") or "")
+        rung = str(row.get("rung") or "")
+        if rung == "skill" and is_deterministic_shaped(str(row.get("title") or "")):
+            rung = "deterministic"
         prev = from_by_id.get(cid)
         if prev is None:
             advancing.append(
                 {
                     "candidate_id": cid,
-                    "rung": row.get("rung"),
-                    "title": row.get("title") or "",
+                    "rung": rung,
+                    "title": title,
                     "from_status": None,
                     "to_status": to_status,
                     "change": "new",
@@ -637,8 +694,8 @@ def _candidates_advancing(from_cands, to_cands) -> list[dict]:  # noqa: ANN001
             advancing.append(
                 {
                     "candidate_id": cid,
-                    "rung": row.get("rung"),
-                    "title": row.get("title") or "",
+                    "rung": rung,
+                    "title": title,
                     "from_status": from_status,
                     "to_status": to_status,
                     "change": "advanced",

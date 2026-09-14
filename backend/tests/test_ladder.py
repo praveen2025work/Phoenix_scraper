@@ -112,6 +112,26 @@ class TestDetectRung1:
         signals = ladder.detect_rung1(clusters, [], annotated, efficiency, thresholds=t)
         assert len(signals) == 1 and signals[0].met_evidence_bar is False
 
+    def test_mcp_sql_payloads_are_not_skill_signals(self) -> None:
+        clusters = [
+            _cluster(
+                "mcp",
+                count=40,
+                representative="{'query': 'select:mcp__data-analysis__query_data'}",
+            ),
+            _cluster(
+                "sql",
+                count=40,
+                representative="SELECT * FROM breaks WHERE session_id = 'abc';",
+            ),
+            _cluster("ask", count=40, representative="Why is recon break unmatched?"),
+        ]
+        annotated, efficiency = self._frames(clusters, [])
+        t = ladder.resolve_thresholds(_capability(), _settings())
+        signals = ladder.detect_rung1(clusters, [], annotated, efficiency, thresholds=t)
+        assert [s.cluster_id for s in signals] == ["ask"]
+        assert signals[0].title == "Why is recon break unmatched?"
+
 
 from datetime import UTC, datetime  # noqa: E402
 

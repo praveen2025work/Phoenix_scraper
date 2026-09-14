@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
+  type Candidate,
   type RunCompareDto,
   type RunResultsDto,
   useCapabilityRuns,
@@ -15,6 +16,11 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatHumanDate, formatHumanDateTime } from "@/lib/dates";
+import {
+  displayCandidateTitle,
+  effectiveRung,
+  isSkillShaped,
+} from "@/lib/promptShape";
 
 function shortHash(h: string): string {
   return h.slice(0, 8);
@@ -211,12 +217,14 @@ export function RunResults({
   }
 
   const funnel = data.funnel;
+  const { skill: skillCandidates, deterministic: deterministicCandidates } =
+    segregateRunCandidates(data.rung1_candidates, data.rung2_candidates);
   const empty =
     funnel.n_clusters === 0 ||
     (funnel.n_uncovered === 0 &&
       funnel.n_unmatched === 0 &&
-      data.rung1_candidates.length === 0 &&
-      data.rung2_candidates.length === 0);
+      skillCandidates.length === 0 &&
+      deterministicCandidates.length === 0);
   const usingDefaultPrev = !compareFrom && !!data.previous_run_id;
 
   return (
@@ -346,29 +354,45 @@ export function RunResults({
           </p>
         </div>
         <div className="grid gap-3 lg:grid-cols-2">
-          <Panel title={`Promote to skill · ${data.rung1_candidates.length}`}>
-            {data.rung1_candidates.length === 0 ? (
+          <Panel title={`Promote to skill · ${skillCandidates.length}`}>
+            {skillCandidates.length === 0 ? (
               <p className="text-sm text-muted-foreground" role="status">
                 No skill-promotion candidates yet.
               </p>
             ) : (
-              <LaneBoard candidates={data.rung1_candidates} capabilityId={capabilityId} />
+              <LaneBoard candidates={skillCandidates} capabilityId={capabilityId} />
             )}
           </Panel>
 
-          <Panel title={`Make deterministic · ${data.rung2_candidates.length}`}>
-            {data.rung2_candidates.length === 0 ? (
+          <Panel title={`Make deterministic · ${deterministicCandidates.length}`}>
+            {deterministicCandidates.length === 0 ? (
               <p className="text-sm text-muted-foreground" role="status">
                 No deterministic candidates yet.
               </p>
             ) : (
-              <LaneBoard candidates={data.rung2_candidates} capabilityId={capabilityId} />
+              <LaneBoard
+                candidates={deterministicCandidates}
+                capabilityId={capabilityId}
+              />
             )}
           </Panel>
         </div>
       </div>
     </div>
   );
+}
+
+function segregateRunCandidates(
+  rung1: Candidate[],
+  rung2: Candidate[],
+): { skill: Candidate[]; deterministic: Candidate[] } {
+  const skill: Candidate[] = [];
+  const deterministic: Candidate[] = [];
+  for (const c of [...rung1, ...rung2]) {
+    if (effectiveRung(c.rung, c.title || "") === "skill") skill.push(c);
+    else deterministic.push(c);
+  }
+  return { skill, deterministic };
 }
 
 function FunnelStrip({
@@ -462,17 +486,18 @@ function VersionCompare({
           <p className="text-muted-foreground">
             {formatHumanDateTime(compare.from_run.run_id)} →{" "}
             {formatHumanDateTime(compare.to_run.run_id)} · {compare.from_run.n_gaps}{" "}
-            gaps → {compare.to_run.n_gaps} gaps · closed {compare.gaps_closed.length} ·
-            new {compare.gaps_new.length}
+            gaps → {compare.to_run.n_gaps} gaps · closed{" "}
+            {skillGaps(compare.gaps_closed).length} · new{" "}
+            {skillGaps(compare.gaps_new).length}
           </p>
 
           <HashChanges changes={compare.skill_hash_changes} />
 
-          {compare.gaps_closed.length > 0 && (
-            <GapList label="Gaps closed" rows={compare.gaps_closed} />
+          {skillGaps(compare.gaps_closed).length > 0 && (
+            <GapList label="Skill gaps closed" rows={skillGaps(compare.gaps_closed)} />
           )}
-          {compare.gaps_new.length > 0 && (
-            <GapList label="New gaps" rows={compare.gaps_new} />
+          {skillGaps(compare.gaps_new).length > 0 && (
+            <GapList label="New skill gaps" rows={skillGaps(compare.gaps_new)} />
           )}
 
           {compare.candidates_advancing.length > 0 ? (
@@ -481,16 +506,21 @@ function VersionCompare({
                 Candidates advancing
               </p>
               <ul className="space-y-0.5">
-                {compare.candidates_advancing.map((c) => (
-                  <li key={c.candidate_id} className="text-sm">
-                    <span className="font-medium">{c.title || c.candidate_id}</span>
-                    <span className="text-muted-foreground">
-                      {" "}
-                      · {c.rung === "skill" ? "promote to skill" : "make deterministic"} ·{" "}
-                      {c.from_status ?? "new"} → {c.to_status}
-                    </span>
-                  </li>
-                ))}
+                {compare.candidates_advancing.map((c) => {
+                  const lane = effectiveRung(c.rung, c.title || "");
+                  const title =
+                    displayCandidateTitle(c.title || "") || c.title || c.candidate_id;
+                  return (
+                    <li key={c.candidate_id} className="text-sm">
+                      <span className="font-medium">{title}</span>
+                      <span className="text-muted-foreground">
+                        {" "}
+                        · {lane === "skill" ? "promote to skill" : "make deterministic"} ·{" "}
+                        {c.from_status ?? "new"} → {c.to_status}
+                      </span>
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           ) : (
@@ -543,6 +573,10 @@ function HashChanges({
   );
 }
 
+function skillGaps(rows: RunCompareDto["gaps_closed"]): RunCompareDto["gaps_closed"] {
+  return rows.filter((g) => isSkillShaped(g.representative || ""));
+}
+
 function GapList({
   label,
   rows,
@@ -558,7 +592,9 @@ function GapList({
       <ul className="space-y-0.5">
         {rows.slice(0, 8).map((g) => (
           <li key={g.cluster_id} className="truncate text-sm">
-            {g.representative || g.cluster_id}
+            {displayCandidateTitle(g.representative || "") ||
+              g.representative ||
+              g.cluster_id}
             <span className="text-muted-foreground">
               {" "}
               · {g.count} asks · {g.reason}
