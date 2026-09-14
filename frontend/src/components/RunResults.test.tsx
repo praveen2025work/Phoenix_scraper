@@ -145,11 +145,12 @@ test("suggested skill updates show old vs proposed with copy and download", asyn
 
   expect(await screen.findByTestId("suggested-skill-update")).toBeInTheDocument();
   expect(screen.getByTestId("skill-content-diff")).toBeInTheDocument();
-  expect(screen.getByLabelText(/current uploaded/i)).toHaveTextContent(
-    "name: fx-recon-triage",
-  );
-  expect(screen.getByLabelText(/proposed/i)).toHaveTextContent(
-    "Which tickets sit unconfirmed?",
+  expect(screen.getByTestId("diff-view-unified")).toBeInTheDocument();
+  expect(screen.getByText("Current (uploaded)")).toBeInTheDocument();
+  expect(screen.getByText("Proposed (latest)")).toBeInTheDocument();
+  const added = screen.getAllByTestId("diff-line-add");
+  expect(added.some((el) => el.textContent?.includes("Which tickets sit unconfirmed?"))).toBe(
+    true,
   );
   expect(
     screen.getByRole("button", { name: /copy proposed/i }),
