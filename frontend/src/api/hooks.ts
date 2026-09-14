@@ -199,6 +199,12 @@ export interface SkillUpdateRow {
   new_prompts: string[];
   new_keywords: string[];
   yaml_block?: string;
+  /** Filename to use when downloading / re-uploading the proposed skill. */
+  upload_filename?: string;
+  /** Current capability-local skill MD (null when only catalog / missing). */
+  current_content?: string | null;
+  /** Full proposed skill markdown (merged or scaffolded). */
+  proposed_content?: string;
 }
 
 export interface RunResultsDto {

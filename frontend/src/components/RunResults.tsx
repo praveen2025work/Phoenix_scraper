@@ -12,6 +12,7 @@ import { LaneBoard } from "@/components/LaneBoard";
 import { OutcomeBanner } from "@/components/OutcomeBanner";
 import { Panel } from "@/components/Panel";
 import { PromotionQueue } from "@/components/PromotionQueue";
+import { SkillContentDiff } from "@/components/SkillContentDiff";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -250,28 +251,52 @@ export function RunResults({
         ) : null}
 
         {data.suggested_skill_updates.length > 0 && (
-          <ul className="mb-3 space-y-2">
-            {data.suggested_skill_updates.map((u) => (
-              <li
-                key={u.source_file}
-                className="rounded-md border border-border bg-background/70 p-3 text-sm"
-              >
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-semibold">{u.source_file}</span>
-                  <Badge variant="outline">{u.skill_name}</Badge>
-                  <span className="text-xs text-muted-foreground">
-                    {u.uncovered_asks} asks · {u.n_users} users
-                  </span>
-                </div>
-                <ul className="mt-1.5 space-y-0.5">
-                  {u.new_prompts.slice(0, 5).map((p) => (
-                    <li key={p} className="truncate font-mono text-xs text-muted-foreground">
-                      {p}
-                    </li>
-                  ))}
-                </ul>
-              </li>
-            ))}
+          <ul className="mb-3 space-y-3">
+            {data.suggested_skill_updates.map((u) => {
+              const filename =
+                u.upload_filename ||
+                (u.source_file.endsWith(".md")
+                  ? u.source_file.split("/").pop()!
+                  : `${u.skill_name}.md`);
+              const proposed =
+                u.proposed_content ||
+                u.yaml_block ||
+                u.new_prompts.map((p) => `- ${p}`).join("\n");
+              return (
+                <li
+                  key={u.source_file}
+                  className="rounded-md border border-border bg-background/70 p-3 text-sm"
+                  data-testid="suggested-skill-update"
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-semibold">{u.source_file}</span>
+                    <Badge variant="outline">{u.skill_name}</Badge>
+                    <span className="text-xs text-muted-foreground">
+                      {u.uncovered_asks} asks · {u.n_users} users
+                    </span>
+                  </div>
+                  <ul className="mt-1.5 space-y-0.5">
+                    {u.new_prompts.slice(0, 5).map((p) => (
+                      <li
+                        key={p}
+                        className="truncate font-mono text-xs text-muted-foreground"
+                      >
+                        {p}
+                      </li>
+                    ))}
+                  </ul>
+                  {proposed ? (
+                    <div className="mt-3">
+                      <SkillContentDiff
+                        filename={filename}
+                        currentContent={u.current_content}
+                        proposedContent={proposed}
+                      />
+                    </div>
+                  ) : null}
+                </li>
+              );
+            })}
           </ul>
         )}
 
@@ -553,22 +578,28 @@ function HashChanges({
     );
   }
   return (
-    <div className="flex flex-wrap gap-1.5">
-      {changes.changed.map((c) => (
-        <Badge key={c.filename} variant="warn">
-          {c.filename} updated
-        </Badge>
-      ))}
-      {changes.added.map((f) => (
-        <Badge key={f} variant="ready">
-          {f} added
-        </Badge>
-      ))}
-      {changes.removed.map((f) => (
-        <Badge key={f} variant="outline">
-          {f} removed
-        </Badge>
-      ))}
+    <div className="space-y-1.5">
+      <div className="flex flex-wrap gap-1.5">
+        {changes.changed.map((c) => (
+          <Badge key={c.filename} variant="warn">
+            {c.filename} updated · {shortHash(c.from)}→{shortHash(c.to)}
+          </Badge>
+        ))}
+        {changes.added.map((f) => (
+          <Badge key={f} variant="ready">
+            {f} added
+          </Badge>
+        ))}
+        {changes.removed.map((f) => (
+          <Badge key={f} variant="outline">
+            {f} removed
+          </Badge>
+        ))}
+      </div>
+      <p className="text-[11px] text-muted-foreground">
+        Hash changes only — use Skill gaps above for left/right current vs proposed
+        markdown when Results suggests edits.
+      </p>
     </div>
   );
 }

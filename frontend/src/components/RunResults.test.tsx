@@ -1,6 +1,6 @@
 import { screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
-import { RunResultsChrome } from "./RunResults";
+import { RunResults, RunResultsChrome } from "./RunResults";
 import { renderWithProviders } from "@/test/renderWithProviders";
 
 afterEach(() => vi.restoreAllMocks());
@@ -108,4 +108,53 @@ test("Usage is an enabled outline button linking to analytics when ready", async
     `/c/fobo/analytics?run=${encodeURIComponent(RUN_ID)}`,
   );
   expect(btn).toHaveTextContent(/^Usage$/);
+});
+
+test("suggested skill updates show old vs proposed with copy and download", async () => {
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
+    const u = new URL(String(url), "http://x");
+    if (u.pathname.endsWith("/results")) {
+      return json({
+        ...resultsBody,
+        analytics_ready: true,
+        suggested_skill_updates: [
+          {
+            skill_name: "fx-recon-triage",
+            source_file: "fx-recon-triage.md",
+            uncovered_asks: 4,
+            n_users: 2,
+            n_new_prompts: 1,
+            new_prompts: ["Which tickets sit unconfirmed?"],
+            new_keywords: ["unconfirmed"],
+            upload_filename: "fx-recon-triage.md",
+            current_content: "---\nname: fx-recon-triage\n---\n",
+            proposed_content:
+              "---\nname: fx-recon-triage\nexample_prompts:\n  - Which tickets sit unconfirmed?\n---\n",
+          },
+        ],
+      });
+    }
+    if (u.pathname === "/capabilities/fobo/runs") return json([{ run_id: RUN_ID }]);
+    if (u.pathname === "/capabilities/fobo/candidates") return json([]);
+    return json([]);
+  });
+
+  renderWithProviders(
+    <RunResults capabilityId="fobo" runId={RUN_ID} onRunNext={() => {}} />,
+  );
+
+  expect(await screen.findByTestId("suggested-skill-update")).toBeInTheDocument();
+  expect(screen.getByTestId("skill-content-diff")).toBeInTheDocument();
+  expect(screen.getByLabelText(/current uploaded/i)).toHaveTextContent(
+    "name: fx-recon-triage",
+  );
+  expect(screen.getByLabelText(/proposed/i)).toHaveTextContent(
+    "Which tickets sit unconfirmed?",
+  );
+  expect(
+    screen.getByRole("button", { name: /copy proposed/i }),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: /download fx-recon-triage\.md/i }),
+  ).toBeInTheDocument();
 });

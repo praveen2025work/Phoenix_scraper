@@ -27,6 +27,8 @@ class PromoteResult(_Frozen):
     paths: tuple[str, ...] = ()
     contents: tuple[tuple[str, str], ...] = ()
     wrote_files: bool = False
+    # Optional current uploaded body keyed by content path (strengthen previews).
+    current_bodies: tuple[tuple[str, str | None], ...] = ()
 
 
 def slugify(name: str) -> str:
@@ -300,9 +302,20 @@ def promote_candidate(
         )
 
     if candidate.subtype == "strengthen_skill":
+        from .capability_skills import load_capability_skills
+        from .skill_coverage import (
+            proposed_skill_markdown,
+            read_skill_file_text,
+            source_file,
+            upload_skill_filename,
+        )
         from .skills import load_all_skills
-        skills = {s.name: s for s in load_all_skills(settings)}
-        skill = skills.get(candidate.matched_skill or "") or SkillEntry(
+
+        by_name = {s.name: s for s in load_capability_skills(settings, capability)}
+        # Fall back to catalog when the matched skill is not yet local.
+        for s in load_all_skills(settings):
+            by_name.setdefault(s.name, s)
+        skill = by_name.get(candidate.matched_skill or "") or SkillEntry(
             name=candidate.matched_skill or "unknown",
             path=str(cap_dir / "skills" / f"{candidate.matched_skill}.md"),
         )
@@ -310,8 +323,29 @@ def promote_candidate(
             candidate, skill, member_prompts=prompts,
             member_signatures=[candidate.signature],
         )
-        paths: tuple[str, ...] = (target,)
-        contents: tuple[tuple[str, str], ...] = ((target, block),)
+        current = read_skill_file_text(skill)
+        out_name = upload_skill_filename(skill, source_file(skill))
+        local_path = cap_dir / "skills" / out_name
+        if current is None and local_path.is_file():
+            try:
+                current = local_path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                current = None
+        keywords = _suggested_keywords([candidate.signature], skill)
+        proposed = proposed_skill_markdown(
+            skill,
+            prompts[:_MEMBER_PROMPT_LIMIT],
+            keywords,
+            current_text=current,
+        )
+        # Preview / copy surface uses the full proposed MD; paste block stays
+        # available as a second entry for operators who only want the delta.
+        paths = (str(local_path), target)
+        contents = (
+            (str(local_path), proposed),
+            (f"{target}#paste-block", block),
+        )
+        current_bodies: tuple[tuple[str, str | None], ...] = ((str(local_path), current),)
         wrote = False
     else:
         skills_dir = cap_dir / "skills"
@@ -325,9 +359,18 @@ def promote_candidate(
             out_path.write_text(body, encoding="utf-8")
         paths = (str(out_path),)
         wrote = not dry_run
+        current_bodies = ()
 
     return _finish_promote(
-        store, candidate, now, actor, paths, contents, wrote=wrote, dry_run=dry_run,
+        store,
+        candidate,
+        now,
+        actor,
+        paths,
+        contents,
+        wrote=wrote,
+        dry_run=dry_run,
+        current_bodies=current_bodies,
     )
 
 
@@ -341,6 +384,7 @@ def _finish_promote(
     *,
     wrote: bool,
     dry_run: bool,
+    current_bodies: tuple[tuple[str, str | None], ...] = (),
 ) -> PromoteResult:
     if not dry_run:
         store.record_candidate_decision_now(candidate.candidate_id, "promote", actor, now)
@@ -351,4 +395,9 @@ def _finish_promote(
             "decided_by": actor,
             "decided_at": now,
         }))
-    return PromoteResult(paths=paths, contents=contents, wrote_files=wrote)
+    return PromoteResult(
+        paths=paths,
+        contents=contents,
+        wrote_files=wrote,
+        current_bodies=current_bodies,
+    )

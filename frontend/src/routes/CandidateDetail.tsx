@@ -11,6 +11,7 @@ import {
 } from "@/api/hooks";
 import { OutcomeBanner } from "@/components/OutcomeBanner";
 import { PageHeader } from "@/components/PageHeader";
+import { SkillContentDiff } from "@/components/SkillContentDiff";
 import { Sparkline } from "@/components/Sparkline";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Badge } from "@/components/ui/badge";
@@ -235,7 +236,9 @@ export function CandidateDetail() {
   const [dialogAction, setDialogAction] = useState<string | null>(null);
   const [actor, setActor] = useState("");
   const [note, setNote] = useState("");
-  const [preview, setPreview] = useState<{ path: string; body: string }[] | null>(null);
+  const [preview, setPreview] = useState<
+    { path: string; body: string; current_body?: string | null }[] | null
+  >(null);
   const [writtenPaths, setWrittenPaths] = useState<string[] | null>(null);
   const promotePanelRef = useRef<HTMLElement | null>(null);
   const prevStatusRef = useRef<string | null>(null);
@@ -323,9 +326,9 @@ export function CandidateDetail() {
 
   async function showPreview() {
     try {
-      const r = await api.get<{ contents: { path: string; body: string }[] }>(
-        `/candidates/${encodeURIComponent(cid)}/artifact/preview`,
-      );
+      const r = await api.get<{
+        contents: { path: string; body: string; current_body?: string | null }[];
+      }>(`/candidates/${encodeURIComponent(cid)}/artifact/preview`);
       setPreview(r.contents);
     } catch (err) {
       toast.error((err as Error).message);
@@ -567,15 +570,33 @@ export function CandidateDetail() {
                 Preview files first
               </Button>
             </div>
-            {preview?.map((f) => (
-              <details key={f.path} className="rounded border border-border bg-background/60">
-                <summary className="cursor-pointer px-2 py-1 text-sm text-muted-foreground">
-                  {f.path}
-                </summary>
-                <pre className="overflow-x-auto p-2 text-xs">{f.body}</pre>
-              </details>
-            ))}
-          </>
+            {preview?.map((f) => {
+              const base = f.path.split("/").pop()?.split("#")[0] || "skill.md";
+              const isMd = base.endsWith(".md") && !f.path.includes("#paste-block");
+              return (
+                <details
+                  key={f.path}
+                  className="rounded border border-border bg-background/60"
+                  open={isMd}
+                >
+                  <summary className="cursor-pointer px-2 py-1 text-sm text-muted-foreground">
+                    {f.path}
+                  </summary>
+                  <div className="space-y-2 p-2">
+                    {isMd ? (
+                      <SkillContentDiff
+                        filename={base}
+                        currentContent={f.current_body}
+                        proposedContent={f.body}
+                        stacked
+                      />
+                    ) : (
+                      <pre className="overflow-x-auto text-xs">{f.body}</pre>
+                    )}
+                  </div>
+                </details>
+              );
+            })}          </>
         )}
       </section>
 

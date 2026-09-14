@@ -44,6 +44,9 @@ Validation rules (`api_capabilities`):
 Malformed files already on disk are skipped with a warning at scan time
 (`skills._parse_skill_md`).
 
+Results **suggested skill updates** include `current_content`, `proposed_content`,
+and `upload_filename` so operators can diff left/right, copy, and download a full
+`.md` to re-upload.
 ---
 
 ## 3. Matching clusters → skills

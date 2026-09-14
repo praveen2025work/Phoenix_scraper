@@ -295,6 +295,48 @@ class TestSuggestedUpdates:
         assert "Which tickets sit unconfirmed past settlement?" in row["yaml_block"]
         assert row["uncovered_asks"] == 9
 
+    def test_proposes_full_md_body_when_source_is_catalog(self) -> None:
+        """Catalog skills have no local .md — proposed_content is upload-ready."""
+        df = sc.suggested_updates(self._uncovered(), [skill("s")])
+        row = df.iloc[0]
+        assert row["current_content"] is None or row["current_content"] == ""
+        assert row["upload_filename"] == "s.md"
+        proposed = row["proposed_content"]
+        assert proposed.startswith("---")
+        assert "name: s" in proposed
+        assert "Which tickets sit unconfirmed past settlement?" in proposed
+
+    def test_merges_into_existing_skill_md(self, tmp_path: Path) -> None:
+        path = tmp_path / "fx-recon-triage.md"
+        path.write_text(
+            "---\nname: fx-recon-triage\ndescription: triage\n"
+            "keywords:\n  - recon\n"
+            "example_prompts:\n  - Why is there a FOBO break?\n"
+            "---\n\n# fx-recon-triage\n",
+            encoding="utf-8",
+        )
+        entry = skill(
+            "fx-recon-triage",
+            source="skill_md",
+            path=str(path),
+            keywords=("recon",),
+            example_prompts=("Why is there a FOBO break?",),
+        )
+        annotated = sc.annotate_coverage(
+            clusters([
+                cluster("c1", "Which tickets sit unconfirmed past settlement?", count=9),
+            ]),
+            matches([("c1", "fx-recon-triage", 0.6)]),
+            [entry],
+        )
+        df = sc.suggested_updates(sc.uncovered_queries(annotated), [entry])
+        row = df.iloc[0]
+        assert row["upload_filename"] == "fx-recon-triage.md"
+        assert "Why is there a FOBO break?" in row["current_content"]
+        assert "Why is there a FOBO break?" in row["proposed_content"]
+        assert "Which tickets sit unconfirmed past settlement?" in row["proposed_content"]
+        assert row["proposed_content"].count("Why is there a FOBO break?") == 1
+
     def test_block_notes_how_many_examples_already_exist(self) -> None:
         df = sc.suggested_updates(self._uncovered(), [skill("s")])
         assert "keep the existing 1" in df.iloc[0]["yaml_block"]

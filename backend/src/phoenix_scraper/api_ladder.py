@@ -127,7 +127,14 @@ def ladder_router(settings: Settings) -> APIRouter:
             )
         return {
             "paths": list(result.paths),
-            "contents": [{"path": p, "body": b} for p, b in result.contents],
+            "contents": [
+                {
+                    "path": p,
+                    "body": b,
+                    "current_body": dict(result.current_bodies).get(p),
+                }
+                for p, b in result.contents
+            ],
             "wrote_files": result.wrote_files,
         }
 

@@ -15,11 +15,13 @@ Two views, both keyed on the file:
 - **coverage** — of the asks routed to this file, how many does it demonstrate?
 - **delta** — which of its blind spots are new since the previous analysis run?
 
-and one output: a paste-ready block of `example_prompts` and `keywords` to add.
+and one output: a paste-ready block of `example_prompts` and `keywords` to add,
+plus a full proposed ``.md`` body operators can copy / download / re-upload.
 """
 
 from collections.abc import Iterable, Sequence
 from pathlib import Path
+import re
 
 import pandas as pd
 import yaml
@@ -29,6 +31,8 @@ from .models import SkillEntry
 from .skills import distinctive_words
 from .taxonomy import ASSET_CLASS_KEYWORDS
 
+_FRONTMATTER_RE = re.compile(r"\A---\s*\n(.*?)\n---\s*(?:\n|\Z)", re.DOTALL)
+_UPLOAD_FILENAME_RE = re.compile(r"^[a-z][a-z0-9-]{0,63}\.md$")
 # Cluster status relative to the previous analysis run.
 NEW = "new"
 GROWING = "growing"
@@ -265,10 +269,12 @@ def suggested_updates(
             continue
         signatures = [str(v) for v in ranked["signature"].head(max_prompts)]
         keywords = _suggested_keywords(signatures, skill)
+        src = str(ranked.iloc[0]["source_file"])
+        current = read_skill_file_text(skill)
         rows.append(
             {
                 "skill_name": str(skill_name),
-                "source_file": str(ranked.iloc[0]["source_file"]),
+                "source_file": src,
                 "n_new_prompts": len(prompts),
                 "n_new_keywords": len(keywords),
                 "uncovered_asks": int(ranked["count"].sum()),
@@ -279,6 +285,11 @@ def suggested_updates(
                 "new_prompts": prompts,
                 "new_keywords": keywords,
                 "yaml_block": _yaml_block(skill, prompts, keywords),
+                "upload_filename": upload_skill_filename(skill, src),
+                "current_content": current,
+                "proposed_content": proposed_skill_markdown(
+                    skill, prompts, keywords, current_text=current
+                ),
             }
         )
     df = pd.DataFrame(rows, columns=_UPDATE_COLUMNS)
@@ -291,8 +302,128 @@ _UPDATE_COLUMNS = [
     "skill_name", "source_file", "n_new_prompts", "n_new_keywords",
     "uncovered_asks", "n_users", "first_seen", "last_seen",
     "n_new_since_last_run", "new_prompts", "new_keywords", "yaml_block",
+    "upload_filename", "current_content", "proposed_content",
 ]
 
+
+def read_skill_file_text(skill: SkillEntry) -> str | None:
+    """Raw markdown for a capability-local (or SKILL.md) file; None for catalog YAML."""
+    if not skill.path:
+        return None
+    path = Path(skill.path)
+    if path.suffix.lower() != ".md" or not path.is_file():
+        return None
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+
+
+def upload_skill_filename(skill: SkillEntry, source_file: str) -> str:
+    """Filename operators should use when re-uploading the proposed skill MD."""
+    base = Path(source_file).name
+    if _UPLOAD_FILENAME_RE.match(base):
+        return base
+    stem = re.sub(r"[^a-z0-9]+", "-", str(skill.name).casefold()).strip("-") or "skill"
+    stem = stem[:64]
+    if not stem[0].isalpha():
+        stem = f"s-{stem}"[:64]
+    return f"{stem}.md"
+
+
+def proposed_skill_markdown(
+    skill: SkillEntry,
+    new_prompts: list[str],
+    new_keywords: list[str],
+    *,
+    current_text: str | None = None,
+) -> str:
+    """Full skill ``.md`` with suggested prompts/keywords merged in.
+
+    When ``current_text`` is a capability-local skill file, preserve body text and
+    append only missing ``example_prompts`` / ``keywords``. When the skill lives in
+    the shared catalog (no local file), scaffold a new uploadable markdown file.
+    """
+    if current_text and current_text.strip():
+        merged = _merge_skill_md(current_text, new_prompts, new_keywords)
+        if merged is not None:
+            return merged
+    return _scaffold_skill_md(skill, new_prompts, new_keywords)
+
+
+def _dedupe_extend(existing: list[str], additions: list[str]) -> list[str]:
+    seen = {s.casefold() for s in existing}
+    out = list(existing)
+    for item in additions:
+        text = str(item).strip()
+        if not text or text.casefold() in seen:
+            continue
+        seen.add(text.casefold())
+        out.append(text)
+    return out
+
+
+def _merge_skill_md(
+    current_text: str, new_prompts: list[str], new_keywords: list[str]
+) -> str | None:
+    match = _FRONTMATTER_RE.match(current_text)
+    if match is None:
+        return None
+    try:
+        meta = yaml.safe_load(match.group(1))
+    except yaml.YAMLError:
+        return None
+    if not isinstance(meta, dict):
+        return None
+    prompts = meta.get("example_prompts") or meta.get("examples") or []
+    if isinstance(prompts, str):
+        prompts = [prompts]
+    if not isinstance(prompts, list):
+        prompts = []
+    keywords = meta.get("keywords") or []
+    if isinstance(keywords, str):
+        keywords = [keywords]
+    if not isinstance(keywords, list):
+        keywords = []
+    meta["example_prompts"] = _dedupe_extend(
+        [str(p) for p in prompts], new_prompts
+    )
+    if "examples" in meta:
+        meta.pop("examples", None)
+    merged_kw = _dedupe_extend([str(k) for k in keywords], new_keywords)
+    if merged_kw:
+        meta["keywords"] = merged_kw
+    dumped = yaml.safe_dump(
+        meta, sort_keys=False, allow_unicode=True, width=10**6
+    ).rstrip()
+    body = current_text[match.end() :]
+    if body and not body.startswith("\n"):
+        body = "\n" + body
+    return f"---\n{dumped}\n---{body}"
+
+
+def _scaffold_skill_md(
+    skill: SkillEntry, new_prompts: list[str], new_keywords: list[str]
+) -> str:
+    prompts = _dedupe_extend(list(skill.example_prompts), new_prompts)
+    keywords = _dedupe_extend(list(skill.keywords), new_keywords)
+    front: dict = {
+        "name": skill.name,
+        "description": skill.description or f"Skill: {skill.name}",
+    }
+    if keywords:
+        front["keywords"] = keywords
+    if prompts:
+        front["example_prompts"] = prompts
+    dumped = yaml.safe_dump(
+        front, sort_keys=False, allow_unicode=True, width=10**6
+    ).rstrip()
+    return (
+        f"---\n{dumped}\n---\n\n"
+        f"# {skill.name}\n\n"
+        f"<!-- Proposed skill update from pheonix coverage gaps.\n"
+        f"     Upload as capabilities/<id>/skills/{skill.name}.md -->\n"
+    )
 
 def updates_markdown(updates_df: pd.DataFrame) -> str:
     """The whole set of suggested edits as one paste-ready markdown document."""
