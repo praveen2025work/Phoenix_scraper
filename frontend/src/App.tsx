@@ -68,7 +68,7 @@ function AppShell() {
         </header>
 
         <main className="app-shell-main relative z-0 w-full flex-1 px-3 py-3 sm:px-4 lg:px-5 lg:py-4">
-          <div className="mx-auto w-full max-w-7xl">
+          <div className="w-full min-w-0">
             <ErrorBoundary>
               <Suspense
                 fallback={
