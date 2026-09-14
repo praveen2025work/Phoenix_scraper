@@ -92,7 +92,12 @@ test("can switch to side-by-side view with synced panes", async () => {
     />,
   );
   await userEvent.click(screen.getByRole("button", { name: /side-by-side/i }));
-  expect(screen.getByTestId("diff-view-split")).toBeInTheDocument();
+  const split = screen.getByTestId("diff-view-split");
+  expect(split).toBeInTheDocument();
+  // True left | right columns — not stacked top/bottom.
+  expect(split.className).toMatch(/flex-row/);
+  expect(split.className).not.toMatch(/flex-col/);
+  expect(split.className).not.toMatch(/grid-cols-1/);
   expect(screen.getByLabelText(/current uploaded/i)).toBeInTheDocument();
   expect(screen.getByLabelText(/proposed latest/i)).toBeInTheDocument();
   expect(screen.getAllByTestId("diff-line-remove").length).toBeGreaterThan(0);

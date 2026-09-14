@@ -588,7 +588,6 @@ export function CandidateDetail() {
                         filename={base}
                         currentContent={f.current_body}
                         proposedContent={f.body}
-                        stacked
                       />
                     ) : (
                       <pre className="overflow-x-auto text-xs">{f.body}</pre>

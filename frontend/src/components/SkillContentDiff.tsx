@@ -12,8 +12,6 @@ type Props = {
   filename: string;
   currentContent: string | null | undefined;
   proposedContent: string;
-  /** Prefer stacked layout cues (still allows unified/split toggle). */
-  stacked?: boolean;
 };
 
 type ViewMode = "unified" | "split";
@@ -83,7 +81,6 @@ export function SkillContentDiff({
   filename,
   currentContent,
   proposedContent,
-  stacked = false,
 }: Props) {
   const [copied, setCopied] = useState(false);
   const [view, setView] = useState<ViewMode>("unified");
@@ -198,9 +195,9 @@ export function SkillContentDiff({
       ) : (
         <div
           data-testid="diff-view-split"
-          className={cn("grid gap-2", stacked ? "grid-cols-1" : "lg:grid-cols-2")}
+          className="flex min-w-0 flex-row items-stretch gap-2"
         >
-          <div className="min-w-0 space-y-1">
+          <div className="min-w-0 w-1/2 flex-1 space-y-1">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
               Current (uploaded)
             </p>
@@ -230,7 +227,7 @@ export function SkillContentDiff({
               )}
             </div>
           </div>
-          <div className="min-w-0 space-y-1">
+          <div className="min-w-0 w-1/2 flex-1 space-y-1 border-l border-border pl-2">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
               Proposed (latest)
             </p>
