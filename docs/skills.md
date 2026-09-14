@@ -47,6 +47,28 @@ Malformed files already on disk are skipped with a warning at scan time
 Results **suggested skill updates** include `current_content`, `proposed_content`,
 and `upload_filename` so operators can diff left/right, copy, and download a full
 `.md` to re-upload.
+
+### Strengthen ≠ rewrite
+
+Suggested updates for an **existing** capability-local skill are **incremental merges**,
+not a blank-file rewrite (`skill_coverage.propose_skill_markdown` → `_merge_skill_md`):
+
+1. Read the current on-disk `.md`.
+2. Parse YAML frontmatter; keep every existing key and the **entire markdown body**
+   after the closing `---`.
+3. **Append only missing** `example_prompts` / `keywords` (case-insensitive dedupe).
+4. Re-serialize frontmatter; concatenate the **unchanged body**.
+
+So procedure text, tables, and hand-written guidance stay intact. Only coverage
+examples/keywords grow. If frontmatter cannot be parsed, merge falls back to a
+scaffold (catalog-only skills with no local file also scaffold a new uploadable MD).
+
+**Decide → strengthen_skill** goes further: promote writes a **paste-ready YAML
+block** only — it does **not** overwrite the hand-authored skill file
+(`artifacts.render_strengthen_block`). Operators paste or re-upload deliberately.
+
+**new_skill** is the only path that creates a **new** draft file (`status: draft`).
+
 ---
 
 ## 3. Matching clusters → skills

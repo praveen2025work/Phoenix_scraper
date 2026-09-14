@@ -91,8 +91,45 @@ Frame this as **Phase 1: see and decide**. Phase 2 is **match quality**. Phase 3
 
 ---
 
-## 6. Doc pointers
+## 6. How to fix the gaps (remediation plan)
+
+### P0 — name in the room, then schedule
+
+| Gap | Fix approach | Owner shape | Horizon |
+| --- | --- | --- | --- |
+| **Not in live path** | Define a “promotion cutover” contract: skill MD / deterministic stub → FOBO agent reload path (config flag, skill pack version, or CI publish). Pilot: 1–2 skills served from miner drafts. | Agent platform + FOBO eng | Phase 3 |
+| **Lexical match only** | Keep lexical as default. Add optional embedding nearest-neighbour (or LLM-as-judge behind flag) for “near miss” gaps; evaluate precision/recall on a labeled FOBO week. Do not replace v1 overnight. | Miner eng | Phase 2 |
+| **Deterministic = draft only** | Pair each accepted Rung-2 card with a ticket template (handler signature, fixtures from templates, owner). Track “draft → merged → flagged in agent” in History notes or external board. | FOBO eng + miner | Phase 3 |
+
+### P1 — product / ops
+
+| Gap | Fix approach |
+| --- | --- |
+| **Wrong project / 0 in-scope** | Keep `filter.project` SoT; Setup warning when preview in-scope = 0; refuse Run or hard-warn if env/capability project mismatch. |
+| **Single worker / no cancel** | Job cancel API + cooperative abort in scrape loop; later: multi-worker queue. |
+| **Demo thresholds in prod** | Capability-level “profile”: `demo` vs `production` threshold presets; gate ready bar on production profile for FOBO sign-off. |
+| **Skill propose → reload** | After upload, show “skills frozen for next run” + one-click “Run next version”; document agent-side reload if skills are also consumed live. |
+
+### P2 — platform
+
+SSO, richer audit export, Slack/email on `ready` candidates, multi-capability playbook, multi-Phoenix.
+
+### Skill update integrity (related concern)
+
+**Already mitigated:** strengthen / suggested updates **merge** prompts & keywords into existing frontmatter and **preserve body** — they are not a full rewrite of the skill essay. Diff UI (current vs proposed) + copy/download lets operators verify before re-upload. Decide `strengthen_skill` does not auto-overwrite files.
+
+**Further hardening (optional):**
+
+1. UI badge: “N prompts added · body unchanged”.  
+2. API field `merge_mode: merge | scaffold`.  
+3. Reject upload if body hash changed unexpectedly when operator intended merge-only.  
+4. Unit/contract tests already around `_merge_skill_md`; keep golden fixtures for FOBO skills.
+
+---
+
+## 7. Doc pointers
 
 - BRD out-of-scope: `docs/brd.md` §8  
 - Guided run non-goals: `docs/superpowers/specs/2026-09-10-guided-run-workflow-design.md`  
-- Ladder non-goals: `docs/superpowers/specs/2026-09-07-capability-promotion-ladder-design.md`
+- Ladder non-goals: `docs/superpowers/specs/2026-09-07-capability-promotion-ladder-design.md`  
+- Skill merge semantics: `docs/skills.md` (§ Strengthen ≠ rewrite)
