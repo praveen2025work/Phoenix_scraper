@@ -198,6 +198,24 @@ class TestDeterminism:
         build_clusters(df)
         pd.testing.assert_frame_equal(df, before)
 
+    def test_bedrock_wrapper_clusters_on_user_query(self) -> None:
+        payload = (
+            '{"anthropic_version":"bedrock-2023-05-31","system":'
+            '[{"text":"USER QUERY: Why is recon unmatched?"}],'
+            '"messages":[]}'
+        )
+        df = make_frame(
+            [
+                {"span_id": "s1", "input_text": payload},
+                {"span_id": "s2", "input_text": payload},
+                {"span_id": "s3", "input_text": payload},
+            ]
+        )
+        clusters = build_clusters(df)
+        assert len(clusters) == 1
+        assert clusters[0].representative == "Why is recon unmatched?"
+        assert "anthropic" not in clusters[0].signature
+
     def test_returns_prompt_cluster_models(self) -> None:
         df = make_frame([{"span_id": "s1", "input_text": "hello world"}])
         assert all(isinstance(c, PromptCluster) for c in build_clusters(df))

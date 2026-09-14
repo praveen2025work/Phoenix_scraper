@@ -1,7 +1,7 @@
 /** Classify candidate/gap text as skill-shaped vs deterministic payloads. */
 
 const USER_QUERY_RE =
-  /(?:^|\n)\s*USER\s+QUERY\s*:\s*(.+?)(?:\n\s*\n|$)/im;
+  /USER\s+QUERY\s*:\s*(?:"([^"]+)"|'([^']+)'|([^\n"{}]+))/im;
 const MCP_TOOL_RE = /\bmcp__[a-z0-9_-]+__[a-z0-9_-]+\b/i;
 const SELECT_MCP_RE = /\bselect\s*:\s*mcp__/i;
 const SQL_HEAD_RE =
@@ -12,6 +12,13 @@ const BEDROCK_RE =
   /\b(?:anthropic_version|bedrock|inferenceConfig|"messages"\s*:)/i;
 const PARAM_KEYS_RE =
   /\b(?:endpoint|query|tool_name|toolName|parameters|params|arguments|input_schema|content_type)\b/i;
+
+function matchUserQuery(text: string): string | null {
+  const m = text.match(USER_QUERY_RE);
+  if (!m) return null;
+  const found = (m[1] || m[2] || m[3] || "").trim();
+  return found || null;
+}
 
 function looksStructured(text: string): boolean {
   const s = text.trimStart();
@@ -48,8 +55,7 @@ function tryParseJson(text: string): unknown | null {
 
 function contentToText(content: unknown): string | null {
   if (typeof content === "string") {
-    const marker = content.match(USER_QUERY_RE)?.[1]?.trim();
-    return (marker || content).trim() || null;
+    return (matchUserQuery(content) || content).trim() || null;
   }
   if (!Array.isArray(content)) return null;
   const parts: string[] = [];
@@ -63,12 +69,12 @@ function contentToText(content: unknown): string | null {
   }
   const joined = parts.join("\n").trim();
   if (!joined) return null;
-  return joined.match(USER_QUERY_RE)?.[1]?.trim() || joined;
+  return matchUserQuery(joined) || joined;
 }
 
 function userTextFromPayload(payload: unknown): string | null {
   if (typeof payload === "string") {
-    return payload.match(USER_QUERY_RE)?.[1]?.trim() || null;
+    return matchUserQuery(payload);
   }
   if (Array.isArray(payload)) {
     for (let i = payload.length - 1; i >= 0; i--) {
@@ -104,7 +110,7 @@ function userTextFromPayload(payload: unknown): string | null {
   for (const key of ["system", "instructions", "input"]) {
     const val = obj[key];
     if (typeof val === "string") {
-      const marker = val.match(USER_QUERY_RE)?.[1]?.trim();
+      const marker = matchUserQuery(val);
       if (marker) return marker;
     }
   }
@@ -148,16 +154,16 @@ function payloadMarkers(text: string): boolean {
 export function extractUserPrompt(text: string): string {
   const raw = (text || "").trim();
   if (!raw) return "";
-  const marker = raw.match(USER_QUERY_RE)?.[1]?.trim();
-  if (marker) return marker.replace(/^["']|["']$/g, "");
+  const marker = matchUserQuery(raw);
+  if (marker) return marker;
   const parsed = tryParseJson(raw);
   if (parsed != null) {
     const fromJson = userTextFromPayload(parsed);
     if (fromJson) return fromJson.trim();
   }
   if (looksStructured(raw)) {
-    const scraped = raw.match(USER_QUERY_RE)?.[1]?.trim();
-    if (scraped) return scraped.replace(/^["']|["']$/g, "");
+    const scraped = matchUserQuery(raw);
+    if (scraped) return scraped;
   }
   return raw;
 }

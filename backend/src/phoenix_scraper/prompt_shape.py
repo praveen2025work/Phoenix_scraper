@@ -15,8 +15,10 @@ import re
 from typing import Any
 
 _USER_QUERY_MARKERS = (
-    re.compile(r"(?im)^\s*USER\s+QUERY\s*:\s*(.+?)(?:\n\s*\n|\Z)"),
-    re.compile(r"(?im)\bUSER\s+QUERY\s*:\s*(.+?)(?:\n\s*\n|\Z)"),
+    # Prefer a clean line / quoted value; stop before JSON wrappers.
+    re.compile(r"(?im)USER\s+QUERY\s*:\s*\"([^\"]+)\""),
+    re.compile(r"(?im)USER\s+QUERY\s*:\s*'([^']+)'"),
+    re.compile(r"(?im)USER\s+QUERY\s*:\s*([^\n\"{}]+)"),
 )
 
 _SQL_HEAD = re.compile(
