@@ -57,6 +57,7 @@ export function SkillFiles({ capabilityId }: { capabilityId: string }) {
                 <p className="truncate text-[11px] text-muted-foreground">
                   {s.description || "no description"} · {s.n_example_prompts} example
                   {s.n_example_prompts === 1 ? "" : "s"}
+                  {s.content_hash ? ` · ${s.content_hash.slice(0, 8)}` : ""}
                 </p>
               </div>
               <Badge variant={s.valid ? "ready" : "warn"}>

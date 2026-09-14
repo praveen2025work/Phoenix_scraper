@@ -51,6 +51,7 @@ def test_upload_then_list(ctx) -> None:
     assert row["valid"] is True
     assert row["name"] == "fx-recon-triage"
     assert row["n_example_prompts"] == 1
+    assert len(row["content_hash"]) == 64
     assert row["replaced"] is False
 
     listed = c.get("/capabilities/fobo/skills").json()

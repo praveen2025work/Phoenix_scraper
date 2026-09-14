@@ -378,7 +378,7 @@ test("lands on Results for the last run with skill gaps first", async () => {
   ).toBeInTheDocument();
   expect(screen.getByTestId("usage-button")).toHaveAttribute(
     "href",
-    "/c/fobo/analytics",
+    `/c/fobo/analytics?run=${encodeURIComponent(RUN_ID)}`,
   );
   // Idle Running is a non-interactive milestone, not a nav button.
   const runningStep = screen.getByTestId("wizard-running-step");

@@ -16,6 +16,7 @@ const ROW = {
   name: "fx-recon-triage",
   description: "Triage FX recon breaks.",
   n_example_prompts: 2,
+  content_hash: "abcdef0123456789" + "0" * 48,
 };
 
 function mock(list: unknown[] = [ROW]) {
@@ -36,6 +37,7 @@ test("lists the capability's skill files", async () => {
   await waitFor(() => expect(screen.getByText("fx-recon-triage.md")).toBeInTheDocument());
   expect(screen.getByText(/Triage FX recon breaks/)).toBeInTheDocument();
   expect(screen.getByText("fx-recon-triage")).toBeInTheDocument();
+  expect(screen.getByText(/abcdef01/)).toBeInTheDocument();
 });
 
 test("empty state is a single short line", async () => {

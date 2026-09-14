@@ -297,13 +297,18 @@ def capability_router(settings: Settings) -> APIRouter:
         return capability_mod.capability_dir(root, cap_id) / "skills"
 
     def _skill_row(path) -> dict:
+        import hashlib
+
         from .skills import scan_skill_files
 
         entries = scan_skill_files([path])
         entry = entries[0] if entries else None
+        raw = path.read_bytes()
         return {
             "filename": path.name,
             "bytes": path.stat().st_size,
+            # Same digest frozen onto capability_runs.skill_hashes at run start.
+            "content_hash": hashlib.sha256(raw).hexdigest(),
             # False when the frontmatter is missing/malformed — the run silently
             # skips such a file, so say so instead of pretending it landed.
             "valid": entry is not None,

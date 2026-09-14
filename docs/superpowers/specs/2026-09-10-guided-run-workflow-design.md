@@ -113,7 +113,7 @@ decision surface.
 | 8 | **Results aggregate API** — `GET /capabilities/{id}/runs/{run_id}/results` composes funnel + uncovered + suggested skill updates + rung1/rung2 candidates for that version. |
 | 9 | **Skill validation across versions** — record skill content hashes on the run; next run with the same filenames re-validates; Results can show gaps closed vs new (Phase C). |
 | 10 | **Preview honesty** — Filter Preview must use the operator-picked run window, not only saved `window_days`. |
-| 11 | **Filter defaults** — project comes from `PHEONIX_PROJECT` unless the operator explicitly narrows; advanced filters stay collapsed on Setup. |
+| 11 | **Filter defaults** — FOBO pins `filter.project` (e.g. `pnl-agent`) as scrape/in-scope source of truth in `capability.yaml`; other dims may be empty. Advanced filters stay collapsed on Setup. Env `PHEONIX_PROJECT` is fallback only when capability project is unset. |
 
 ---
 
@@ -140,9 +140,10 @@ Design ancestry: capability promotion ladder + async capability runs specs above
 
 Owned folder `capabilities/fobo/` with `capability.yaml` + `skills/*.md` (and
 `deterministic/` for promoted Rung-2 drafts). Unchanged from the ladder spec.
-Filter defaults to **empty** for optional dimensions; project comes from
-`PHEONIX_PROJECT` unless the operator explicitly narrows it on Setup
-(advanced, collapsed).
+Optional filter dimensions default to empty. FOBO pins `filter.project` (e.g.
+`pnl-agent`) in `capability.yaml` as scrape/in-scope source of truth;
+`PHEONIX_PROJECT` is fallback only when capability project is unset. Advanced
+filters stay collapsed on Setup.
 
 ### 6.2 Run version (first-class)
 

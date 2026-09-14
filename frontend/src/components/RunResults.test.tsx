@@ -90,7 +90,10 @@ test("Usage enables for ok run even without analytics_ready (live fallback)", as
   );
   const btn = await screen.findByTestId("usage-button");
   await waitFor(() => expect(btn).not.toBeDisabled());
-  expect(btn).toHaveAttribute("href", "/c/fobo/analytics");
+  expect(btn).toHaveAttribute(
+    "href",
+    `/c/fobo/analytics?run=${encodeURIComponent(RUN_ID)}`,
+  );
 });
 
 test("Usage is an enabled outline button linking to analytics when ready", async () => {
@@ -100,6 +103,9 @@ test("Usage is an enabled outline button linking to analytics when ready", async
   );
   const btn = await screen.findByTestId("usage-button");
   await waitFor(() => expect(btn).not.toBeDisabled());
-  expect(btn).toHaveAttribute("href", "/c/fobo/analytics");
+  expect(btn).toHaveAttribute(
+    "href",
+    `/c/fobo/analytics?run=${encodeURIComponent(RUN_ID)}`,
+  );
   expect(btn).toHaveTextContent(/^Usage$/);
 });

@@ -120,7 +120,7 @@ export function RunResultsChrome({
           </Button>
           {analyticsReady ? (
             <Button asChild variant="outline" size="default" data-testid="usage-button">
-              <Link to={`/c/${capabilityId}/analytics`}>Usage</Link>
+              <Link to={`/c/${capabilityId}/analytics?run=${encodeURIComponent(runId)}`}>Usage</Link>
             </Button>
           ) : (
             <Button
@@ -237,52 +237,6 @@ export function RunResults({
         />
       )}
 
-      <PromotionQueue capabilityId={capabilityId} />
-
-      {olderRuns.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 text-sm" data-testid="compare-picker">
-          <label htmlFor="compare-from" className="font-medium text-foreground">
-            Compare with
-          </label>
-          <select
-            id="compare-from"
-            className="rounded-md border border-border bg-background px-2 py-1 text-sm"
-            value={prevId ?? ""}
-            onChange={(e) => setCompareFrom(e.target.value || null)}
-          >
-            {!data.previous_run_id && (
-              <option value="">Pick a version…</option>
-            )}
-            {data.previous_run_id && (
-              <option value={data.previous_run_id}>
-                Since last version ({formatHumanDateTime(data.previous_run_id)})
-              </option>
-            )}
-            {olderRuns
-              .filter((r) => r.run_id !== data.previous_run_id)
-              .map((r) => (
-                <option key={r.run_id} value={r.run_id}>
-                  {formatHumanDateTime(r.run_id)} · {r.status}
-                </option>
-              ))}
-          </select>
-          {!usingDefaultPrev && prevId && (
-            <Button variant="ghost" size="sm" onClick={() => setCompareFrom(null)}>
-              Reset to last version
-            </Button>
-          )}
-        </div>
-      )}
-
-      {prevId && (
-        <VersionCompare
-          compare={compare.data}
-          isLoading={compare.isLoading}
-          error={compare.error}
-          title={usingDefaultPrev ? "Since last version" : "Version comparison"}
-        />
-      )}
-
       <Panel
         title="Skill gaps"
         subtitle="Uncovered questions — edit MD, re-upload same filename, re-run"
@@ -345,6 +299,52 @@ export function RunResults({
           )
         )}
       </Panel>
+
+      <PromotionQueue capabilityId={capabilityId} />
+
+      {olderRuns.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 text-sm" data-testid="compare-picker">
+          <label htmlFor="compare-from" className="font-medium text-foreground">
+            Compare with
+          </label>
+          <select
+            id="compare-from"
+            className="rounded-md border border-border bg-background px-2 py-1 text-sm"
+            value={prevId ?? ""}
+            onChange={(e) => setCompareFrom(e.target.value || null)}
+          >
+            {!data.previous_run_id && (
+              <option value="">Pick a version…</option>
+            )}
+            {data.previous_run_id && (
+              <option value={data.previous_run_id}>
+                Since last version ({formatHumanDateTime(data.previous_run_id)})
+              </option>
+            )}
+            {olderRuns
+              .filter((r) => r.run_id !== data.previous_run_id)
+              .map((r) => (
+                <option key={r.run_id} value={r.run_id}>
+                  {formatHumanDateTime(r.run_id)} · {r.status}
+                </option>
+              ))}
+          </select>
+          {!usingDefaultPrev && prevId && (
+            <Button variant="ghost" size="sm" onClick={() => setCompareFrom(null)}>
+              Reset to last version
+            </Button>
+          )}
+        </div>
+      )}
+
+      {prevId && (
+        <VersionCompare
+          compare={compare.data}
+          isLoading={compare.isLoading}
+          error={compare.error}
+          title={usingDefaultPrev ? "Since last version" : "Version comparison"}
+        />
+      )}
 
       <div id="decide-panels" className="space-y-3">
         <div>

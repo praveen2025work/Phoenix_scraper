@@ -1,6 +1,6 @@
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useEffect, type ReactNode } from "react";
-import { useCapability, useRunAnalytics } from "@/api/hooks";
+import { useCapability, useRunAnalytics, useRunResults } from "@/api/hooks";
 import { OutcomeBanner } from "@/components/OutcomeBanner";
 import { useJourney } from "@/journey/JourneyContext";
 import { BehaviourSection } from "./analytics/BehaviourSection";
@@ -29,20 +29,25 @@ export function Analytics() {
   const summary = cap.data?.summary;
   const name = summary?.name ?? id;
   const lastRun = (summary?.last_run as Record<string, unknown> | null) ?? null;
+  const runParam = params.get("run");
   const runId =
-    params.get("run") ||
-    (lastRun?.run_id != null ? String(lastRun.run_id) : null);
+    runParam || (lastRun?.run_id != null ? String(lastRun.run_id) : null);
   const lastStatus = String(lastRun?.status ?? "");
+  const viewed = useRunResults(id, runParam);
+  const viewedStatus = viewed.data?.status;
   const runCompleted =
-    Boolean(params.get("run")) ||
-    lastStatus === "ok" ||
-    lastStatus === "partial";
-  // NOTE: snapshotReady reads from the capability summary's last_run, not from the
-  // specific run referenced by ?run=. When run-history deep-linking ships, derive
-  // this from the viewed run's own analytics_ready field (e.g. via useRunResults).
-  // snapshotReady follows last_run today; when ?run= deep-links to older versions,
-  // resolve readiness for that run_id instead of always using last_run.
-  const snapshotReady = Boolean(lastRun?.analytics_ready);
+    Boolean(runParam)
+      ? viewedStatus === "ok" ||
+        viewedStatus === "partial" ||
+        lastStatus === "ok" ||
+        lastStatus === "partial"
+      : lastStatus === "ok" || lastStatus === "partial";
+  // Prefer the deep-linked run's own analytics_ready; fall back to last_run.
+  const snapshotReady = runParam
+    ? Boolean(viewed.data?.analytics_ready) ||
+      (viewed.isError ? Boolean(lastRun?.analytics_ready) : false) ||
+      (runId === lastRun?.run_id && Boolean(lastRun?.analytics_ready))
+    : Boolean(lastRun?.analytics_ready);
   const analytics = useRunAnalytics(id, runId, !!runId && snapshotReady);
 
   useEffect(() => {
@@ -53,7 +58,15 @@ export function Analytics() {
   const snapshot =
     snapshotReady && analytics.data && !analytics.isError ? analytics.data : null;
   const showLoading = !showWaiting && snapshotReady && analytics.isLoading && !snapshot;
-  const period = periodLabel(lastRun, summary?.window_days ?? 30);
+  const period = periodLabel(
+    runParam && viewed.data
+      ? {
+          window_start: viewed.data.window_start,
+          window_end: viewed.data.window_end,
+        }
+      : lastRun,
+    summary?.window_days ?? 30,
+  );
 
   const chrome = (glance: ReactNode = null) => (
     <section

@@ -100,6 +100,8 @@ export interface JobDto {
 export interface SkillFile {
   filename: string;
   bytes: number;
+  /** sha256 hex of file bytes — same digest frozen onto a run at start. */
+  content_hash: string;
   valid: boolean;
   name: string | null;
   description: string | null;
