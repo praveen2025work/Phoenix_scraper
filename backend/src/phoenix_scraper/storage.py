@@ -313,6 +313,7 @@ _ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("capability_jobs", "stage", "TEXT NOT NULL DEFAULT 'queued'"),
     ("capability_jobs", "progress", "REAL NOT NULL DEFAULT 0"),
     ("capability_jobs", "message", "TEXT"),
+    ("capability_jobs", "stats_json", "TEXT NOT NULL DEFAULT '{}'"),
     ("capability_runs", "skill_hashes_json", "TEXT NOT NULL DEFAULT '{}'"),
     ("capability_runs", "analytics_snapshot_json", "TEXT"),
 )
@@ -809,12 +810,26 @@ class Store:
         stage: str,
         progress: float,
         message: str | None = None,
+        stats: dict | None = None,
     ) -> None:
-        self._conn.execute(
-            "UPDATE capability_jobs SET stage = ?, progress = ?, message = ? "
-            "WHERE job_id = ?",
-            (stage, float(progress), message, job_id),
-        )
+        if stats is not None:
+            self._conn.execute(
+                "UPDATE capability_jobs SET stage = ?, progress = ?, message = ?, "
+                "stats_json = ? WHERE job_id = ?",
+                (
+                    stage,
+                    float(progress),
+                    message,
+                    json.dumps(stats),
+                    job_id,
+                ),
+            )
+        else:
+            self._conn.execute(
+                "UPDATE capability_jobs SET stage = ?, progress = ?, message = ? "
+                "WHERE job_id = ?",
+                (stage, float(progress), message, job_id),
+            )
         self._conn.commit()
 
     def finish_job(
@@ -1254,6 +1269,13 @@ def _capability_from_row(row: sqlite3.Row) -> Capability:
 
 def _job_from_row(row: sqlite3.Row) -> dict:
     keys = set(row.keys())
+    raw_stats = row["stats_json"] if "stats_json" in keys else None
+    try:
+        stats = json.loads(raw_stats) if raw_stats else {}
+    except (TypeError, ValueError, json.JSONDecodeError):
+        stats = {}
+    if not isinstance(stats, dict):
+        stats = {}
     return {
         "job_id": row["job_id"],
         "capability_id": row["capability_id"],
@@ -1265,6 +1287,7 @@ def _job_from_row(row: sqlite3.Row) -> dict:
             else 0.0
         ),
         "message": row["message"] if "message" in keys else None,
+        "stats": stats,
         "params": json.loads(row["params_json"]),
         "run_id": row["run_id"],
         "error": row["error"],

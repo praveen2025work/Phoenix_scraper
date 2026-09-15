@@ -127,7 +127,9 @@ class JobWorker:
         params = job["params"]
         job_id = job["job_id"]
 
-        def on_progress(stage: str, progress: float, message: str) -> None:
+        def on_progress(
+            stage: str, progress: float, message: str, stats: dict | None = None
+        ) -> None:
             if self._is_cancelled(job_id):
                 raise JobCancelled(f"job {job_id} cancelled")
             # Also honour cancel persisted by another process/API call.
@@ -135,7 +137,11 @@ class JobWorker:
             if latest and str(latest.get("message") or "").startswith("cancel-requested"):
                 raise JobCancelled(f"job {job_id} cancelled")
             store.update_job_progress(
-                job_id, stage=stage, progress=progress, message=message
+                job_id,
+                stage=stage,
+                progress=progress,
+                message=message,
+                stats=stats,
             )
 
         try:

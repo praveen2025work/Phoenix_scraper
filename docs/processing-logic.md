@@ -35,6 +35,13 @@ Inside `run_capability_analysis`:
 Metrics per cluster: count, n_users, n_sessions, cost, latency, span_ids,
 asset_classes, workflow_stages, representative prompt (modal extracted text).
 
+**Lane split** (`prompt_shape.filter_*` inside `run_capability_analysis`):
+
+| Lane | Input spans | Downstream |
+| --- | --- | --- |
+| Prompt → skill | `filter_user_ask_spans` — `LLM` + skill-shaped extracted text | match, coverage, Rung 1, snapshot |
+| Skill → deterministic | `filter_deterministic_source_spans` — TOOL/RETRIEVER, MCP/SQL/params, non-ask LLM | Rung 2 (members expanded to same trace) |
+
 ---
 
 ## 3. Prompt shape
@@ -47,6 +54,8 @@ asset_classes, workflow_stages, representative prompt (modal extracted text).
 | `display_title` | Truncated extracted prompt for cards |
 | `is_deterministic_shaped` | MCP tools, SQL heads, file_path blobs, Bedrock wrappers, param dicts |
 | `is_skill_shaped` | Not deterministic-shaped (and non-empty) |
+| `filter_user_ask_spans` | LLM spans with skill-shaped extracted text (prompt→skill) |
+| `filter_deterministic_source_spans` | TOOL/MCP/analysis spans (skill→deterministic) |
 
 Rung 1 **skips** non–skill-shaped representatives so promote-to-skill stays on
 user questions. Decide UI re-homes mislabeled skill-rung titles that still look
@@ -98,7 +107,8 @@ Human actions (`DECISION_TRANSITIONS`): accept, reject, snooze, reopen.
 
 ## 6. Rung 2 detection (`detect_rung2` / `determinism.score_cluster`)
 
-For each cluster’s member spans:
+For each cluster’s member spans (deterministic lane, plus skill-lane clusters
+that show LLM-side aggregation):
 
 1. Collect LLM spans with non-empty `output_text` → `n_answer_spans`.
 2. **Eligible** iff `n_answer_spans ≥ rung2_min_answer_spans` (default **10**).
@@ -111,9 +121,21 @@ For each cluster’s member spans:
 | `output_self_similarity` | 0.2 |
 | `route_invariance` | 0.1 (dropped + renormalized if N/A) |
 
-4. `determinism_score = blend(...)`; evidence bar when eligible and
+4. `determinism_score = blend(...)`; classic evidence bar when eligible and
    `score ≥ rung2_determinism_score` (default **0.8**).
 5. Sustained runs to ready: `rung2_sustained_runs` (default **3**).
+
+### Aggregation offload (cost/latency gap)
+
+`detect_llm_aggregation` flags when the **LLM is doing aggregation** (sums,
+counts, rollups, rankings from row-level data) that should instead be:
+
+- **precompute_session** — compute at session start and inject into context, or
+- **mcp_aggregate** — MCP/SQL returns the already-aggregated result
+
+Not a gap when TOOL/SQL already runs `GROUP BY` / `SUM` / `COUNT` and the LLM
+only narrates. Subtype `offload_aggregation`; creation/evidence can also be met
+via `aggregation_offload_score` thresholds (0.55 create / 0.70 evidence).
 
 No LLM judge — a low score means “keep the model.”
 

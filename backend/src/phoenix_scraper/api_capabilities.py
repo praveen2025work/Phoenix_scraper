@@ -542,9 +542,6 @@ def _build_run_results(
     if snap.empty:
         annotated = snap
         uncovered = skill_coverage.uncovered_queries(annotated, deltas)
-        updates = skill_coverage.suggested_updates(
-            uncovered, skills, max_prompts=settings.max_suggested_prompts
-        )
     else:
         clusters_df = snap.loc[
             :, ["cluster_id", "signature", "representative", "count", "n_users",
@@ -561,11 +558,13 @@ def _build_run_results(
             threshold=settings.skill_coverage_threshold,
         )
         uncovered = skill_coverage.uncovered_queries(annotated, deltas)
-        updates = skill_coverage.suggested_updates(
-            uncovered, skills, max_prompts=settings.max_suggested_prompts
-        )
 
+    # Prompt→skill surfaces user questions only — drop MCP/SQL/tool blobs before
+    # building suggested skill-file updates.
     uncovered = _skill_shaped_uncovered(uncovered)
+    updates = skill_coverage.suggested_updates(
+        uncovered, skills, max_prompts=settings.max_suggested_prompts
+    )
 
     cands = store.candidates_observed_in_run(cap_id, run_id)
     if cands.empty:

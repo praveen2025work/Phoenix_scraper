@@ -240,18 +240,45 @@ class TestRunCapabilityAnalysis:
 
         from phoenix_scraper.models import SpanRecord
         base = datetime(2026, 7, 20, 9, tzinfo=UTC)
-        seeded_store.upsert_spans([
-            SpanRecord(
-                span_id=f"det-{i:03d}", trace_id=f"det-t{i}", session_id=f"det-s{i}",
-                project="pnl-agent", span_kind="LLM",
-                start_time=base + _td(minutes=i),
-                workflow_stage="fobo_recon", asset_class="fx",
-                user_id=f"analyst-{i % 4}",
-                input_text=f"why is there a recon break of {100 + i}k on EURUSD",
-                output_text="The FX break is caused by an unsettled trade; post an adjustment.",
+        spans = []
+        for i in range(14):
+            tid = f"det-t{i}"
+            spans.append(
+                SpanRecord(
+                    span_id=f"det-tool-{i:03d}",
+                    trace_id=tid,
+                    session_id=f"det-s{i}",
+                    project="pnl-agent",
+                    span_kind="TOOL",
+                    start_time=base + _td(minutes=i),
+                    workflow_stage="fobo_recon",
+                    asset_class="fx",
+                    user_id=f"analyst-{i % 4}",
+                    input_text="select:mcp__data-analysis__query_data",
+                    output_text=f"break_amount={100 + i}",
+                )
             )
-            for i in range(14)
-        ])
+            spans.append(
+                SpanRecord(
+                    span_id=f"det-llm-{i:03d}",
+                    trace_id=tid,
+                    session_id=f"det-s{i}",
+                    project="pnl-agent",
+                    span_kind="LLM",
+                    start_time=base + _td(minutes=i, seconds=1),
+                    workflow_stage="fobo_recon",
+                    asset_class="fx",
+                    user_id=f"analyst-{i % 4}",
+                    input_text=(
+                        "{'query': 'select:mcp__data-analysis__query_data', "
+                        f"'prompt': 'why is there a recon break of {100 + i}k on EURUSD'}}"
+                    ),
+                    output_text=(
+                        "The FX break is caused by an unsettled trade; post an adjustment."
+                    ),
+                )
+            )
+        seeded_store.upsert_spans(spans)
         run_capability_analysis(seeded_store, settings, cap, now=NOW)
         runs = seeded_store.capability_runs_frame("fobo")
         assert runs.iloc[0]["n_rung2_candidates"] >= 1

@@ -1,4 +1,4 @@
-import type { JobDto } from "@/api/hooks";
+import type { JobDto, JobProgressStats } from "@/api/hooks";
 import { OutcomeBanner } from "@/components/OutcomeBanner";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Badge } from "@/components/ui/badge";
@@ -18,6 +18,46 @@ const STAGE_LABEL: Record<(typeof STAGE_ORDER)[number], string> = {
 function stageIndex(stage: string): number {
   const i = STAGE_ORDER.indexOf(stage as (typeof STAGE_ORDER)[number]);
   return i >= 0 ? i : 0;
+}
+
+function Stat({ label, value }: { label: string; value: number | string | undefined }) {
+  if (value === undefined || value === null || value === "") return null;
+  return (
+    <li
+      className="rounded-md border border-border/80 bg-background/60 px-3 py-2"
+      data-testid={`wip-stat-${label}`}
+    >
+      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="text-lg font-semibold tabular-nums text-foreground">{value}</p>
+    </li>
+  );
+}
+
+function WipStats({ stats }: { stats: JobProgressStats | null | undefined }) {
+  if (!stats) return null;
+  const items: { label: string; value: number | undefined }[] = [
+    { label: "spans in scope", value: stats.n_in_scope },
+    { label: "users", value: stats.n_users },
+    { label: "user-ask patterns", value: stats.n_user_ask_clusters },
+    { label: "tool / MCP patterns", value: stats.n_deterministic_clusters },
+    { label: "skills matched", value: stats.n_matched },
+    { label: "covered", value: stats.n_covered },
+    { label: "promote to skill", value: stats.n_rung1 },
+    { label: "make deterministic", value: stats.n_rung2 },
+  ];
+  const visible = items.filter((i) => i.value !== undefined);
+  if (!visible.length) return null;
+  return (
+    <ul
+      className="grid grid-cols-2 gap-2 sm:grid-cols-4"
+      data-testid="run-progress-wip-stats"
+      aria-label="work in progress counts"
+    >
+      {visible.map((i) => (
+        <Stat key={i.label} label={i.label} value={i.value} />
+      ))}
+    </ul>
+  );
 }
 
 export function RunProgress({
@@ -40,19 +80,26 @@ export function RunProgress({
   const currentIdx = stageIndex(stage);
   const canCancel =
     !!onCancel && !!job && (job.state === "queued" || job.state === "running");
+  const active = !cancelled && !errored && job?.state !== "done";
 
   return (
     <div className="space-y-5" data-testid="run-progress">
       <OutcomeBanner
         title={
-          cancelled ? "Run cancelled" : errored ? "Something went wrong" : "Next step"
+          cancelled
+            ? "Run cancelled"
+            : errored
+              ? "Something went wrong"
+              : active
+                ? "Work in progress"
+                : "Next step"
         }
       >
         {cancelled
           ? "Return to Setup when you want to run again."
           : errored
             ? "Fix the issue below, then return to Setup and run again."
-            : "Stay on this screen until the version is ready — Results will open automatically."}
+            : "Counts update as each stage finishes. Results open automatically when the version is ready."}
       </OutcomeBanner>
 
       <Panel
@@ -61,19 +108,19 @@ export function RunProgress({
             ? "Cancelled"
             : errored
               ? "Run failed"
-              : "Finding questions your skills miss…"
+              : "Finding patterns your skills miss…"
         }
-        subtitle="Scrape → cluster → match against uploaded skill files"
+        subtitle="Scrape → cluster similar asks & tool calls → match skills → Decide queue"
       >
         <div className="space-y-5">
           <ol className="flex flex-wrap gap-2" aria-label="run stages">
             {STAGE_ORDER.map((s, i) => {
-              const active = !errored && i === currentIdx;
+              const activeStage = !errored && i === currentIdx;
               const past = !errored && i < currentIdx;
               return (
                 <li key={s}>
                   <Badge
-                    variant={active ? "info" : past ? "ok" : "outline"}
+                    variant={activeStage ? "info" : past ? "ok" : "outline"}
                     className="uppercase tracking-wide"
                   >
                     <span className="tabular-nums opacity-80">{i + 1}.</span>{" "}
@@ -103,6 +150,8 @@ export function RunProgress({
           <p className="text-base" role="status">
             {message}
           </p>
+
+          <WipStats stats={job?.stats} />
 
           {job?.error && errored && (
             <p className="text-sm text-destructive" role="alert">

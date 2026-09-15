@@ -213,24 +213,56 @@ class TestRung2Artifacts:
         )
         s = settings.model_copy(update={"capabilities_dir": root})
         base = datetime(2026, 7, 20, 9, tzinfo=UTC)
-        tmp_store.upsert_spans([
-            SpanRecord(
-                span_id=f"det-{i:03d}", trace_id=f"det-t{i}", session_id=f"det-s{i}",
-                project="pnl-agent", span_kind="LLM", start_time=base + _td(minutes=i),
-                workflow_stage="fobo_recon", asset_class="fx", user_id=f"analyst-{i % 4}",
-                input_text=f"why is there a recon break of {100 + i}k on EURUSD",
-                output_text="The FX break is caused by an unsettled trade; post an adjustment.",
+        spans = []
+        for i in range(14):
+            tid = f"det-t{i}"
+            spans.append(
+                SpanRecord(
+                    span_id=f"det-tool-{i:03d}",
+                    trace_id=tid,
+                    session_id=f"det-s{i}",
+                    project="pnl-agent",
+                    span_kind="TOOL",
+                    start_time=base + _td(minutes=i),
+                    workflow_stage="fobo_recon",
+                    asset_class="fx",
+                    user_id=f"analyst-{i % 4}",
+                    input_text="select:mcp__data-analysis__query_data",
+                    output_text=f"break_amount={100 + i}",
+                )
             )
-            for i in range(14)
-        ])
+            spans.append(
+                SpanRecord(
+                    span_id=f"det-llm-{i:03d}",
+                    trace_id=tid,
+                    session_id=f"det-s{i}",
+                    project="pnl-agent",
+                    span_kind="LLM",
+                    start_time=base + _td(minutes=i, seconds=1),
+                    workflow_stage="fobo_recon",
+                    asset_class="fx",
+                    user_id=f"analyst-{i % 4}",
+                    input_text=(
+                        "{'query': 'select:mcp__data-analysis__query_data', "
+                        f"'prompt': 'why is there a recon break of {100 + i}k on EURUSD'}}"
+                    ),
+                    output_text=(
+                        "The FX break is caused by an unsettled trade; post an adjustment."
+                    ),
+                )
+            )
+        tmp_store.upsert_spans(spans)
         run_capability_analysis(
             tmp_store, s, cap, now=datetime(2026, 7, 21, 12, tzinfo=UTC)
         )
         d_cands = tmp_store.candidates_frame("fobo", rung="deterministic")
+        assert not d_cands.empty, "expected Rung-2 candidates from MCP/TOOL traces"
         cid = next(
             row["candidate_id"]
             for row in d_cands.to_dict("records")
-            if "recon break of" in str(row["title"])
+            if "recon break" in str(row["title"]).casefold()
+            or "mcp" in str(row["title"]).casefold()
+            or row["candidate_id"].startswith("fobo:d:")
         )
         cand = tmp_store.get_candidate(cid).model_copy(update={"status": "accepted"})
         tmp_store.upsert_candidate(cand)

@@ -22,7 +22,7 @@ from .models import (
     SkillMatch,
     _Frozen,
 )
-from .prompt_shape import display_title, is_skill_shaped
+from .prompt_shape import display_title, expand_cluster_trace_members, is_skill_shaped
 
 
 class LadderThresholds(_Frozen):
@@ -173,17 +173,25 @@ def detect_rung2(
     in_scope: pd.DataFrame,
     *,
     thresholds: LadderThresholds,
+    skill_clusters: list[PromptCluster] | None = None,
 ) -> list[determinism.Rung2Signal]:
-    """One Rung2Signal per cluster (eligibility + determinism_score + met bar)."""
+    """One Rung2Signal per cluster (eligibility + determinism_score + met bar).
+
+    Member spans are expanded to the full trace so TOOL/MCP clusters still see
+    sibling LLM outputs when scoring determinism.
+
+    ``skill_clusters`` (prompt→skill lane) are also scored when their traces show
+    LLM-side aggregation that should be offloaded to precompute/MCP.
+    """
     match_by_cluster = {m.cluster_id: m.skill_name for m in matches}
-    has_span_id = not in_scope.empty and "span_id" in in_scope.columns
+    by_id: dict[str, PromptCluster] = {c.cluster_id: c for c in clusters}
+    for extra in skill_clusters or []:
+        by_id.setdefault(extra.cluster_id, extra)
+
     signals: list[determinism.Rung2Signal] = []
-    for cluster in clusters:
-        members = (
-            in_scope[in_scope["span_id"].isin(set(cluster.span_ids))]
-            if has_span_id
-            else in_scope
-        )
+    det_ids = {c.cluster_id for c in clusters}
+    for cluster in by_id.values():
+        members = expand_cluster_trace_members(in_scope, cluster.span_ids)
         sig = determinism.score_cluster(
             cluster.cluster_id,
             display_title(cluster.representative) or cluster.representative.strip()[:200],
@@ -193,8 +201,18 @@ def detect_rung2(
             min_answer_spans=thresholds.rung2_min_answer_spans,
             fuzz_threshold=thresholds.cluster_fuzz_threshold,
         )
-        met = sig.eligible and sig.determinism_score >= thresholds.rung2_determinism_score
-        signals.append(sig.model_copy(update={"met_evidence_bar": met}))
+        # Skill-lane clusters only enter Rung 2 when aggregation-in-LLM is detected.
+        if cluster.cluster_id not in det_ids and not sig.aggregation_in_llm:
+            continue
+        classic_met = (
+            sig.eligible and sig.determinism_score >= thresholds.rung2_determinism_score
+        )
+        agg_met = (
+            sig.aggregation_in_llm
+            and sig.aggregation_offload_score >= determinism._AGG_EVIDENCE_SCORE
+            and sig.n_answer_spans >= thresholds.rung2_min_answer_spans
+        )
+        signals.append(sig.model_copy(update={"met_evidence_bar": classic_met or agg_met}))
     return signals
 
 

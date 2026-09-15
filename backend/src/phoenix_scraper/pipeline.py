@@ -7,6 +7,7 @@ from .config import Settings
 from .costs import compute_span_costs, load_pricing
 from .evaluations import evaluate_spans
 from .models import AnalysisResult, QueryFilters, SpanEvaluation
+from .prompt_shape import filter_user_ask_spans
 from .sessions import derive_sessions
 from .skills import load_all_skills
 from .skills_mapper import match_clusters
@@ -23,6 +24,8 @@ def run_analysis(
     Newly computed span costs are persisted first (via store.update_span_costs) so
     every downstream aggregate (clusters, sessions) sees priced spans. Analysis
     output is replaced wholesale in the store on each run.
+
+    Skill matching clusters **user-ask** spans only (LLM + skill-shaped text).
     """
     query = filters or QueryFilters(limit=ANALYSIS_SPAN_LIMIT)
     spans_df = store.spans_frame(query)
@@ -34,7 +37,10 @@ def run_analysis(
             store.update_span_costs(new_costs)
             spans_df = store.spans_frame(query)  # re-read so aggregates include costs
 
-    clusters = build_clusters(spans_df, fuzz_threshold=settings.cluster_fuzz_threshold)
+    clusters = build_clusters(
+        filter_user_ask_spans(spans_df),
+        fuzz_threshold=settings.cluster_fuzz_threshold,
+    )
     sessions = derive_sessions(spans_df)
     skills = load_all_skills(settings)
     matches, proposals = match_clusters(
