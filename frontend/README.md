@@ -1,4 +1,4 @@
-# pheonix frontend — Capability & Ladder SPA
+# SkillGap frontend — Capability & Ladder SPA
 
 React 19 + Vite 8 + TypeScript 5.9 + Tailwind v4 + shadcn-style components
 (Radix + CVA), TanStack Query v5, React Router 7, Recharts 3. Vitest + Testing

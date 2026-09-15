@@ -78,6 +78,7 @@ test("left rail shows Setup · Run · Gaps · Decide · History", () => {
 });
 
 test("rail collapse toggles and persists preference", () => {
+  localStorage.removeItem("skillgap_rail_collapsed");
   localStorage.removeItem("phoenix_rail_collapsed");
   renderRail();
   const rail = screen.getByTestId("product-rail");
@@ -85,14 +86,14 @@ test("rail collapse toggles and persists preference", () => {
 
   fireEvent.click(screen.getByLabelText("Collapse journey rail"));
   expect(rail).toHaveAttribute("data-collapsed", "true");
-  expect(localStorage.getItem("phoenix_rail_collapsed")).toBe("1");
+  expect(localStorage.getItem("skillgap_rail_collapsed")).toBe("1");
   // Labels hidden when collapsed; aria-labels remain.
   expect(rail.textContent).not.toMatch(/Setup/);
   expect(screen.getByLabelText("Setup")).toBeInTheDocument();
 
   fireEvent.click(screen.getByLabelText("Expand journey rail"));
   expect(rail).toHaveAttribute("data-collapsed", "false");
-  expect(localStorage.getItem("phoenix_rail_collapsed")).toBe("0");
+  expect(localStorage.getItem("skillgap_rail_collapsed")).toBe("0");
 });
 
 test("without capability context, story steps are disabled with reasons", () => {

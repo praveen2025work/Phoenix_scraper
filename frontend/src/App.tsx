@@ -6,6 +6,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ProductRail } from "./components/ProductRail";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { JourneyProvider, useJourney } from "./journey/JourneyContext";
+import { APP_NAME, APP_TAGLINE } from "./lib/brand";
 import { CandidateDetail } from "./routes/CandidateDetail";
 import { CapabilitiesIndex } from "./routes/CapabilitiesIndex";
 import { CapabilityDetail } from "./routes/CapabilityDetail";
@@ -46,10 +47,10 @@ function AppShell() {
                 to="/"
                 className="font-display block shrink-0 text-lg font-semibold tracking-tight text-foreground hover:opacity-90 sm:text-xl"
               >
-                Phoenix
+                {APP_NAME}
               </Link>
               <p className="hidden text-[11px] text-muted-foreground sm:block">
-                Capability evaluation
+                {APP_TAGLINE}
               </p>
             </div>
 

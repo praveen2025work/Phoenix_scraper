@@ -6,7 +6,9 @@
     <script>
       (function () {
         try {
-          var stored = localStorage.getItem("pheonix_theme");
+          var stored =
+            localStorage.getItem("skillgap_theme") ||
+            localStorage.getItem("pheonix_theme");
           var theme =
             stored === "light" || stored === "dark"
               ? stored
@@ -20,7 +22,7 @@
         }
       })();
     </script>
-    <title>Phoenix — find skill gaps</title>
+    <title>SkillGap — find skill gaps from traces</title>
   </head>
   <body class="h-full">
     <div id="root" class="h-full"></div>

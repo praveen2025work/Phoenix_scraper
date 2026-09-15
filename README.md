@@ -1,6 +1,6 @@
-# pheonix — Phoenix Prompt Miner (POC)
+# SkillGap — find skill gaps from traces (POC)
 
-Scrapes **Arize Phoenix** observability data (traces, spans, sessions, prompts,
+Formerly “pheonix / Phoenix Prompt Miner.” Scrapes **Arize Phoenix** observability data (traces, spans, sessions, prompts,
 token cost), validates what the LLM answered and what users asked, finds the
 **most frequently asked prompts**, matches them to your **skills catalog**, and
 runs a two-rung **promotion ladder** that proposes new skills and, when a cluster

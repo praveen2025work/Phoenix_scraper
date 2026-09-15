@@ -4,6 +4,9 @@ import { Button } from "@/components/ui/button";
 
 type Theme = "light" | "dark";
 
+const THEME_KEY = "skillgap_theme";
+const LEGACY_THEME_KEY = "pheonix_theme";
+
 function applyTheme(theme: Theme) {
   document.documentElement.dataset.theme = theme;
   document.documentElement.classList.toggle("dark", theme === "dark");
@@ -11,7 +14,8 @@ function applyTheme(theme: Theme) {
 
 function read(): Theme {
   try {
-    const stored = localStorage.getItem("pheonix_theme");
+    const stored =
+      localStorage.getItem(THEME_KEY) ?? localStorage.getItem(LEGACY_THEME_KEY);
     if (stored === "light" || stored === "dark") return stored;
   } catch {
     /* ignore */
@@ -25,7 +29,8 @@ export function ThemeToggle() {
   useEffect(() => {
     applyTheme(theme);
     try {
-      localStorage.setItem("pheonix_theme", theme);
+      localStorage.setItem(THEME_KEY, theme);
+      localStorage.removeItem(LEGACY_THEME_KEY);
     } catch {
       /* ignore */
     }
