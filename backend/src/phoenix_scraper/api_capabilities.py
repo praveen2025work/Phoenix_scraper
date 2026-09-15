@@ -10,6 +10,7 @@ from typing import Any
 
 import pandas as pd
 from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 
 from . import capability as capability_mod
@@ -146,9 +147,28 @@ def capability_router(settings: Settings) -> APIRouter:
             "last_run": last, "candidates": by,
         }
 
+
+    def _rehydrate_from_disk(store: Store) -> None:
+        """Upsert any on-disk capability.yaml that is missing from the DB.
+
+        Operators often delete pheonix.db (or delete a capability without purge)
+        while leaving capabilities/<id>/ behind. Create checks the YAML path, so
+        the UI looks empty but POST /capabilities returns 409. Syncing on list
+        (and on create for a single id) closes that gap.
+        """
+        for cap_id in capability_mod.list_capability_ids(root):
+            if store.get_capability(cap_id) is not None:
+                continue
+            try:
+                cap = capability_mod.load_capability(root, cap_id)
+            except (ValueError, FileNotFoundError, OSError):
+                continue
+            store.upsert_capability(cap)
+
     @router.get("/capabilities")
     def list_capabilities() -> list[dict]:
         with _store() as store:
+            _rehydrate_from_disk(store)
             rows = store.capabilities_frame().to_dict("records")
             caps = [store.get_capability(row["capability_id"]) for row in rows]
             return [_summary(store, c) for c in caps if c is not None]
@@ -159,8 +179,21 @@ def capability_router(settings: Settings) -> APIRouter:
             capability_mod.validate_id(body.id)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        if capability_mod.config_path(root, body.id).exists():
-            raise HTTPException(status_code=409, detail=f"Capability {body.id!r} exists")
+        yaml_path = capability_mod.config_path(root, body.id)
+        if yaml_path.exists():
+            with _store() as store:
+                existing = store.get_capability(body.id)
+                if existing is not None:
+                    raise HTTPException(
+                        status_code=409, detail=f"Capability {body.id!r} exists"
+                    )
+                # Disk orphan (DB wiped / deleted without purge): rehydrate.
+                try:
+                    cap = capability_mod.load_capability(root, body.id)
+                except (ValueError, FileNotFoundError, OSError) as exc:
+                    raise HTTPException(status_code=409, detail=str(exc)) from exc
+                store.upsert_capability(cap)
+                return JSONResponse(status_code=200, content=_summary(store, cap))
         cap = Capability(
             id=body.id, name=body.name or body.id, description=body.description,
             filter=body.filter, window_days=body.window_days,
@@ -278,7 +311,7 @@ def capability_router(settings: Settings) -> APIRouter:
             return {"capability": cap.model_dump()}
 
     @router.delete("/capabilities/{cap_id}")
-    def delete_capability(cap_id: str, purge: bool = Query(default=False)) -> dict:
+    def delete_capability(cap_id: str, purge: bool = Query(default=True)) -> dict:
         with _store() as store:
             removed = store.delete_capability(cap_id)
         if purge:
