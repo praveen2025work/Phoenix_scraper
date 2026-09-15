@@ -8,10 +8,19 @@ how Rung 1 promotes gaps, how hashes validate across runs, and how the Decide
 
 ## 1. What a “skill” is
 
-A skill is a markdown file with YAML frontmatter (`name` required; `description`,
-`keywords`, `example_prompts` optional). Matching and coverage are **classical
-ML / pattern matching** by default — keyword + rapidfuzz + BM25 + TF-IDF, with
-optional **local MiniLM** assist. No generative LLM and no remote embedding API.
+A skill is a markdown file. Matching fields come from **YAML frontmatter** when
+present (`name` required there; `description`, `keywords`, `example_prompts`
+optional). If frontmatter is missing, the same fields are derived from Markdown:
+
+- **name** — first `#` heading (slugified), else the file stem
+- **description** — first paragraph after the title
+- **example_prompts** — bullets under Example / Prompt / Question headings, else
+  question-like lines
+- **keywords** — bullets under a Keywords heading, else distinctive words
+
+Matching and coverage are **classical ML / pattern matching** by default —
+keyword + rapidfuzz + BM25 + TF-IDF, with optional **local MiniLM** assist. No
+generative LLM and no remote embedding API.
 
 Sources, in load order for a capability:
 
@@ -38,12 +47,12 @@ FOBO path: `backend/capabilities/fobo/skills/` (created on scaffold; upload via 
 Validation rules (`api_capabilities`):
 
 - Max ~1 MB per file.
-- Must parse YAML frontmatter with at least `name:`; otherwise **422** and the
-  write is rolled back (miner would skip invalid files silently).
+- Must yield a usable skill `name` (YAML frontmatter, `#` heading, or filename);
+  otherwise **422** and the write is rolled back (miner would skip empty files).
 - Setup UI (`SkillFiles`) is the operator surface for upload before **Run now**.
 
-Malformed files already on disk are skipped with a warning at scan time
-(`skills._parse_skill_md`).
+Unusable files already on disk are skipped with a warning at scan time
+(`skills.parse_skill_markdown`).
 
 Results **suggested skill updates** include `current_content`, `proposed_content`,
 and `upload_filename` so operators can diff left/right, copy, and download a full
@@ -55,8 +64,9 @@ Suggested updates for an **existing** capability-local skill are **incremental m
 not a blank-file rewrite (`skill_coverage.propose_skill_markdown` → `_merge_skill_md`):
 
 1. Read the current on-disk `.md`.
-2. Parse YAML frontmatter; keep every existing key and the **entire markdown body**
-   after the closing `---`.
+2. Parse YAML frontmatter when present; for plain Markdown, derive fields then
+   prepend frontmatter. Keep every existing key and the **entire markdown body**
+   after the closing `---` (or the original body for plain MD).
 3. **Append only missing** `example_prompts` / `keywords` (case-insensitive dedupe).
 4. Re-serialize frontmatter; concatenate the **unchanged body**.
 
