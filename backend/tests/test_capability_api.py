@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from phoenix_scraper.api import create_app
 from phoenix_scraper.config import Settings
+from phoenix_scraper.storage import Store
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -47,6 +48,37 @@ class TestCapabilityCrud:
         r = client.post("/capabilities", json={"id": "fobo", "name": "x"})
         assert r.status_code == 409
 
+    def test_create_rehydrates_disk_orphan_into_db(
+        self, client: TestClient, tmp_path: Path
+    ) -> None:
+        """DB row gone but capability.yaml remains → create rehydrates instead of 409."""
+        _create(client)
+        yaml_path = tmp_path / "caps" / "fobo" / "capability.yaml"
+        assert yaml_path.exists()
+        settings = client.app.state.settings  # type: ignore[attr-defined]
+        with Store(settings.db_path) as store:
+            assert store.delete_capability("fobo")
+        assert client.get("/capabilities/fobo").status_code == 404
+
+        r = client.post(
+            "/capabilities",
+            json={"id": "fobo", "name": "FOBO again", "window_days": 30},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["id"] == "fobo"
+        assert any(c["id"] == "fobo" for c in client.get("/capabilities").json())
+
+    def test_list_rehydrates_disk_only_capabilities(
+        self, client: TestClient, tmp_path: Path
+    ) -> None:
+        _create(client)
+        settings = client.app.state.settings  # type: ignore[attr-defined]
+        with Store(settings.db_path) as store:
+            store.delete_capability("fobo")
+        assert (tmp_path / "caps" / "fobo" / "capability.yaml").exists()
+        listing = client.get("/capabilities").json()
+        assert any(c["id"] == "fobo" for c in listing)
+
     def test_create_bad_id_is_422_or_400(self, client: TestClient) -> None:
         r = client.post("/capabilities", json={"id": "Bad Id!", "name": "x"})
         assert r.status_code in (400, 422)
@@ -85,11 +117,16 @@ class TestCapabilityCrud:
     def test_get_missing_is_404(self, client: TestClient) -> None:
         assert client.get("/capabilities/ghost").status_code == 404
 
-    def test_delete_removes_row_keeps_dir(self, client: TestClient, tmp_path: Path) -> None:
+    def test_delete_defaults_to_purge(self, client: TestClient, tmp_path: Path) -> None:
         _create(client)
         r = client.delete("/capabilities/fobo")
         assert r.status_code == 200
         assert client.get("/capabilities/fobo").status_code == 404
+        assert not (tmp_path / "caps" / "fobo").exists()
+
+    def test_delete_without_purge_keeps_dir(self, client: TestClient, tmp_path: Path) -> None:
+        _create(client)
+        client.delete("/capabilities/fobo?purge=false")
         assert (tmp_path / "caps" / "fobo" / "capability.yaml").exists()
 
     def test_delete_purge_removes_dir(self, client: TestClient, tmp_path: Path) -> None:
