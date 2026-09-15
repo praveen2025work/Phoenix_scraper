@@ -4,6 +4,11 @@ import { Button } from "@/components/ui/button";
 
 type Theme = "light" | "dark";
 
+function applyTheme(theme: Theme) {
+  document.documentElement.dataset.theme = theme;
+  document.documentElement.classList.toggle("dark", theme === "dark");
+}
+
 function read(): Theme {
   try {
     const stored = localStorage.getItem("pheonix_theme");
@@ -18,7 +23,7 @@ export function ThemeToggle() {
   const [theme, setTheme] = useState<Theme>(read);
 
   useEffect(() => {
-    document.documentElement.dataset.theme = theme;
+    applyTheme(theme);
     try {
       localStorage.setItem("pheonix_theme", theme);
     } catch {
