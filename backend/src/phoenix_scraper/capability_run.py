@@ -44,6 +44,10 @@ from .models import (
 )
 from .phoenix_client import PhoenixClientWrapper
 from .pipeline import ANALYSIS_SPAN_LIMIT
+from .prompt_shape import (
+    filter_deterministic_source_spans,
+    filter_user_ask_spans,
+)
 from .scraper import scrape_once
 from .skill_coverage import annotate_coverage
 from .skills_mapper import match_clusters_with_notes
@@ -221,7 +225,14 @@ def run_capability_analysis(
             logger.warning("scoped evaluation failed for %s: %s", capability.id, exc)
             run_notes.append(f"validation skipped: {exc}")
 
-    clusters = build_clusters(in_scope, fuzz_threshold=settings.cluster_fuzz_threshold)
+    clusters = build_clusters(
+        filter_user_ask_spans(in_scope),
+        fuzz_threshold=settings.cluster_fuzz_threshold,
+    )
+    deterministic_clusters = build_clusters(
+        filter_deterministic_source_spans(in_scope),
+        fuzz_threshold=settings.cluster_fuzz_threshold,
+    )
     skills = load_capability_skills(settings, capability)
     _emit(on_progress, "matching", 0.7, f"Matching skills for {capability.id}")
     effective_mode = (match_mode or settings.match_mode or "classical").strip().lower()
@@ -302,7 +313,10 @@ def run_capability_analysis(
     run_notes.extend(rung1.notes)
 
     rung2_signals = detect_rung2(
-        list(clusters), list(matches), in_scope, thresholds=thresholds
+        list(deterministic_clusters),
+        list(matches),
+        in_scope,
+        thresholds=thresholds,
     )
     rung2 = update_rung2(
         store, capability,

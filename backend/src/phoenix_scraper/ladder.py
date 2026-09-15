@@ -22,7 +22,7 @@ from .models import (
     SkillMatch,
     _Frozen,
 )
-from .prompt_shape import display_title, is_skill_shaped
+from .prompt_shape import display_title, expand_cluster_trace_members, is_skill_shaped
 
 
 class LadderThresholds(_Frozen):
@@ -174,16 +174,15 @@ def detect_rung2(
     *,
     thresholds: LadderThresholds,
 ) -> list[determinism.Rung2Signal]:
-    """One Rung2Signal per cluster (eligibility + determinism_score + met bar)."""
+    """One Rung2Signal per cluster (eligibility + determinism_score + met bar).
+
+    Member spans are expanded to the full trace so TOOL/MCP clusters still see
+    sibling LLM outputs when scoring determinism.
+    """
     match_by_cluster = {m.cluster_id: m.skill_name for m in matches}
-    has_span_id = not in_scope.empty and "span_id" in in_scope.columns
     signals: list[determinism.Rung2Signal] = []
     for cluster in clusters:
-        members = (
-            in_scope[in_scope["span_id"].isin(set(cluster.span_ids))]
-            if has_span_id
-            else in_scope
-        )
+        members = expand_cluster_trace_members(in_scope, cluster.span_ids)
         sig = determinism.score_cluster(
             cluster.cluster_id,
             display_title(cluster.representative) or cluster.representative.strip()[:200],

@@ -35,6 +35,13 @@ Inside `run_capability_analysis`:
 Metrics per cluster: count, n_users, n_sessions, cost, latency, span_ids,
 asset_classes, workflow_stages, representative prompt (modal extracted text).
 
+**Lane split** (`prompt_shape.filter_*` inside `run_capability_analysis`):
+
+| Lane | Input spans | Downstream |
+| --- | --- | --- |
+| Prompt → skill | `filter_user_ask_spans` — `LLM` + skill-shaped extracted text | match, coverage, Rung 1, snapshot |
+| Skill → deterministic | `filter_deterministic_source_spans` — TOOL/RETRIEVER, MCP/SQL/params, non-ask LLM | Rung 2 (members expanded to same trace) |
+
 ---
 
 ## 3. Prompt shape
@@ -47,6 +54,8 @@ asset_classes, workflow_stages, representative prompt (modal extracted text).
 | `display_title` | Truncated extracted prompt for cards |
 | `is_deterministic_shaped` | MCP tools, SQL heads, file_path blobs, Bedrock wrappers, param dicts |
 | `is_skill_shaped` | Not deterministic-shaped (and non-empty) |
+| `filter_user_ask_spans` | LLM spans with skill-shaped extracted text (prompt→skill) |
+| `filter_deterministic_source_spans` | TOOL/MCP/analysis spans (skill→deterministic) |
 
 Rung 1 **skips** non–skill-shaped representatives so promote-to-skill stays on
 user questions. Decide UI re-homes mislabeled skill-rung titles that still look

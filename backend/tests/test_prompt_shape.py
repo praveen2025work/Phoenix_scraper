@@ -2,11 +2,18 @@
 
 import json
 
+import pandas as pd
+
 from phoenix_scraper.prompt_shape import (
     display_title,
+    expand_cluster_trace_members,
     extract_user_prompt,
+    filter_deterministic_source_spans,
+    filter_user_ask_spans,
     is_deterministic_shaped,
+    is_deterministic_source_span,
     is_skill_shaped,
+    is_user_ask_span,
 )
 
 
@@ -123,3 +130,62 @@ class TestSqlKeywordOpeners:
         for text in self.REAL_SQL:
             assert is_deterministic_shaped(text) is True, text
             assert is_skill_shaped(text) is False, text
+
+
+class TestSpanLaneSplit:
+    def test_llm_question_is_user_ask_not_deterministic_source(self) -> None:
+        q = "Why is there an FX recon break?"
+        assert is_user_ask_span("LLM", q) is True
+        assert is_deterministic_source_span("LLM", q) is False
+
+    def test_mcp_tool_span_is_deterministic_source(self) -> None:
+        mcp = "{'query': 'select:mcp__data-analysis__query_data'}"
+        assert is_user_ask_span("TOOL", mcp) is False
+        assert is_deterministic_source_span("TOOL", mcp) is True
+        assert is_user_ask_span("LLM", mcp) is False
+        assert is_deterministic_source_span("LLM", mcp) is True
+
+    def test_filter_splits_mixed_frame(self) -> None:
+        df = pd.DataFrame(
+            [
+                {
+                    "span_id": "u1",
+                    "span_kind": "LLM",
+                    "input_text": "Why is there a recon break?",
+                    "trace_id": "t1",
+                },
+                {
+                    "span_id": "m1",
+                    "span_kind": "TOOL",
+                    "input_text": "select:mcp__data-analysis__query_data",
+                    "trace_id": "t1",
+                },
+                {
+                    "span_id": "a1",
+                    "span_kind": "LLM",
+                    "input_text": json.dumps(
+                        {
+                            "anthropic_version": "bedrock-2023-05-31",
+                            "system": [{"text": "router"}],
+                            "messages": [],
+                        }
+                    ),
+                    "trace_id": "t2",
+                },
+            ]
+        )
+        asks = filter_user_ask_spans(df)
+        dets = filter_deterministic_source_spans(df)
+        assert list(asks["span_id"]) == ["u1"]
+        assert set(dets["span_id"]) == {"m1", "a1"}
+
+    def test_expand_cluster_includes_same_trace(self) -> None:
+        df = pd.DataFrame(
+            [
+                {"span_id": "tool-1", "trace_id": "tr-9", "span_kind": "TOOL"},
+                {"span_id": "llm-1", "trace_id": "tr-9", "span_kind": "LLM"},
+                {"span_id": "other", "trace_id": "tr-8", "span_kind": "LLM"},
+            ]
+        )
+        expanded = expand_cluster_trace_members(df, ("tool-1",))
+        assert set(expanded["span_id"]) == {"tool-1", "llm-1"}

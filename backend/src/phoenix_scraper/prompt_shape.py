@@ -6,6 +6,7 @@ Rung 2 (make-deterministic), not Rung 1 (promote to skill). This module:
 
 - extracts a clean user-facing question when one is wrapped in a model payload
 - decides whether text is deterministic-shaped (tool/SQL/params) vs skill-shaped
+- splits DataFrames into user-ask spans vs LLM/MCP analysis spans for each lane
 """
 
 from __future__ import annotations
@@ -13,6 +14,8 @@ from __future__ import annotations
 import json
 import re
 from typing import Any
+
+import pandas as pd
 
 _USER_QUERY_MARKERS = (
     # Prefer a clean line / quoted value; stop before JSON wrappers.
@@ -113,6 +116,98 @@ def is_skill_shaped(text: str) -> bool:
     if not raw:
         return False
     return not is_deterministic_shaped(raw)
+
+
+def is_user_ask_span(span_kind: object, input_text: object) -> bool:
+    """True when this span is a user question for prompt→skill matching.
+
+    Convention: OpenInference ``LLM`` spans whose extracted input is skill-shaped.
+    TOOL / MCP / SQL / param payloads never qualify, even if kind is LLM.
+    """
+    kind = str(span_kind or "UNKNOWN").strip().upper()
+    if kind != "LLM":
+        return False
+    extracted = extract_user_prompt(str(input_text or ""))
+    return is_skill_shaped(extracted)
+
+
+def is_deterministic_source_span(span_kind: object, input_text: object) -> bool:
+    """True when this span feeds skill→deterministic (Rung 2), not prompt→skill.
+
+    Includes TOOL/RETRIEVER spans, deterministic-shaped payloads, and LLM spans
+    that are not clean user asks (analysis / tool-router blobs).
+    """
+    kind = str(span_kind or "UNKNOWN").strip().upper()
+    raw = str(input_text or "").strip()
+    if kind in {"TOOL", "RETRIEVER"}:
+        return bool(raw) or kind == "TOOL"
+    if not raw:
+        return False
+    if is_deterministic_shaped(raw):
+        return True
+    if kind == "LLM" and not is_user_ask_span(kind, raw):
+        return True
+    return False
+
+
+def filter_user_ask_spans(spans_df: pd.DataFrame) -> pd.DataFrame:
+    """Rows that belong on the prompt→skill path."""
+    if spans_df is None or spans_df.empty:
+        return spans_df if spans_df is not None else pd.DataFrame()
+    if "input_text" not in spans_df.columns:
+        return spans_df.iloc[0:0].copy()
+    kinds = (
+        spans_df["span_kind"]
+        if "span_kind" in spans_df.columns
+        else pd.Series(["UNKNOWN"] * len(spans_df), index=spans_df.index)
+    )
+    mask = [
+        is_user_ask_span(kind, text)
+        for kind, text in zip(kinds, spans_df["input_text"], strict=False)
+    ]
+    return spans_df.loc[mask].copy()
+
+
+def filter_deterministic_source_spans(spans_df: pd.DataFrame) -> pd.DataFrame:
+    """Rows that belong on the skill→deterministic path."""
+    if spans_df is None or spans_df.empty:
+        return spans_df if spans_df is not None else pd.DataFrame()
+    if "input_text" not in spans_df.columns:
+        return spans_df.iloc[0:0].copy()
+    kinds = (
+        spans_df["span_kind"]
+        if "span_kind" in spans_df.columns
+        else pd.Series(["UNKNOWN"] * len(spans_df), index=spans_df.index)
+    )
+    mask = [
+        is_deterministic_source_span(kind, text)
+        for kind, text in zip(kinds, spans_df["input_text"], strict=False)
+    ]
+    return spans_df.loc[mask].copy()
+
+
+def expand_cluster_trace_members(
+    in_scope: pd.DataFrame, span_ids: tuple[str, ...] | list[str]
+) -> pd.DataFrame:
+    """Member spans for Rung-2 scoring: direct hits plus same-trace companions.
+
+    TOOL/MCP clusters often only contain the tool span; determinism still needs
+    sibling LLM outputs on the same ``trace_id``.
+    """
+    if in_scope is None or in_scope.empty or "span_id" not in in_scope.columns:
+        return in_scope if in_scope is not None else pd.DataFrame()
+    wanted = {str(s) for s in span_ids}
+    if not wanted:
+        return in_scope.iloc[0:0].copy()
+    direct = in_scope[in_scope["span_id"].astype(str).isin(wanted)]
+    if direct.empty or "trace_id" not in in_scope.columns:
+        return direct.copy()
+    traces = {
+        str(t) for t in direct["trace_id"].dropna().tolist() if str(t).strip()
+    }
+    if not traces:
+        return direct.copy()
+    return in_scope[in_scope["trace_id"].astype(str).isin(traces)].copy()
 
 
 def _payload_markers(text: str) -> bool:
