@@ -499,7 +499,8 @@ test("Run now enqueues a closed from/to job and shows Running", async () => {
 
   await waitFor(() => expect(screen.getByTestId("run-progress")).toBeInTheDocument());
   expect(screen.getByText(/Pulling spans/i)).toBeInTheDocument();
-  expect(screen.queryByTestId("lane-board")).not.toBeInTheDocument();
+  // Previous Results stay visible under progress so the screen isn't empty.
+  expect(screen.getByTestId("wip-previous-results")).toBeInTheDocument();
 });
 
 test("Jobs step lists live jobs and Watch returns to Running", async () => {

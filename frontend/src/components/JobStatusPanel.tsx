@@ -100,6 +100,32 @@ export function JobStatusPanel({
                     (job.state === "error" ? job.error : null) ||
                     "Waiting for worker…"}
                 </p>
+                {job.stats && (job.state === "queued" || job.state === "running") && (
+                  <p
+                    className="text-[11px] tabular-nums text-muted-foreground"
+                    data-testid={`job-wip-${id}`}
+                  >
+                    {[
+                      job.stats.n_in_scope != null
+                        ? `${job.stats.n_in_scope} spans`
+                        : null,
+                      job.stats.n_user_ask_clusters != null
+                        ? `${job.stats.n_user_ask_clusters} ask patterns`
+                        : null,
+                      job.stats.n_deterministic_clusters != null
+                        ? `${job.stats.n_deterministic_clusters} tool patterns`
+                        : null,
+                      job.stats.n_rung1 != null
+                        ? `${job.stats.n_rung1} skill candidates`
+                        : null,
+                      job.stats.n_rung2 != null
+                        ? `${job.stats.n_rung2} det candidates`
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </p>
+                )}
                 <p className="text-xs text-muted-foreground">
                   Enqueued {formatHumanDateTime(job.enqueued_at)}
                   {job.finished_at

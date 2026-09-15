@@ -81,6 +81,8 @@ export function CapabilityDetail() {
   const [forceHistory, setForceHistory] = useState(false);
   const [forceJobs, setForceJobs] = useState(false);
   const [focusDecide, setFocusDecide] = useState(false);
+  /** Previous finished version kept under Running so the screen isn't empty. */
+  const [wipPreviousRunId, setWipPreviousRunId] = useState<string | null>(null);
 
   const job = useJob(id, jobId);
   const summary = cap.data?.summary;
@@ -113,6 +115,7 @@ export function CapabilityDetail() {
       qc.invalidateQueries({ queryKey: ["capability-jobs", id] });
       qc.invalidateQueries({ queryKey: ["run-analytics", id] });
       setResultRunId(data.run_id);
+      setWipPreviousRunId(null);
       setJobId(null);
       setForceSetup(false);
       setForceHistory(false);
@@ -162,6 +165,7 @@ export function CapabilityDetail() {
           setForceHistory(false);
           setForceJobs(false);
           setFocusDecide(false);
+          setWipPreviousRunId(resultRunId || lastRunId || null);
           setResultRunId(null);
           setJobId(d.job_id);
           qc.invalidateQueries({ queryKey: ["capability-jobs", id] });
@@ -500,11 +504,12 @@ export function CapabilityDetail() {
       )}
 
       {step === "Running" && (
-        <div className="step-enter">
+        <div className="step-enter space-y-6">
           <RunProgress
             job={job.data}
             onBackToSetup={() => {
               setJobId(null);
+              setWipPreviousRunId(null);
               setForceSetup(true);
               setForceHistory(false);
               setForceJobs(false);
@@ -523,6 +528,20 @@ export function CapabilityDetail() {
             }
             cancelPending={cancelJob.isPending}
           />
+          {wipPreviousRunId && (
+            <div className="space-y-2" data-testid="wip-previous-results">
+              <p className="text-sm text-muted-foreground">
+                Previous version still visible while this run works — new Results
+                replace it when ready.
+              </p>
+              <RunResults
+                capabilityId={id}
+                runId={wipPreviousRunId}
+                onRunNext={goSetup}
+                showChrome={false}
+              />
+            </div>
+          )}
         </div>
       )}
 

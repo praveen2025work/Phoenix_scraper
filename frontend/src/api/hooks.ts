@@ -86,6 +86,19 @@ export const useCandidate = (cid: string) =>
       }>(`/candidates/${enc(cid)}`),
   });
 
+export interface JobProgressStats {
+  n_spans?: number;
+  n_in_scope?: number;
+  n_users?: number;
+  n_user_ask_clusters?: number;
+  n_deterministic_clusters?: number;
+  n_skills?: number;
+  n_matched?: number;
+  n_covered?: number;
+  n_rung1?: number;
+  n_rung2?: number;
+}
+
 export interface JobDto {
   job_id?: string;
   capability_id?: string;
@@ -93,6 +106,10 @@ export interface JobDto {
   stage?: "queued" | "scraping" | "analyzing" | "matching" | "done" | "error" | string;
   progress?: number;
   message?: string | null;
+  /** Live counters while the job runs (and final snapshot when done). */
+  stats?: JobProgressStats | null;
+  /** Raw column from list endpoint before normalize. */
+  stats_json?: string | null;
   run_id: string | null;
   error: string | null;
   enqueued_at?: string | null;
@@ -193,12 +210,25 @@ export function useCancelJob(capabilityId: string) {
   });
 }
 
+function parseJobStats(row: JobDto): JobProgressStats | null {
+  if (row.stats && typeof row.stats === "object") return row.stats;
+  const raw = row.stats_json;
+  if (!raw || typeof raw !== "string") return null;
+  try {
+    const parsed = JSON.parse(raw) as JobProgressStats;
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 function normalizeJobRow(row: JobDto): JobDto {
   return {
     ...row,
     job_id: row.job_id,
     run_id: row.run_id ?? null,
     error: row.error ?? null,
+    stats: parseJobStats(row),
   };
 }
 

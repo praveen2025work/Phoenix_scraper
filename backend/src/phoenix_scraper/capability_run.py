@@ -55,7 +55,7 @@ from .storage import Store
 
 logger = logging.getLogger(__name__)
 
-ProgressCb = Callable[[str, float, str], None]
+ProgressCb = Callable[..., None]  # (stage, progress, message, stats=None)
 
 # Re-export for callers that imported from capability_run historically.
 __all__ = [
@@ -77,8 +77,18 @@ def capability_skill_file_hashes(settings: Settings, capability: Capability) -> 
     return hashes
 
 
-def _emit(on_progress: ProgressCb | None, stage: str, progress: float, message: str) -> None:
-    if on_progress is not None:
+def _emit(
+    on_progress: ProgressCb | None,
+    stage: str,
+    progress: float,
+    message: str,
+    stats: dict | None = None,
+) -> None:
+    if on_progress is None:
+        return
+    try:
+        on_progress(stage, progress, message, stats)
+    except TypeError:
         on_progress(stage, progress, message)
 
 
@@ -210,6 +220,22 @@ def run_capability_analysis(
     )
     in_scope = store.spans_frame(filters)
     n_store = store.span_count()
+    n_users_scope = (
+        int(in_scope["user_id"].replace("", pd.NA).dropna().nunique())
+        if not in_scope.empty and "user_id" in in_scope.columns
+        else 0
+    )
+    _emit(
+        on_progress,
+        "analyzing",
+        0.5,
+        f"Loaded {len(in_scope)} in-scope spans ({n_users_scope} users)",
+        {
+            "n_spans": n_store,
+            "n_in_scope": int(len(in_scope)),
+            "n_users": n_users_scope,
+        },
+    )
 
     if not in_scope.empty:
         pricing, default_pricing = load_pricing(settings.pricing_path)
@@ -234,7 +260,37 @@ def run_capability_analysis(
         fuzz_threshold=settings.cluster_fuzz_threshold,
     )
     skills = load_capability_skills(settings, capability)
-    _emit(on_progress, "matching", 0.7, f"Matching skills for {capability.id}")
+    _emit(
+        on_progress,
+        "analyzing",
+        0.62,
+        (
+            f"Clustered {len(clusters)} user-ask patterns · "
+            f"{len(deterministic_clusters)} tool/MCP patterns"
+        ),
+        {
+            "n_spans": n_store,
+            "n_in_scope": int(len(in_scope)),
+            "n_users": n_users_scope,
+            "n_user_ask_clusters": len(clusters),
+            "n_deterministic_clusters": len(deterministic_clusters),
+            "n_skills": len(skills),
+        },
+    )
+    _emit(
+        on_progress,
+        "matching",
+        0.7,
+        f"Matching {len(clusters)} patterns against {len(skills)} skills",
+        {
+            "n_spans": n_store,
+            "n_in_scope": int(len(in_scope)),
+            "n_users": n_users_scope,
+            "n_user_ask_clusters": len(clusters),
+            "n_deterministic_clusters": len(deterministic_clusters),
+            "n_skills": len(skills),
+        },
+    )
     effective_mode = (match_mode or settings.match_mode or "classical").strip().lower()
     matches, proposals, match_notes = match_clusters_with_notes(
         clusters,
@@ -257,6 +313,23 @@ def run_capability_analysis(
         int(annotated["covered"].sum())
         if not annotated.empty and "covered" in annotated.columns
         else 0
+    )
+    n_matched = len(matches)
+    _emit(
+        on_progress,
+        "matching",
+        0.78,
+        f"Matched {n_matched}/{len(clusters)} patterns · {n_covered} covered",
+        {
+            "n_spans": n_store,
+            "n_in_scope": int(len(in_scope)),
+            "n_users": n_users_scope,
+            "n_user_ask_clusters": len(clusters),
+            "n_deterministic_clusters": len(deterministic_clusters),
+            "n_skills": len(skills),
+            "n_matched": n_matched,
+            "n_covered": n_covered,
+        },
     )
     run_notes.extend(
         _funnel_empty_notes(
@@ -330,6 +403,28 @@ def run_capability_analysis(
         history_limit=settings.run_history_limit,
     )
     run_notes.extend(rung2.notes)
+
+    _emit(
+        on_progress,
+        "matching",
+        0.92,
+        (
+            f"Decide queue: {rung1.n_candidates} promote-to-skill · "
+            f"{rung2.n_candidates} make-deterministic"
+        ),
+        {
+            "n_spans": n_store,
+            "n_in_scope": int(len(in_scope)),
+            "n_users": n_users_scope,
+            "n_user_ask_clusters": len(clusters),
+            "n_deterministic_clusters": len(deterministic_clusters),
+            "n_skills": len(skills),
+            "n_matched": len(matches),
+            "n_covered": n_covered,
+            "n_rung1": rung1.n_candidates,
+            "n_rung2": rung2.n_candidates,
+        },
+    )
 
     run = CapabilityRun(
         run_id=run_id,
