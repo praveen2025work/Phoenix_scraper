@@ -64,6 +64,9 @@ class JobRequest(BaseModel):
     from_: datetime = Field(alias="from")
     to: datetime
     replace_today: bool = False
+    # classical = keyword+fuzzy+BM25+TF-IDF; semantic = classical + local MiniLM.
+    # No generative LLM. Falls back to classical if the semantic extra is missing.
+    match_mode: str = "classical"
 
     model_config = {"populate_by_name": True}
 
@@ -71,6 +74,14 @@ class JobRequest(BaseModel):
     @classmethod
     def _utc_aware(cls, value: datetime) -> datetime:
         return _aware(value)
+
+    @field_validator("match_mode")
+    @classmethod
+    def _match_mode(cls, value: str) -> str:
+        mode = (value or "classical").strip().lower()
+        if mode not in {"classical", "semantic"}:
+            raise ValueError("match_mode must be 'classical' or 'semantic'")
+        return mode
 
 
 # A capability's own skill files are loose `<cap>/skills/<name>.md`. Keep the
@@ -893,6 +904,7 @@ def _register_run_routes(router: APIRouter, settings: Settings, _store) -> None:
             "from": body.from_.isoformat(),
             "to": body.to.isoformat(),
             "replace_today": body.replace_today,
+            "match_mode": body.match_mode,
         }
         with _store() as store:
             message = _queue_hint(store, request)

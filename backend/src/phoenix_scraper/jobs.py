@@ -150,6 +150,7 @@ class JobWorker:
                 window_start=_parse_dt(params.get("from")),
                 window_end=_parse_dt(params.get("to")),
                 replace_today=bool(params.get("replace_today", False)),
+                match_mode=params.get("match_mode"),
                 on_progress=on_progress,
             )
             if self._is_cancelled(job_id):

@@ -1,0 +1,68 @@
+# FOBO / PnL-agent domain synonyms for classical matching.
+# Each key is the canonical term; values are aliases that map to it.
+# Matching expands both cluster and skill text through this map before BM25/TF-IDF.
+
+recon:
+  - reconciliation
+  - reconcile
+  - reconciling
+  - mismatch
+  - mismatches
+  - discrepancy
+  - discrepancies
+  - variance
+  - variances
+
+break:
+  - breaks
+  - breakage
+
+pnl:
+  - "p&l"
+  - "p and l"
+  - profit
+  - "profit and loss"
+  - pl
+
+fx:
+  - forex
+  - "foreign exchange"
+  - currency
+  - currencies
+  - ccy
+
+equity:
+  - equities
+  - stock
+  - stocks
+  - share
+  - shares
+
+triage:
+  - investigate
+  - investigation
+  - rootcause
+  - "root cause"
+  - diagnose
+  - diagnosis
+  - explain
+
+desk:
+  - desks
+  - book
+  - books
+  - portfolio
+  - portfolios
+
+settle:
+  - settlement
+  - settlements
+  - ssi
+  - "settlement instruction"
+  - "settlement instructions"
+
+position:
+  - positions
+  - inventory
+  - holding
+  - holdings

@@ -17,6 +17,8 @@ dependencies = [
 
 [project.optional-dependencies]
 live = ["arize-phoenix-client~=2.13", "certifi"]
+semantic = ["sentence-transformers>=3.0", "numpy>=1.26"]
+matching = ["PyYAML>=6.0"]  # already in core; kept for clarity
 
 [dependency-groups]
 dev = [

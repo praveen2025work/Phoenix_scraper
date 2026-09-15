@@ -48,6 +48,11 @@ class Settings(BaseSettings):
     # analysis knobs
     cluster_fuzz_threshold: int = 90  # rapidfuzz token_set_ratio 0-100
     skill_match_threshold: float = 0.55  # 0-1 combined match score
+    # Skill matching mode: classical (keyword+fuzzy+BM25+TF-IDF) or semantic
+    # (classical + local MiniLM). No generative LLM either way. Per-job override
+    # from the Setup UI wins over this default.
+    match_mode: str = "classical"  # classical | semantic
+    semantic_model: str = "sentence-transformers/all-MiniLM-L6-v2"
 
     # Skill coverage: a cluster matched to a skill counts as ALREADY COVERED when
     # it resembles one of that skill's own example_prompts (or its description)

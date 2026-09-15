@@ -98,7 +98,7 @@ Frame this as **Phase 1: see and decide**. Phase 2 is **match quality**. Phase 3
 | Gap | Fix approach | Owner shape | Horizon |
 | --- | --- | --- | --- |
 | **Not in live path** | Define a “promotion cutover” contract: skill MD / deterministic stub → FOBO agent reload path (config flag, skill pack version, or CI publish). Pilot: 1–2 skills served from miner drafts. | Agent platform + FOBO eng | Phase 3 |
-| **Lexical match only** | Keep lexical as default. Add optional embedding nearest-neighbour (or LLM-as-judge behind flag) for “near miss” gaps; evaluate precision/recall on a labeled FOBO week. Do not replace v1 overnight. | Miner eng | Phase 2 |
+| **Lexical match only** | **Upgraded:** classical ensemble (keyword+fuzzy+BM25+TF-IDF+stem/synonyms+near-dup) is default; Setup toggle enables optional **local MiniLM** semantic assist (no generative LLM). | Miner eng | Done (toggle) |
 | **Deterministic = draft only** | Pair each accepted Rung-2 card with a ticket template (handler signature, fixtures from templates, owner). Track “draft → merged → flagged in agent” in History notes or external board. | FOBO eng + miner | Phase 3 |
 
 ### P1 — product / ops

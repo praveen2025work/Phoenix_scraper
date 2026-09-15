@@ -71,6 +71,7 @@ export function CapabilityDetail() {
   const defaults = useMemo(() => defaultWindow(), []);
   const [from, setFrom] = useState(defaults.from);
   const [to, setTo] = useState(defaults.to);
+  const [matchMode, setMatchMode] = useState<"classical" | "semantic">("classical");
   const [jobId, setJobId] = useState<string | null>(null);
   const [resultRunId, setResultRunId] = useState<string | null>(null);
   const [forceSetup, setForceSetup] = useState(false);
@@ -145,16 +146,19 @@ export function CapabilityDetail() {
     if (days > 30) {
       toast.message("Large window — scrape may truncate; watch Running for warnings");
     }
-    enqueue.mutate(window, {
-      onSuccess: (d) => {
-        setForceSetup(false);
-        setForceHistory(false);
-        setFocusDecide(false);
-        setResultRunId(null);
-        setJobId(d.job_id);
+    enqueue.mutate(
+      { ...window, match_mode: matchMode },
+      {
+        onSuccess: (d) => {
+          setForceSetup(false);
+          setForceHistory(false);
+          setFocusDecide(false);
+          setResultRunId(null);
+          setJobId(d.job_id);
+        },
+        onError: (e) => toast.error((e as Error).message),
       },
-      onError: (e) => toast.error((e as Error).message),
-    });
+    );
   }
 
   function goSetup() {
@@ -370,6 +374,53 @@ export function CapabilityDetail() {
                   />
                 </label>
               </div>
+            </div>
+
+            {/* Matcher mode */}
+            <div className="space-y-3 p-4">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                <h2 className="text-sm font-semibold tracking-tight text-foreground">
+                  Matcher
+                </h2>
+                <p className="text-[11px] text-muted-foreground">
+                  No generative LLM either way
+                </p>
+              </div>
+              <fieldset className="space-y-2" data-testid="setup-match-mode">
+                <legend className="sr-only">Skill matching mode</legend>
+                <label className="flex cursor-pointer items-start gap-3 text-sm">
+                  <input
+                    type="radio"
+                    name="match-mode"
+                    value="classical"
+                    checked={matchMode === "classical"}
+                    onChange={() => setMatchMode("classical")}
+                    className="mt-1"
+                  />
+                  <span>
+                    <span className="font-medium">Classical only</span>
+                    <span className="mt-0.5 block text-[12px] text-muted-foreground">
+                      Keyword + fuzzy + BM25 + TF-IDF (default, no model download)
+                    </span>
+                  </span>
+                </label>
+                <label className="flex cursor-pointer items-start gap-3 text-sm">
+                  <input
+                    type="radio"
+                    name="match-mode"
+                    value="semantic"
+                    checked={matchMode === "semantic"}
+                    onChange={() => setMatchMode("semantic")}
+                    className="mt-1"
+                  />
+                  <span>
+                    <span className="font-medium">Classical + semantic (local)</span>
+                    <span className="mt-0.5 block text-[12px] text-muted-foreground">
+                      Adds on-box MiniLM for paraphrases; falls back if the model is missing
+                    </span>
+                  </span>
+                </label>
+              </fieldset>
             </div>
 
             {/* Skills */}

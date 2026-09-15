@@ -142,7 +142,13 @@ export function useDeleteSkillFile(id: string) {
  * Requires a closed [from, to] window (backend refuses open-ended scrapes). */
 export function useEnqueueRun(id: string) {
   return useMutation({
-    mutationFn: (body: { from: string; to: string; replace_today?: boolean }) =>
+    mutationFn: (body: {
+      from: string;
+      to: string;
+      replace_today?: boolean;
+      /** classical = BM25/TF-IDF/fuzzy; semantic = classical + local MiniLM (no LLM). */
+      match_mode?: "classical" | "semantic";
+    }) =>
       api.post<{
         job_id: string;
         state: string;

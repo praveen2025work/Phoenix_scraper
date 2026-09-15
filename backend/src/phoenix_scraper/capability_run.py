@@ -46,7 +46,7 @@ from .phoenix_client import PhoenixClientWrapper
 from .pipeline import ANALYSIS_SPAN_LIMIT
 from .scraper import scrape_once
 from .skill_coverage import annotate_coverage
-from .skills_mapper import match_clusters
+from .skills_mapper import match_clusters_with_notes
 from .storage import Store
 
 logger = logging.getLogger(__name__)
@@ -184,6 +184,7 @@ def run_capability_analysis(
     info_notes: list[str] | None = None,
     now: datetime | None = None,
     on_progress: ProgressCb | None = None,
+    match_mode: str | None = None,
 ) -> CapabilityRunResult:
     """Analyse the capability's in-scope spans over its window and record the run.
 
@@ -223,9 +224,15 @@ def run_capability_analysis(
     clusters = build_clusters(in_scope, fuzz_threshold=settings.cluster_fuzz_threshold)
     skills = load_capability_skills(settings, capability)
     _emit(on_progress, "matching", 0.7, f"Matching skills for {capability.id}")
-    matches, proposals = match_clusters(
-        clusters, skills, threshold=settings.skill_match_threshold
+    effective_mode = (match_mode or settings.match_mode or "classical").strip().lower()
+    matches, proposals, match_notes = match_clusters_with_notes(
+        clusters,
+        skills,
+        threshold=settings.skill_match_threshold,
+        match_mode=effective_mode,
+        semantic_model=settings.semantic_model,
     )
+    run_notes.extend(match_notes)
 
     clusters_df = _clusters_frame(clusters)
     matches_df = pd.DataFrame(
@@ -479,6 +486,7 @@ def run_capabilities(
     replace_today: bool = False,
     now: datetime | None = None,
     on_progress: ProgressCb | None = None,
+    match_mode: str | None = None,
 ) -> list[CapabilityRunResult]:
     """Sync -> scrape each distinct project once -> run each capability, isolating
     failures so one capability never aborts the others.
@@ -531,6 +539,7 @@ def run_capabilities(
                     replace_today=replace_today, notes=cap_notes,
                     info_notes=cap_info, now=started_at,
                     on_progress=on_progress,
+                    match_mode=match_mode,
                 )
             )
         except Exception as exc:  # noqa: BLE001 — record the failure, keep going

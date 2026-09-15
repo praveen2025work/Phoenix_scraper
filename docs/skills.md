@@ -10,8 +10,8 @@ how Rung 1 promotes gaps, how hashes validate across runs, and how the Decide
 
 A skill is a markdown file with YAML frontmatter (`name` required; `description`,
 `keywords`, `example_prompts` optional). Matching and coverage are **classical
-ML / pattern matching only** — keyword overlap + rapidfuzz + TF-IDF cosine
-(`text_similarity.py`). No generative LLM and no remote embedding service.
+ML / pattern matching** by default — keyword + rapidfuzz + BM25 + TF-IDF, with
+optional **local MiniLM** assist. No generative LLM and no remote embedding API.
 
 Sources, in load order for a capability:
 
@@ -76,14 +76,18 @@ block** only — it does **not** overwrite the hand-authored skill file
 
 After clustering (`cluster.build_clusters`), `skills_mapper.match_clusters`:
 
-- Score = `0.35 * keyword_ratio + 0.35 * fuzzy_ratio + 0.30 * tfidf_ratio`
-  against each skill (`MATCH_METHOD = keyword+fuzzy+tfidf`).
-- Keyword ratio: fraction of skill keywords found in signature + representative.
-- Fuzzy ratio: best `token_set_ratio` vs `example_prompts` + description.
-- TF-IDF ratio: best pure-Python TF-IDF cosine of the cluster representative
-  vs the same references (`text_similarity.tfidf_similarity`).
+- **Classical (default):** stem + FOBO synonym expand, near-dup collapse, then
+  score ≈ `0.20 keyword + 0.25 fuzzy + 0.55 (BM25 + word TF-IDF + char n-gram TF-IDF)`.
+  Method label: `keyword+fuzzy+bm25+tfidf`.
+- **Semantic (optional):** same classical score blended with local MiniLM cosine
+  (`0.70 classical + 0.30 semantic`). Method label adds `+semantic`.
+  Requires `pip install 'phoenix-scraper[semantic]'`; otherwise falls back to classical.
+- Setup UI **Matcher** radio chooses the mode per run (`match_mode` on the job).
+  Env default: `PHEONIX_MATCH_MODE=classical`.
 - **Match** if best score ≥ `skill_match_threshold` (default **0.55**).
 - Else if cluster `count ≥ 2`, emit a **SkillGapProposal** (deduped by proposed name).
+
+No generative LLM and no cloud embedding API in either mode.
 
 Coverage (`skill_coverage.annotate_coverage`): a matched cluster is **covered**
 when it resembles that skill’s `example_prompts` (or description) at
