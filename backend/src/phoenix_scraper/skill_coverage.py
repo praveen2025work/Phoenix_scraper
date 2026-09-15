@@ -366,15 +366,33 @@ def _dedupe_extend(existing: list[str], additions: list[str]) -> list[str]:
 def _merge_skill_md(
     current_text: str, new_prompts: list[str], new_keywords: list[str]
 ) -> str | None:
+    from .skills import parse_skill_markdown
+
     match = _FRONTMATTER_RE.match(current_text)
-    if match is None:
-        return None
-    try:
-        meta = yaml.safe_load(match.group(1))
-    except yaml.YAMLError:
-        return None
-    if not isinstance(meta, dict):
-        return None
+    meta: dict | None = None
+    body = current_text
+    if match is not None:
+        try:
+            loaded = yaml.safe_load(match.group(1))
+        except yaml.YAMLError:
+            loaded = None
+        if isinstance(loaded, dict):
+            meta = loaded
+            body = current_text[match.end() :]
+
+    # Plain Markdown (or broken frontmatter): derive fields, then write hybrid MD.
+    if meta is None:
+        parsed = parse_skill_markdown(current_text)
+        if parsed is None:
+            return None
+        meta = {
+            "name": parsed.name,
+            "description": parsed.description,
+            "example_prompts": list(parsed.example_prompts),
+            "keywords": list(parsed.keywords),
+        }
+        body = current_text
+
     prompts = meta.get("example_prompts") or meta.get("examples") or []
     if isinstance(prompts, str):
         prompts = [prompts]
@@ -396,7 +414,6 @@ def _merge_skill_md(
     dumped = yaml.safe_dump(
         meta, sort_keys=False, allow_unicode=True, width=10**6
     ).rstrip()
-    body = current_text[match.end() :]
     if body and not body.startswith("\n"):
         body = "\n" + body
     return f"---\n{dumped}\n---{body}"

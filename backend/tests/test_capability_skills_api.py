@@ -71,12 +71,39 @@ def test_reupload_replaces(ctx) -> None:
     assert len(c.get("/capabilities/fobo/skills").json()) == 1
 
 
-def test_content_without_frontmatter_is_rejected_and_not_left_behind(ctx) -> None:
+def test_plain_markdown_without_frontmatter_is_accepted(ctx) -> None:
+    c, settings = ctx
+    content = """# Cash break classifier
+
+Classify cash reconciliation breaks for the ops desk.
+
+## Example prompts
+- Why is this cash break open?
+- How do I classify a Nostro break?
+
+## Keywords
+- cash
+- break
+- nostro
+"""
+    r = c.post(
+        "/capabilities/fobo/skills",
+        json={"filename": "cash-break-classifier.md", "content": content},
+    )
+    assert r.status_code == 201, r.text
+    row = r.json()
+    assert row["valid"] is True
+    assert row["name"] == "cash-break-classifier"
+    assert row["n_example_prompts"] == 2
+    assert (settings.capabilities_dir / "fobo" / "skills" / "cash-break-classifier.md").is_file()
+
+
+def test_empty_content_is_rejected_and_not_left_behind(ctx) -> None:
     c, settings = ctx
     r = c.post("/capabilities/fobo/skills",
-               json={"filename": "bad.md", "content": "just some notes\n"})
+               json={"filename": "bad.md", "content": "   \n"})
     assert r.status_code == 422
-    assert "frontmatter" in r.json()["detail"].lower()
+    assert "usable" in r.json()["detail"].lower()
     assert c.get("/capabilities/fobo/skills").json() == []
     assert not (settings.capabilities_dir / "fobo" / "skills" / "bad.md").exists()
 
