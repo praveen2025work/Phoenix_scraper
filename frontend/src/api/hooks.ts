@@ -95,6 +95,10 @@ export interface JobDto {
   message?: string | null;
   run_id: string | null;
   error: string | null;
+  enqueued_at?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  params_json?: string | null;
 }
 
 export interface SkillFile {
@@ -184,6 +188,35 @@ export function useCancelJob(capabilityId: string) {
       ),
     onSuccess: (_data, jobId) => {
       qc.invalidateQueries({ queryKey: ["job", capabilityId, jobId] });
+      qc.invalidateQueries({ queryKey: ["capability-jobs", capabilityId] });
+    },
+  });
+}
+
+function normalizeJobRow(row: JobDto): JobDto {
+  return {
+    ...row,
+    job_id: row.job_id,
+    run_id: row.run_id ?? null,
+    error: row.error ?? null,
+  };
+}
+
+/** All jobs for a capability (queued/running/done/error), newest first. */
+export function useCapabilityJobs(capabilityId: string, enabled = true) {
+  return useQuery({
+    queryKey: ["capability-jobs", capabilityId],
+    queryFn: async () => {
+      const rows = await api.get<JobDto[]>(
+        `/capabilities/${enc(capabilityId)}/jobs`,
+      );
+      return (rows ?? []).map(normalizeJobRow);
+    },
+    enabled: !!capabilityId && enabled,
+    refetchInterval: (query) => {
+      const rows = query.state.data ?? [];
+      const active = rows.some((j) => j.state === "queued" || j.state === "running");
+      return active ? 2000 : false;
     },
   });
 }

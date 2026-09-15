@@ -12,6 +12,7 @@ import {
 } from "@/api/hooks";
 import { FilterEditor } from "@/components/FilterEditor";
 import { OutcomeBanner } from "@/components/OutcomeBanner";
+import { JobStatusPanel } from "@/components/JobStatusPanel";
 import { RunHistory } from "@/components/RunHistory";
 import { RunProgress } from "@/components/RunProgress";
 import { RunResults, RunResultsChrome } from "@/components/RunResults";
@@ -45,6 +46,8 @@ function wizardToJourney(step: WizardStep): JourneyStep {
       return "Run";
     case "Results":
       return "Gaps";
+    case "Jobs":
+      return "Run";
     case "History":
       return "History";
   }
@@ -76,6 +79,7 @@ export function CapabilityDetail() {
   const [resultRunId, setResultRunId] = useState<string | null>(null);
   const [forceSetup, setForceSetup] = useState(false);
   const [forceHistory, setForceHistory] = useState(false);
+  const [forceJobs, setForceJobs] = useState(false);
   const [focusDecide, setFocusDecide] = useState(false);
 
   const job = useJob(id, jobId);
@@ -93,9 +97,9 @@ export function CapabilityDetail() {
 
   // Seed Results from the capability's last run once loaded (unless Setup/History forced).
   useEffect(() => {
-    if (forceSetup || forceHistory || jobId || resultRunId) return;
+    if (forceSetup || forceHistory || forceJobs || jobId || resultRunId) return;
     if (lastRunId) setResultRunId(lastRunId);
-  }, [lastRunId, forceSetup, forceHistory, jobId, resultRunId]);
+  }, [lastRunId, forceSetup, forceHistory, forceJobs, jobId, resultRunId]);
 
   useEffect(() => {
     const data = job.data;
@@ -106,24 +110,28 @@ export function CapabilityDetail() {
       qc.invalidateQueries({ queryKey: ["candidates", id] });
       qc.invalidateQueries({ queryKey: ["run-results", id] });
       qc.invalidateQueries({ queryKey: ["capability-runs", id] });
+      qc.invalidateQueries({ queryKey: ["capability-jobs", id] });
       qc.invalidateQueries({ queryKey: ["run-analytics", id] });
       setResultRunId(data.run_id);
       setJobId(null);
       setForceSetup(false);
       setForceHistory(false);
+      setForceJobs(false);
       setFocusDecide(false);
     } else if (data.state === "error") {
       toast.error(data.error ?? "Run failed");
     }
   }, [job.data, id, qc]);
 
-  const step: WizardStep = jobId
-    ? "Running"
-    : forceHistory
-      ? "History"
-      : resultRunId && !forceSetup
-        ? "Results"
-        : "Setup";
+  const step: WizardStep = forceJobs
+    ? "Jobs"
+    : jobId
+      ? "Running"
+      : forceHistory
+        ? "History"
+        : resultRunId && !forceSetup
+          ? "Results"
+          : "Setup";
 
   const running = enqueue.isPending || (jobId !== null && job.data?.state !== "error");
 
@@ -152,9 +160,11 @@ export function CapabilityDetail() {
         onSuccess: (d) => {
           setForceSetup(false);
           setForceHistory(false);
+          setForceJobs(false);
           setFocusDecide(false);
           setResultRunId(null);
           setJobId(d.job_id);
+          qc.invalidateQueries({ queryKey: ["capability-jobs", id] });
         },
         onError: (e) => toast.error((e as Error).message),
       },
@@ -164,6 +174,7 @@ export function CapabilityDetail() {
   function goSetup() {
     setForceSetup(true);
     setForceHistory(false);
+    setForceJobs(false);
     setFocusDecide(false);
     setJobId(null);
     setResultRunId(null);
@@ -172,14 +183,24 @@ export function CapabilityDetail() {
   function goHistory() {
     setForceHistory(true);
     setForceSetup(false);
+    setForceJobs(false);
     setFocusDecide(false);
     setJobId(null);
+  }
+
+  function goJobs() {
+    setForceJobs(true);
+    setForceHistory(false);
+    setForceSetup(false);
+    setFocusDecide(false);
+    // Keep jobId so Watch can return to Running for an in-flight job.
   }
 
   function openRun(runId: string) {
     setResultRunId(runId);
     setForceHistory(false);
     setForceSetup(false);
+    setForceJobs(false);
     setFocusDecide(false);
     setJobId(null);
   }
@@ -187,11 +208,13 @@ export function CapabilityDetail() {
   function onWizardSelect(next: WizardStep) {
     if (next === "Setup") goSetup();
     else if (next === "History") goHistory();
+    else if (next === "Jobs") goJobs();
     else if (next === "Results") {
       if (resultRunId || lastRunId) {
         setResultRunId(resultRunId || lastRunId);
         setForceSetup(false);
         setForceHistory(false);
+        setForceJobs(false);
         setFocusDecide(false);
       }
     }
@@ -207,6 +230,7 @@ export function CapabilityDetail() {
     setResultRunId(run);
     setForceSetup(false);
     setForceHistory(false);
+    setForceJobs(false);
     setFocusDecide(decide);
     if (decide) {
       requestAnimationFrame(() => {
@@ -238,6 +262,7 @@ export function CapabilityDetail() {
     }
     if (stepParam === "setup") goSetup();
     else if (stepParam === "history") goHistory();
+    else if (stepParam === "jobs") goJobs();
     else if (stepParam === "results") openResults(focus === "decide");
     else if (focus === "decide") openResults(true);
     // Clear so in-page navigation isn't re-applied on every render.
@@ -482,6 +507,7 @@ export function CapabilityDetail() {
               setJobId(null);
               setForceSetup(true);
               setForceHistory(false);
+              setForceJobs(false);
             }}
             onCancel={
               jobId
@@ -507,6 +533,22 @@ export function CapabilityDetail() {
             runId={resultRunId}
             onRunNext={goSetup}
             showChrome={false}
+          />
+        </div>
+      )}
+
+      {step === "Jobs" && (
+        <div className="step-enter">
+          <JobStatusPanel
+            capabilityId={id}
+            activeJobId={jobId}
+            onWatchJob={(jid) => {
+              setJobId(jid);
+              setForceJobs(false);
+              setForceHistory(false);
+              setForceSetup(false);
+            }}
+            onOpenRun={openRun}
           />
         </div>
       )}
