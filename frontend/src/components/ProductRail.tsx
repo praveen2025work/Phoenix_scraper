@@ -27,7 +27,8 @@ export const STORY_STEPS = [
 
 export type StoryStep = (typeof STORY_STEPS)[number];
 
-const RAIL_COLLAPSED_KEY = "phoenix_rail_collapsed";
+const RAIL_COLLAPSED_KEY = "skillgap_rail_collapsed";
+const LEGACY_RAIL_COLLAPSED_KEY = "phoenix_rail_collapsed";
 
 const STEP_ICONS: Record<StoryStep, typeof Settings2> = {
   Setup: Settings2,
@@ -69,7 +70,10 @@ function disabledReason(
 
 function readCollapsed(): boolean {
   try {
-    return localStorage.getItem(RAIL_COLLAPSED_KEY) === "1";
+    const stored =
+      localStorage.getItem(RAIL_COLLAPSED_KEY) ??
+      localStorage.getItem(LEGACY_RAIL_COLLAPSED_KEY);
+    return stored === "1";
   } catch {
     return false;
   }
@@ -87,6 +91,7 @@ export function ProductRail() {
   useEffect(() => {
     try {
       localStorage.setItem(RAIL_COLLAPSED_KEY, collapsed ? "1" : "0");
+      localStorage.removeItem(LEGACY_RAIL_COLLAPSED_KEY);
     } catch {
       /* ignore */
     }

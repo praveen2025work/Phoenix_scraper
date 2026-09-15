@@ -1,0 +1,10 @@
+{
+  "name": "@chatbot/design-assets",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Extracted MITR AI CSS tokens, Lucide icons used by the web app, and self-hosted Inter / Sora / JetBrains Mono fonts.",
+  "scripts": {
+    "extract": "node ../../scripts/extract-design-assets.mjs",
+    "test": "node --test test/kit.test.mjs"
+  }
+}

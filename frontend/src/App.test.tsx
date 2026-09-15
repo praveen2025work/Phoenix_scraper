@@ -8,14 +8,14 @@ afterEach(() => {
   setApiKey(null);
 });
 
-test("renders the app shell with Phoenix chrome and left journey rail", async () => {
+test("renders the app shell with SkillGap chrome and left journey rail", async () => {
   render(
     <MemoryRouter>
       <App />
     </MemoryRouter>,
   );
   // Gate shows Connecting… then locks with branded form, or opens the shell.
-  await waitFor(() => expect(screen.getByText("Phoenix")).toBeInTheDocument());
+  await waitFor(() => expect(screen.getByText("SkillGap")).toBeInTheDocument());
   // When the gate opens, the left journey rail is present (no top journey strip).
   await waitFor(() => {
     const rail = screen.queryByTestId("product-rail");

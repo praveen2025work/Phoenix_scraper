@@ -2,11 +2,12 @@
 // while the API typically binds IPv4-only (127.0.0.1:8000) → fetch fails with
 // "Failed to fetch" and ApiKeyGate incorrectly shows the key form.
 const BASE = import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8000";
-const KEY = "pheonix_api_key";
+const KEY = "skillgap_api_key";
+const LEGACY_KEY = "pheonix_api_key";
 
 export function apiKey(): string | null {
   try {
-    return sessionStorage.getItem(KEY);
+    return sessionStorage.getItem(KEY) ?? sessionStorage.getItem(LEGACY_KEY);
   } catch {
     return null;
   }
@@ -14,6 +15,7 @@ export function apiKey(): string | null {
 
 export function setApiKey(value: string | null): void {
   try {
+    sessionStorage.removeItem(LEGACY_KEY);
     if (value) sessionStorage.setItem(KEY, value);
     else sessionStorage.removeItem(KEY);
   } catch {

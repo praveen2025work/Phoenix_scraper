@@ -28,7 +28,7 @@ test("open API (no key required) skips the gate", async () => {
   );
   await waitFor(() => expect(screen.getByText("secret dashboard")).toBeInTheDocument());
   expect(screen.queryByLabelText("API key")).not.toBeInTheDocument();
-  expect(sessionStorage.getItem("pheonix_api_key")).toBeNull();
+  expect(sessionStorage.getItem("skillgap_api_key")).toBeNull();
 });
 
 test("stored key skips the gate without probing", () => {
@@ -57,7 +57,7 @@ test("401 shows the gate; entering a key reveals children", async () => {
   await userEvent.type(screen.getByLabelText("API key"), "abc");
   await userEvent.click(screen.getByRole("button", { name: "Continue" }));
   expect(screen.getByText("secret dashboard")).toBeInTheDocument();
-  expect(sessionStorage.getItem("pheonix_api_key")).toBe("abc");
+  expect(sessionStorage.getItem("skillgap_api_key")).toBe("abc");
 });
 
 test("network error shows the gate with blank-continue allowed", async () => {
@@ -72,5 +72,5 @@ test("network error shows the gate with blank-continue allowed", async () => {
   expect(screen.getByText(/leave blank/i)).toBeInTheDocument();
   await userEvent.click(screen.getByRole("button", { name: "Continue" }));
   expect(screen.getByText("secret dashboard")).toBeInTheDocument();
-  expect(sessionStorage.getItem("pheonix_api_key")).toBeNull();
+  expect(sessionStorage.getItem("skillgap_api_key")).toBeNull();
 });

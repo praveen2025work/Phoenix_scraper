@@ -107,7 +107,7 @@ def create_app(
                 worker.stop()
 
     app = FastAPI(
-        title="Pheonix prompt miner", version=__version__, lifespan=lifespan
+        title="SkillGap", version=__version__, lifespan=lifespan
     )
     app.state.settings = settings
     app.state.job_worker = worker

@@ -1,5 +1,6 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { ApiError, api, apiKey, setApiKey } from "@/api/client";
+import { APP_NAME } from "@/lib/brand";
 
 type GateState = "checking" | "open" | "locked";
 
@@ -54,7 +55,7 @@ export function ApiKeyGate({ children }: { children: ReactNode }) {
         setState("open");
       }}
     >
-      <h1 className="text-lg font-semibold">Phoenix</h1>
+      <h1 className="font-display text-lg font-semibold">{APP_NAME}</h1>
       <p className="text-sm text-muted-foreground">
         {authRequired
           ? "This API requires an X-API-Key."
