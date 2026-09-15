@@ -199,12 +199,24 @@ def render_rung2_stub(
         f"| template_concentration | {sig.get('template_concentration')} |\n"
         f"| route_invariance | {sig.get('route_invariance')} |\n"
         f"| output_self_similarity | {sig.get('output_self_similarity')} |\n"
-        f"| slot_stability | {sig.get('slot_stability')} |\n\n"
+        f"| slot_stability | {sig.get('slot_stability')} |\n"
+        f"| aggregation_in_llm | {sig.get('aggregation_in_llm')} |\n"
+        f"| aggregation_offload_score | {sig.get('aggregation_offload_score')} |\n"
+        f"| aggregation_action | {sig.get('aggregation_action') or ev.get('aggregation_action') or '—'} |\n\n"
         f"## Observed templates\n\n| # | answers | masked text |\n|---|---|---|\n{tmpl_table}\n\n"
+        f"## Aggregation offload\n\n"
+        f"If the LLM is summing / counting / rolling up row-level data, move that\n"
+        f"work out of the model:\n\n"
+        f"- **precompute_session** — compute the aggregate when the session starts "
+        f"and inject it into context.\n"
+        f"- **mcp_aggregate** — expose an MCP/SQL call that returns the aggregated "
+        f"result so the LLM only fetches and narrates.\n\n"
+        f"Reasons: {', '.join(sig.get('aggregation_reasons') or ev.get('aggregation_reasons') or ['—'])}\n\n"
         f"## Open decisions\n\n"
         f"- Slot extraction: which fields does `handle` pull from the prompt?\n"
         f"- Classifier input: what does `context` need to carry to pick the template?\n"
         f"- Error handling: what does `handle` do when no template fits?\n"
+        f"- Aggregation: which figures should be precomputed vs fetched via MCP?\n"
     )
     return [(f"{module}.py", py), (f"test_{module}.py", test), (f"{module}.md", md)]
 
@@ -231,16 +243,23 @@ def _member_prompts(store: Store, capability: Capability, candidate: Candidate) 
 def _member_pairs(
     store: Store, capability: Capability, candidate: Candidate
 ) -> list[tuple[str, str]]:
-    """Real (input_text, output_text) pairs for this candidate's cluster, from the
-    latest recorded run's member span ids. Empty when there is no run or no
-    answer spans."""
+    """Real (prompt, answer) pairs for this candidate's cluster.
+
+    Starts from the latest run's member span ids, then expands to same-trace
+    companions so TOOL/MCP clusters still pick up sibling LLM answers.
+    """
+    from .prompt_shape import expand_cluster_trace_members, extract_user_prompt
+
     run_id = store.previous_capability_run_id(capability.id)
     if run_id is None:
         return []
     members = store.capability_cluster_members_frame(capability.id, run_id)
     if members.empty or "cluster_id" not in members.columns:
         return []
-    span_ids = set(members.loc[members["cluster_id"] == candidate.cluster_id, "span_id"])
+    span_ids = tuple(
+        str(s)
+        for s in members.loc[members["cluster_id"] == candidate.cluster_id, "span_id"]
+    )
     if not span_ids:
         return []
     f = capability.filter
@@ -250,12 +269,21 @@ def _member_pairs(
     ))
     if frame.empty or "span_id" not in frame.columns:
         return []
-    rows = frame[frame["span_id"].isin(span_ids)]
+    rows = expand_cluster_trace_members(frame, span_ids)
+    if rows.empty:
+        return []
+    # Prefer LLM answer spans; fall back to any span with both sides.
+    llm_rows = rows[
+        (rows["span_kind"].fillna("").astype(str).str.upper() == "LLM")
+        & (rows["output_text"].fillna("").astype(str).str.strip() != "")
+    ]
+    use = llm_rows if not llm_rows.empty else rows
     pairs: list[tuple[str, str]] = []
     seen: set[tuple[str, str]] = set()
-    for row in rows.to_dict("records"):
-        inp = str(row.get("input_text") or "").strip()
+    for row in use.to_dict("records"):
+        raw_in = str(row.get("input_text") or "").strip()
         out = str(row.get("output_text") or "").strip()
+        inp = extract_user_prompt(raw_in) or raw_in
         if inp and out and (inp, out) not in seen:
             seen.add((inp, out))
             pairs.append((inp, out))

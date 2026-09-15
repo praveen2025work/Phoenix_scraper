@@ -217,6 +217,11 @@ def _r2_observation(
             "n_answer_spans": s.n_answer_spans,
             "route_applicable": s.route_applicable,
             "templates": [list(t) for t in signal.templates],
+            "aggregation_in_llm": s.aggregation_in_llm,
+            "aggregation_offload_score": s.aggregation_offload_score,
+            "aggregation_reasons": list(s.aggregation_reasons),
+            "aggregation_action": s.aggregation_action,
+            "subtype": signal.subtype,
         },
         met_evidence_bar=signal.met_evidence_bar,
         crossed_threshold=crossed,
@@ -238,11 +243,18 @@ def update_rung2(
     seen_ids: set[str] = set()
     n_ready = n_insufficient = recorded = 0
     crossed_ids: list[str] = []
+    agg_floor = determinism.aggregation_creation_floor(thresholds.rung2_min_answer_spans)
 
     for signal in signals:
         cid = _r2_candidate_id(capability.id, signal.cluster_id)
         existing = store.get_candidate(cid)
-        creation_ok = signal.eligible and signal.determinism_score >= 0.5
+        classic_ok = signal.eligible and signal.determinism_score >= 0.5
+        agg_ok = (
+            signal.aggregation_in_llm
+            and signal.aggregation_offload_score >= determinism._AGG_CREATION_SCORE
+            and signal.n_answer_spans >= agg_floor
+        )
+        creation_ok = classic_ok or agg_ok
         if existing is None and not creation_ok:
             continue
         recorded += 1
@@ -258,10 +270,11 @@ def update_rung2(
         store.record_candidate_observation(obs)
         recent = store.recent_candidate_observations(cid, thresholds.rung2_sustained_runs)
 
+        subtype = signal.subtype or (existing.subtype if existing else "")
         if existing is None:
             candidate = Candidate(
                 candidate_id=cid, capability_id=capability.id, rung="deterministic",
-                subtype="", cluster_id=signal.cluster_id, title=signal.title,
+                subtype=subtype, cluster_id=signal.cluster_id, title=signal.title,
                 signature=signal.signature, matched_skill=signal.matched_skill,
                 status="new", first_seen_run_id=run_id, first_seen_at=observed_at,
                 last_seen_run_id=run_id, last_seen_at=observed_at,
@@ -271,12 +284,13 @@ def update_rung2(
                 "matched_skill": signal.matched_skill, "title": signal.title,
                 "signature": signal.signature, "last_seen_run_id": run_id,
                 "last_seen_at": observed_at,
+                "subtype": subtype or existing.subtype,
             })
 
         transition = next_status(
             candidate, obs, recent, run_ordinal=run_ordinal,
             capability_run_count=capability_run_count, thresholds=thresholds,
-            eligible=signal.eligible, rung="deterministic",
+            eligible=signal.eligible or agg_ok, rung="deterministic",
         )
         updates: dict = {
             "status": transition.status,
@@ -284,6 +298,10 @@ def update_rung2(
                 "determinism_score": signal.determinism_score,
                 "n_answer_spans": signal.n_answer_spans,
                 "n_templates": signal.signals.n_templates,
+                "aggregation_in_llm": signal.aggregation_in_llm,
+                "aggregation_offload_score": signal.aggregation_offload_score,
+                "aggregation_action": signal.signals.aggregation_action,
+                "aggregation_reasons": list(signal.signals.aggregation_reasons),
             },
         }
         if transition.set_ready_at and candidate.ready_at is None:
@@ -307,11 +325,24 @@ def update_rung2(
     )
 
     notes: list[str] = []
-    skipped = sum(1 for s in signals if not s.eligible)
+    skipped = sum(1 for s in signals if not s.eligible and not s.aggregation_in_llm)
     if skipped:
         notes.append(f"Rung 2: {skipped} clusters skipped (no output text)")
     if recorded:
         notes.append(f"Rung 2: {recorded} candidates observed ({n_ready} ready)")
+    n_agg = sum(1 for s in signals if s.aggregation_in_llm and s.cluster_id)
+    # count recorded aggregation candidates for the note
+    n_agg_recorded = sum(
+        1 for s in signals
+        if s.aggregation_in_llm and _r2_candidate_id(capability.id, s.cluster_id) in seen_ids
+    )
+    if n_agg_recorded:
+        notes.append(
+            f"Rung 2: {n_agg_recorded} aggregation-offload gap(s) "
+            "(precompute session context or MCP aggregate)"
+        )
+    elif n_agg:
+        pass
     return Rung2RunOutcome(
         n_candidates=recorded, n_ready=n_ready, n_insufficient=n_insufficient,
         notes=tuple(notes), crossed=tuple(crossed_ids),

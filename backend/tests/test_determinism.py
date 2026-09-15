@@ -137,3 +137,77 @@ class TestBlendAndScore:
                               min_answer_spans=10, fuzz_threshold=90)
         assert sig.signals.route_applicable is True
         assert sig.signals.route_invariance == 1.0
+
+
+class TestAggregationOffload:
+    def test_llm_rollup_from_row_data_is_flagged(self) -> None:
+        rows = []
+        for i in range(12):
+            tid = f"t{i}"
+            row_blob = "\n".join(
+                f"- EURUSD break {10 + j}k on book{j}" for j in range(8)
+            )
+            rows.append(
+                dict(
+                    span_id=f"llm-{i}",
+                    trace_id=tid,
+                    span_kind="LLM",
+                    input_text=f"What is the total FX break?\n{row_blob}",
+                    output_text=(
+                        f"The total across desks is {80 + i}k after summing "
+                        f"the breakdown by book."
+                    ),
+                    start_time=i,
+                )
+            )
+            rows.append(
+                dict(
+                    span_id=f"tool-{i}",
+                    trace_id=tid,
+                    span_kind="TOOL",
+                    input_text="select:mcp__data-analysis__query_data",
+                    output_text=row_blob + (" x" * 50),
+                    start_time=i + 0.1,
+                )
+            )
+        spans = pd.DataFrame(rows)
+        agg = d.detect_llm_aggregation(spans)
+        assert agg.aggregation_in_llm is True
+        assert agg.offload_score >= 0.55
+        assert "llm_output_aggregates" in agg.reasons
+        assert agg.recommended_action == "mcp_aggregate"
+
+        sig = d.score_cluster(
+            "agg1", "total breaks", "total breaks", None, spans,
+            min_answer_spans=10, fuzz_threshold=90,
+        )
+        assert sig.aggregation_in_llm is True
+        assert sig.subtype == "offload_aggregation"
+
+    def test_tool_already_aggregates_is_not_a_gap(self) -> None:
+        rows = []
+        for i in range(12):
+            tid = f"t{i}"
+            rows.append(
+                dict(
+                    span_id=f"llm-{i}",
+                    trace_id=tid,
+                    span_kind="LLM",
+                    input_text="What is the total FX break?",
+                    output_text=f"Per the query, the total is {100 + i}k.",
+                    start_time=i,
+                )
+            )
+            rows.append(
+                dict(
+                    span_id=f"tool-{i}",
+                    trace_id=tid,
+                    span_kind="TOOL",
+                    input_text="SELECT book, SUM(amount) FROM breaks GROUP BY book",
+                    output_text=f"bookA,{100 + i}",
+                    start_time=i + 0.1,
+                )
+            )
+        spans = pd.DataFrame(rows)
+        agg = d.detect_llm_aggregation(spans)
+        assert agg.aggregation_in_llm is False

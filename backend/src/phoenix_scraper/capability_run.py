@@ -317,6 +317,7 @@ def run_capability_analysis(
         list(matches),
         in_scope,
         thresholds=thresholds,
+        skill_clusters=list(clusters),
     )
     rung2 = update_rung2(
         store, capability,
@@ -349,7 +350,14 @@ def run_capability_analysis(
     store.record_capability_run(
         run,
         _snapshot_rows(capability.id, run_id, clusters, matches, annotated, efficiency),
-        [(c.cluster_id, sid) for c in clusters for sid in c.span_ids],
+        (
+            [(c.cluster_id, sid) for c in clusters for sid in c.span_ids]
+            + [
+                (c.cluster_id, sid)
+                for c in deterministic_clusters
+                for sid in c.span_ids
+            ]
+        ),
         history_limit=settings.run_history_limit,
     )
     # Analytics snapshot after cluster rows exist so coverage/efficiency reuse them.

@@ -191,7 +191,7 @@ class Candidate(_Frozen):
     candidate_id: str  # "<cap>:s:<cluster_id>" (rung 1) | "<cap>:d:<cluster_id>" (rung 2)
     capability_id: str
     rung: Rung
-    subtype: str = ""  # rung "skill": "new_skill" | "strengthen_skill"
+    subtype: str = ""  # skill: new_skill|strengthen_skill; det: offload_aggregation|""
     cluster_id: str
     title: str  # representative prompt, trimmed
     signature: str
