@@ -3,13 +3,14 @@ import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 import { WizardSteps } from "./WizardSteps";
 
-test("Setup / Results / History navigate; Running is idle milestone", async () => {
+test("Setup / Results / Jobs / History navigate; Running is idle milestone", async () => {
   const onSelect = vi.fn();
   render(<WizardSteps current="Results" onSelect={onSelect} />);
 
   const nav = screen.getByRole("navigation", { name: /Run workflow/i });
   expect(within(nav).getByRole("button", { name: /^Setup$/i })).toBeInTheDocument();
   expect(within(nav).getByRole("button", { name: /^Results$/i })).toBeInTheDocument();
+  expect(within(nav).getByRole("button", { name: /^Jobs$/i })).toBeInTheDocument();
   expect(within(nav).getByRole("button", { name: /^History$/i })).toBeInTheDocument();
   expect(
     within(nav).queryByRole("button", { name: /^Running$/i }),
@@ -23,8 +24,8 @@ test("Setup / Results / History navigate; Running is idle milestone", async () =
   );
   expect(running).toHaveAttribute("aria-disabled", "true");
 
-  await userEvent.click(within(nav).getByRole("button", { name: /^History$/i }));
-  expect(onSelect).toHaveBeenCalledWith("History");
+  await userEvent.click(within(nav).getByRole("button", { name: /^Jobs$/i }));
+  expect(onSelect).toHaveBeenCalledWith("Jobs");
 });
 
 test("Running active has no idle title; other steps stay clickable", () => {
@@ -36,5 +37,6 @@ test("Running active has no idle title; other steps stay clickable", () => {
   expect(running).not.toHaveAttribute("aria-disabled");
   expect(screen.getByRole("button", { name: /^Setup$/i })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /^Results$/i })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /^Jobs$/i })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /^History$/i })).toBeInTheDocument();
 });

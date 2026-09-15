@@ -235,6 +235,19 @@ function mock(opts?: { jobState?: string }) {
     if (p === `/capabilities/fobo/runs/${OLDER_RUN}/results`) return json(olderResultsBody);
     if (p.endsWith("/results") && p.includes("/runs/")) return json(resultsBody);
     if (p === "/capabilities/fobo/runs/compare") return json(compareBody);
+    if (p === "/capabilities/fobo/jobs" && (!init?.method || init.method === "GET"))
+      return json([
+        {
+          job_id: "job-1",
+          state: jobState === "running" ? "running" : jobState === "done" ? "done" : "queued",
+          stage: jobState === "running" ? "scraping" : jobState === "done" ? "done" : "queued",
+          progress: jobState === "running" ? 0.25 : jobState === "done" ? 1 : 0,
+          message: jobState === "running" ? "Pulling spans" : null,
+          run_id: jobState === "done" ? RUN_ID : null,
+          error: null,
+          enqueued_at: "2026-09-15T12:00:00Z",
+        },
+      ]);
     if (p === "/capabilities/fobo/jobs" && init?.method === "POST")
       return json({
         job_id: "job-1",
@@ -487,4 +500,20 @@ test("Run now enqueues a closed from/to job and shows Running", async () => {
   await waitFor(() => expect(screen.getByTestId("run-progress")).toBeInTheDocument());
   expect(screen.getByText(/Pulling spans/i)).toBeInTheDocument();
   expect(screen.queryByTestId("lane-board")).not.toBeInTheDocument();
+});
+
+test("Jobs step lists live jobs and Watch returns to Running", async () => {
+  mock({ jobState: "running" });
+  renderWithProviders(<CapabilityDetail />, { route: "/c/fobo", path: "/c/:id" });
+  await waitFor(() => screen.getByTestId("run-results"));
+
+  const nav = screen.getByRole("navigation", { name: /Run workflow/i });
+  expect(within(nav).getByRole("button", { name: /^Jobs$/i })).toBeInTheDocument();
+  await userEvent.click(within(nav).getByRole("button", { name: /^Jobs$/i }));
+  await waitFor(() => expect(screen.getByTestId("job-status-panel")).toBeInTheDocument());
+  expect(screen.getByText(/Pulling spans/i)).toBeInTheDocument();
+  expect(screen.getByTestId("job-cancel-job-1")).toBeInTheDocument();
+
+  await userEvent.click(screen.getByTestId("job-watch-job-1"));
+  await waitFor(() => expect(screen.getByTestId("run-progress")).toBeInTheDocument());
 });

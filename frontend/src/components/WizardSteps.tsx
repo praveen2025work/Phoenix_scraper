@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 
-const STEPS = ["Setup", "Running", "Results", "History"] as const;
+const STEPS = ["Setup", "Running", "Results", "Jobs", "History"] as const;
 
 export type WizardStep = (typeof STEPS)[number];
 
@@ -13,7 +13,7 @@ export function WizardSteps({
   className,
 }: {
   current: WizardStep;
-  /** When set, Setup / Results / History become clickable navigation. */
+  /** When set, Setup / Results / Jobs / History become clickable navigation. */
   onSelect?: (step: WizardStep) => void;
   className?: string;
 }) {
@@ -34,7 +34,10 @@ export function WizardSteps({
         const clickable =
           !!onSelect &&
           !isRunningMilestone &&
-          (step === "History" || step === "Setup" || step === "Results");
+          (step === "History" ||
+            step === "Setup" ||
+            step === "Results" ||
+            step === "Jobs");
         const base =
           "min-w-0 flex-1 rounded-md px-2.5 py-1.5 text-center text-sm transition-colors duration-150";
         const tone = isRunningMilestone
