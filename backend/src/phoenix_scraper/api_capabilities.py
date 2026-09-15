@@ -353,8 +353,8 @@ def capability_router(settings: Settings) -> APIRouter:
             "bytes": path.stat().st_size,
             # Same digest frozen onto capability_runs.skill_hashes at run start.
             "content_hash": hashlib.sha256(raw).hexdigest(),
-            # False when the frontmatter is missing/malformed — the run silently
-            # skips such a file, so say so instead of pretending it landed.
+            # False when the file has no usable name (empty / unreadable) — the
+            # run silently skips such a file, so say so instead of pretending.
             "valid": entry is not None,
             "name": entry.name if entry else None,
             "description": entry.description if entry else None,
@@ -393,8 +393,8 @@ def capability_router(settings: Settings) -> APIRouter:
             path.unlink(missing_ok=True)
             raise HTTPException(
                 status_code=422,
-                detail="No usable YAML frontmatter: a skill file needs `---` "
-                "delimiters with at least a `name:` field.",
+                detail="No usable skill content: provide YAML frontmatter with "
+                "`name:`, or Markdown with a title / filename that yields a name.",
             )
         row["replaced"] = existed
         return row

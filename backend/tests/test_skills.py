@@ -71,17 +71,49 @@ class TestScanSkillDirs:
         assert "hedge" in entry.keywords
         assert "the" not in entry.keywords
 
-    def test_skips_malformed_files_with_warning(
+    def test_parses_plain_markdown_without_frontmatter(self, tmp_path: Path) -> None:
+        path = write_skill_md(
+            tmp_path,
+            "fx-recon/SKILL.md",
+            "# FX recon break triage\n\n"
+            "Triage FX front-office back-office reconciliation breaks.\n\n"
+            "## Example prompts\n"
+            "- Why is there an FX recon break on EURUSD?\n"
+            "- Classify today's FOBO breaks\n\n"
+            "## Keywords\n"
+            "- recon\n"
+            "- break\n"
+            "- fobo\n",
+        )
+        skills = scan_skill_dirs([tmp_path])
+        assert len(skills) == 1
+        entry = skills[0]
+        assert entry.name == "fx-recon-break-triage"
+        assert "reconciliation" in entry.description.lower()
+        assert "Why is there an FX recon break on EURUSD?" in entry.example_prompts
+        assert "recon" in entry.keywords
+        assert entry.path == str(path)
+
+    def test_plain_markdown_falls_back_to_directory_name(self, tmp_path: Path) -> None:
+        write_skill_md(
+            tmp_path,
+            "cash-break-classifier/SKILL.md",
+            "Helps operators classify cash breaks without a title heading.\n",
+        )
+        skills = scan_skill_dirs([tmp_path])
+        assert len(skills) == 1
+        assert skills[0].name == "cash-break-classifier"
+        assert "cash" in skills[0].description.lower() or "cash" in skills[0].keywords
+
+    def test_skips_empty_files_with_warning(
         self, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
         write_skill_md(tmp_path, "good/SKILL.md", "---\nname: good-skill\ndescription: ok\n---\n")
-        write_skill_md(tmp_path, "no-frontmatter/SKILL.md", "just some markdown, no frontmatter")
-        write_skill_md(tmp_path, "bad-yaml/SKILL.md", "---\nname: [unclosed\n---\n")
-        write_skill_md(tmp_path, "no-name/SKILL.md", "---\ndescription: nameless\n---\n")
+        write_skill_md(tmp_path, "empty/SKILL.md", "   \n")
         with caplog.at_level(logging.WARNING):
             skills = scan_skill_dirs([tmp_path])
         assert [s.name for s in skills] == ["good-skill"]
-        assert len(caplog.records) >= 3
+        assert len(caplog.records) >= 1
 
     def test_nonexistent_dir_is_tolerated(self, tmp_path: Path) -> None:
         assert scan_skill_dirs([tmp_path / "does-not-exist"]) == []

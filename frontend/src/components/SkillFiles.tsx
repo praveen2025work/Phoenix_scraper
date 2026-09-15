@@ -82,8 +82,8 @@ export function SkillFiles({ capabilityId }: { capabilityId: string }) {
         </ul>
       ) : (
         <p className="text-xs text-muted-foreground" role="status">
-          No skill files yet — upload a <code className="text-[11px]">.md</code> with{" "}
-          <code className="text-[11px]">name:</code> frontmatter.
+          No skill files yet — upload a <code className="text-[11px]">.md</code>{" "}
+          (YAML frontmatter or Markdown title / example lists).
         </p>
       )}
 
@@ -119,7 +119,10 @@ export function SkillFiles({ capabilityId }: { capabilityId: string }) {
             onChange={(e) => setContent(e.target.value)}
             aria-label="skill file content"
             rows={6}
-            placeholder={"---\nname: fx-recon-triage\ndescription: …\nexample_prompts:\n  - …\n---\n"}
+            placeholder={
+              "# fx-recon-triage\n\nTriage FX recon breaks.\n\n"
+              + "## Example prompts\n- Why is there a recon break?\n"
+            }
             className="w-full rounded-md border border-border bg-background p-2
                        font-mono text-xs"
           />
