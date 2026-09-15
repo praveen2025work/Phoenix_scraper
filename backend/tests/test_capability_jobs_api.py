@@ -201,3 +201,33 @@ def test_run_compare_missing_run_404(ctx) -> None:
         ).status_code
         == 404
     )
+
+
+def test_cancel_queued_job(ctx) -> None:
+    c, _ = ctx
+    job_id = c.post("/capabilities/plex/jobs", json=WINDOW).json()["job_id"]
+    r = c.post(f"/capabilities/plex/jobs/{job_id}/cancel")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["state"] == "error"
+    assert body["error"] == "cancelled"
+    assert "Cancelled" in body["message"]
+
+
+def test_cancel_running_job_flags_cooperative_abort(ctx) -> None:
+    c, settings = ctx
+    job_id = c.post("/capabilities/plex/jobs", json=WINDOW).json()["job_id"]
+    from phoenix_scraper.storage import Store
+    with Store(settings.db_path) as store:
+        assert store.claim_next_job()["job_id"] == job_id
+    r = c.post(f"/capabilities/plex/jobs/{job_id}/cancel")
+    assert r.status_code == 200
+    assert r.json()["message"] == "cancel-requested"
+
+
+def test_cancel_terminal_job_409(ctx) -> None:
+    c, settings = ctx
+    job_id = c.post("/capabilities/plex/jobs", json=WINDOW).json()["job_id"]
+    assert JobWorker(settings).drain_once() == job_id
+    assert c.post(f"/capabilities/plex/jobs/{job_id}/cancel").status_code == 409
+

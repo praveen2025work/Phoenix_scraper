@@ -78,7 +78,7 @@ class TestMatchClusters:
         assert match.cluster_id == FX_RECON_CLUSTER.cluster_id
         assert match.skill_name == "fx-recon-break-triage"
         assert match.score >= 0.55
-        assert match.method == "keyword+fuzzy"
+        assert match.method == "keyword+fuzzy+bm25+tfidf"
         assert proposals == []
 
     def test_best_match_only_per_cluster(self) -> None:

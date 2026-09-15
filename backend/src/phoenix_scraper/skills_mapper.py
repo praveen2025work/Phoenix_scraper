@@ -1,12 +1,28 @@
-"""Match prompt clusters to catalog skills; propose new skills for uncovered clusters."""
+"""Match prompt clusters to catalog skills; propose new skills for uncovered clusters.
+
+Classical ensemble: keyword + rapidfuzz + BM25/TF-IDF/char-n-grams, with optional
+local MiniLM assist when match_mode=semantic. No generative LLM.
+"""
+
+from __future__ import annotations
 
 from rapidfuzz import fuzz
 
 from .models import PromptCluster, SkillEntry, SkillGapProposal, SkillMatch
+from .near_dup import collapse_near_duplicates
+from .semantic_match import last_load_error, semantic_available, semantic_similarity
 from .skills import distinctive_words
 from .taxonomy import suggest_level
+from .text_normalize import normalize_text
+from .text_similarity import (
+    bm25_similarity,
+    char_tfidf_similarity,
+    tfidf_similarity,
+)
 
-MATCH_METHOD = "keyword+fuzzy"
+MATCH_METHOD_CLASSICAL = "keyword+fuzzy+bm25+tfidf"
+MATCH_METHOD_SEMANTIC = "keyword+fuzzy+bm25+tfidf+semantic"
+MATCH_METHOD = MATCH_METHOD_CLASSICAL  # back-compat for tests
 _PLACEHOLDER_TOKENS = frozenset({"num", "date", "ccy", "book", "desk", "id"})
 _NAME_STOPWORDS = frozenset({
     "there", "why", "is", "are", "was", "were", "an", "a", "the", "for", "on",
@@ -17,16 +33,20 @@ _PROPOSED_NAME_WORDS = 4
 _SAMPLE_SPAN_LIMIT = 5
 
 
+def _skill_refs(skill: SkillEntry) -> list[str]:
+    return [p for p in (*skill.example_prompts, skill.description) if p]
+
+
 def _keyword_ratio(cluster: PromptCluster, skill: SkillEntry) -> float:
     if not skill.keywords:
         return 0.0
-    haystack = f"{cluster.signature} {cluster.representative}".casefold()
-    hits = sum(1 for kw in skill.keywords if kw.casefold() in haystack)
+    haystack = normalize_text(f"{cluster.signature} {cluster.representative}")
+    hits = sum(1 for kw in skill.keywords if normalize_text(kw) in haystack)
     return hits / len(skill.keywords)
 
 
 def _fuzzy_ratio(cluster: PromptCluster, skill: SkillEntry) -> float:
-    references = [p for p in (*skill.example_prompts, skill.description) if p]
+    references = _skill_refs(skill)
     if not references:
         return 0.0
     best = max(
@@ -35,9 +55,40 @@ def _fuzzy_ratio(cluster: PromptCluster, skill: SkillEntry) -> float:
     return best / 100.0
 
 
-def score_match(cluster: PromptCluster, skill: SkillEntry) -> float:
-    """Combined 0-1 score: half keyword coverage, half best fuzzy similarity."""
-    return 0.5 * _keyword_ratio(cluster, skill) + 0.5 * _fuzzy_ratio(cluster, skill)
+def _lexical_ratio(cluster: PromptCluster, skill: SkillEntry) -> float:
+    references = _skill_refs(skill)
+    if not references:
+        return 0.0
+    query = cluster.representative
+    return (
+        0.40 * bm25_similarity(query, references)
+        + 0.35 * tfidf_similarity(query, references)
+        + 0.25 * char_tfidf_similarity(query, references)
+    )
+
+
+def score_match(
+    cluster: PromptCluster,
+    skill: SkillEntry,
+    *,
+    match_mode: str = "classical",
+    semantic_model: str = "sentence-transformers/all-MiniLM-L6-v2",
+) -> float:
+    """Combined 0-1 score. match_mode=semantic blends in local MiniLM cosine."""
+    classical = (
+        0.20 * _keyword_ratio(cluster, skill)
+        + 0.25 * _fuzzy_ratio(cluster, skill)
+        + 0.55 * _lexical_ratio(cluster, skill)
+    )
+    if match_mode != "semantic":
+        return classical
+    refs = _skill_refs(skill)
+    if not refs:
+        return classical
+    sem = semantic_similarity(
+        cluster.representative, refs, model_name=semantic_model
+    )
+    return 0.70 * classical + 0.30 * sem
 
 
 def _proposed_name(cluster: PromptCluster) -> str:
@@ -52,13 +103,14 @@ def _proposed_name(cluster: PromptCluster) -> str:
 
 
 def _description(count: int, scope: str, representative: str) -> str:
-    return f'Proposed skill covering {count} similar prompts ({scope}), e.g. "{representative}".'
+    return (
+        f'Proposed skill covering {count} similar prompts ({scope}), '
+        f'e.g. "{representative}".'
+    )
 
 
 def _build_proposal(cluster: PromptCluster) -> SkillGapProposal:
     level, asset_class, capability = suggest_level(cluster.representative)
-    # A cluster observed across multiple asset classes is not an asset-class skill,
-    # whatever its representative prompt happens to mention.
     distinct_asset_classes = {ac for ac in cluster.asset_classes if ac}
     if level == "asset_class" and len(distinct_asset_classes) > 1:
         level, asset_class = ("capability", None) if capability else ("global", None)
@@ -82,26 +134,88 @@ def match_clusters(
     skills: list[SkillEntry],
     threshold: float = 0.55,
     min_evidence: int = 2,
+    *,
+    match_mode: str = "classical",
+    semantic_model: str = "sentence-transformers/all-MiniLM-L6-v2",
+    collapse_duplicates: bool = True,
 ) -> tuple[list[SkillMatch], list[SkillGapProposal]]:
     """Best-scoring skill per cluster above threshold -> SkillMatch; otherwise a
-    SkillGapProposal when the cluster has at least min_evidence occurrences."""
+    SkillGapProposal when the cluster has at least min_evidence occurrences.
+    """
+    matches, proposals, _notes = match_clusters_with_notes(
+        clusters,
+        skills,
+        threshold=threshold,
+        min_evidence=min_evidence,
+        match_mode=match_mode,
+        semantic_model=semantic_model,
+        collapse_duplicates=collapse_duplicates,
+    )
+    return matches, proposals
+
+
+def match_clusters_with_notes(
+    clusters: list[PromptCluster],
+    skills: list[SkillEntry],
+    threshold: float = 0.55,
+    min_evidence: int = 2,
+    *,
+    match_mode: str = "classical",
+    semantic_model: str = "sentence-transformers/all-MiniLM-L6-v2",
+    collapse_duplicates: bool = True,
+) -> tuple[list[SkillMatch], list[SkillGapProposal], list[str]]:
+    """Like match_clusters, plus operator notes (e.g. semantic fallback)."""
+    notes: list[str] = []
+    mode = (match_mode or "classical").strip().lower()
+    if mode not in {"classical", "semantic"}:
+        notes.append(f"unknown match_mode={match_mode!r}; using classical")
+        mode = "classical"
+    if mode == "semantic" and not semantic_available():
+        notes.append(
+            "semantic match requested but sentence-transformers is not installed; "
+            "falling back to classical (pip install 'phoenix-scraper[semantic]')"
+        )
+        mode = "classical"
+    method = MATCH_METHOD_SEMANTIC if mode == "semantic" else MATCH_METHOD_CLASSICAL
+
+    work = (
+        collapse_near_duplicates(clusters) if collapse_duplicates else list(clusters)
+    )
+
     matches: list[SkillMatch] = []
     proposals: list[SkillGapProposal] = []
-    for cluster in clusters:
-        scored = [(score_match(cluster, skill), skill) for skill in skills]
-        best_score, best_skill = max(scored, key=lambda pair: pair[0], default=(0.0, None))
+    for cluster in work:
+        scored = [
+            (
+                score_match(
+                    cluster, skill, match_mode=mode, semantic_model=semantic_model
+                ),
+                skill,
+            )
+            for skill in skills
+        ]
+        best_score, best_skill = max(
+            scored, key=lambda pair: pair[0], default=(0.0, None)
+        )
         if best_skill is not None and best_score >= threshold:
             matches.append(
                 SkillMatch(
                     cluster_id=cluster.cluster_id,
                     skill_name=best_skill.name,
                     score=round(best_score, 4),
-                    method=MATCH_METHOD,
+                    method=method,
                 )
             )
         elif cluster.count >= min_evidence:
             proposals.append(_build_proposal(cluster))
-    return matches, _dedupe_proposals(proposals)
+
+    err = last_load_error()
+    if mode == "semantic" and err:
+        notes.append(
+            f"semantic model load issue ({err}); "
+            "scores may have used classical-only blend where encode failed"
+        )
+    return matches, _dedupe_proposals(proposals), notes
 
 
 def _dedupe_proposals(proposals: list[SkillGapProposal]) -> list[SkillGapProposal]:
@@ -126,7 +240,9 @@ def _dedupe_proposals(proposals: list[SkillGapProposal]) -> list[SkillGapProposa
                     *primary.sample_span_ids,
                     *secondary.sample_span_ids,
                 )[:_SAMPLE_SPAN_LIMIT],
-                "description": _description(total, scope, primary.representative_prompt),
+                "description": _description(
+                    total, scope, primary.representative_prompt
+                ),
             }
         )
     return sorted(by_name.values(), key=lambda p: p.evidence_count, reverse=True)

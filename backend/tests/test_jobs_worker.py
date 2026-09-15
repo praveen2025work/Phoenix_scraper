@@ -88,3 +88,25 @@ def test_notify_wakes_worker_to_claim_job(job_settings, seeded_store) -> None:
             time.sleep(0.05)
     finally:
         w.stop()
+
+
+def test_request_cancel_aborts_running_job(job_settings, seeded_store, monkeypatch) -> None:
+    """Cooperative cancel finishes the job as cancelled mid-progress."""
+    w = JobWorker(job_settings)
+
+    def slow_run(*a, **k):
+        on_progress = k.get("on_progress")
+        assert on_progress is not None
+        on_progress("scraping", 0.2, "working")
+        raise AssertionError("should have cancelled before completing")
+
+    monkeypatch.setattr("phoenix_scraper.jobs.run_capabilities", slow_run)
+    seeded_store.enqueue_job("j-cancel", "fobo", {})
+    w.request_cancel("j-cancel")
+    processed = w.drain_once()
+    assert processed == "j-cancel"
+    job = seeded_store.get_job("j-cancel")
+    assert job["state"] == "error"
+    assert job["error"] == "cancelled"
+    assert "Cancelled" in (job["message"] or "")
+

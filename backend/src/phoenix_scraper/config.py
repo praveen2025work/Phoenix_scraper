@@ -48,6 +48,11 @@ class Settings(BaseSettings):
     # analysis knobs
     cluster_fuzz_threshold: int = 90  # rapidfuzz token_set_ratio 0-100
     skill_match_threshold: float = 0.55  # 0-1 combined match score
+    # Skill matching mode: classical (keyword+fuzzy+BM25+TF-IDF) or semantic
+    # (classical + local MiniLM). No generative LLM either way. Per-job override
+    # from the Setup UI wins over this default.
+    match_mode: str = "classical"  # classical | semantic
+    semantic_model: str = "sentence-transformers/all-MiniLM-L6-v2"
 
     # Skill coverage: a cluster matched to a skill counts as ALREADY COVERED when
     # it resembles one of that skill's own example_prompts (or its description)
@@ -96,6 +101,9 @@ class Settings(BaseSettings):
     # Read timeout (seconds) for Phoenix API calls. The first scrape scans the
     # project's full history and can exceed the 30s default on large projects.
     http_timeout: float = 30.0
+    # Background capability-run worker pool size (PHEONIX_JOB_WORKERS). One run
+    # per capability at a time; pool lets different capabilities progress in parallel.
+    job_workers: int = 2
     # DEBUG surfaces every Phoenix request and each window slice of a big scrape.
     log_level: str = "INFO"
 

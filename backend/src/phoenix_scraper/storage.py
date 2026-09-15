@@ -759,20 +759,31 @@ class Store:
         )
 
     def claim_next_job(self) -> dict | None:
+        """Claim the oldest queued job whose capability is not already running.
+
+        Serializes per capability so a second FOBO enqueue waits; other
+        capabilities can still be claimed by a pooled worker.
+        """
         row = self._conn.execute(
-            "SELECT * FROM capability_jobs WHERE state = 'queued' "
-            "ORDER BY enqueued_at LIMIT 1"
+            "SELECT q.* FROM capability_jobs q "
+            "WHERE q.state = 'queued' AND NOT EXISTS ("
+            "  SELECT 1 FROM capability_jobs r "
+            "  WHERE r.capability_id = q.capability_id AND r.state = 'running'"
+            ") ORDER BY q.enqueued_at LIMIT 1"
         ).fetchone()
         if row is None:
             return None
         now = _iso(datetime.now(UTC))
-        self._conn.execute(
+        # Compare-and-swap so concurrent workers cannot both claim the same row.
+        cur = self._conn.execute(
             "UPDATE capability_jobs SET state = 'running', started_at = ?, "
             "stage = 'scraping', progress = 0.05, message = 'Starting run' "
-            "WHERE job_id = ?",
+            "WHERE job_id = ? AND state = 'queued'",
             (now, row["job_id"]),
         )
         self._conn.commit()
+        if cur.rowcount != 1:
+            return None
         job = _job_from_row(row)
         job["state"] = "running"
         job["started_at"] = now
@@ -780,6 +791,16 @@ class Store:
         job["progress"] = 0.05
         job["message"] = "Starting run"
         return job
+
+    def request_cancel_job(self, job_id: str) -> bool:
+        """Flag a running job for cooperative cancel. Returns True if flagged."""
+        cur = self._conn.execute(
+            "UPDATE capability_jobs SET message = 'cancel-requested' "
+            "WHERE job_id = ? AND state = 'running'",
+            (job_id,),
+        )
+        self._conn.commit()
+        return cur.rowcount == 1
 
     def update_job_progress(
         self,

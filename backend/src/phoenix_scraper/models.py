@@ -129,7 +129,7 @@ class SkillMatch(_Frozen):
     cluster_id: str
     skill_name: str
     score: float  # 0-1
-    method: str = "keyword+fuzzy"
+    method: str = "keyword+fuzzy+tfidf"
 
 
 class SkillGapProposal(_Frozen):
