@@ -123,7 +123,9 @@ def char_tfidf_similarity(query: str, references: list[str], n: int = 3) -> floa
     return max((cosine(qv, rv) for rv in rvs), default=0.0)
 
 
-def bm25_scores(query: str, documents: list[str], *, k1: float = 1.5, b: float = 0.75) -> list[float]:
+def bm25_scores(
+    query: str, documents: list[str], *, k1: float = 1.5, b: float = 0.75
+) -> list[float]:
     """Okapi BM25 scores of query against each document (normalized tokens)."""
     if not query.strip() or not documents:
         return [0.0] * len(documents)

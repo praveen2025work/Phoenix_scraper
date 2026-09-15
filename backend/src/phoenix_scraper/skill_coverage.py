@@ -19,9 +19,9 @@ and one output: a paste-ready block of `example_prompts` and `keywords` to add,
 plus a full proposed ``.md`` body operators can copy / download / re-upload.
 """
 
+import re
 from collections.abc import Iterable, Sequence
 from pathlib import Path
-import re
 
 import pandas as pd
 import yaml

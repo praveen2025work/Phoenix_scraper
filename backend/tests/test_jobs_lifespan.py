@@ -31,7 +31,7 @@ def test_startup_fails_orphaned_jobs_and_worker_stops(settings) -> None:
     with TestClient(app) as c:
         assert c.get("/health").status_code == 200
         assert app.state.job_worker is not None
-    assert app.state.job_worker._thread is None
+    assert not any(t.is_alive() for t in app.state.job_worker._threads)
 
     with Store(settings.db_path) as s:
         job = s.get_job("stuck")

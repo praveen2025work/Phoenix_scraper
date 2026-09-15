@@ -263,7 +263,7 @@ export const useRunResults = (capabilityId: string, runId: string | null) =>
       if (d.analytics_ready) return false;
       if (d.status === "failed" || d.status === "error") return false;
       // ~30s of retries; then stop (snapshot write may have failed).
-      if ((query.state.dataUpdatedCount ?? 0) > 20) return false;
+      if ((query.state.dataUpdateCount ?? 0) > 20) return false;
       return 1500;
     },
   });

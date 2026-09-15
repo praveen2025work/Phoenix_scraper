@@ -142,8 +142,8 @@ def test_empty_dict_snapshot_is_not_ready(tmp_path: Path) -> None:
 def test_minimal_snapshot_is_ready(tmp_path: Path) -> None:
     from datetime import UTC, datetime
 
-    from phoenix_scraper.api_capabilities import _run_summary
     from phoenix_scraper.analytics_snapshot import build_minimal_analytics_snapshot
+    from phoenix_scraper.api_capabilities import _run_summary
     from phoenix_scraper.models import Capability, CapabilityFilter
 
     db = tmp_path / "min.db"

@@ -21,9 +21,22 @@ _USER_QUERY_MARKERS = (
     re.compile(r"(?im)USER\s+QUERY\s*:\s*([^\n\"{}]+)"),
 )
 
+# A leading SQL *word* is not SQL: real prompts open with "Explain the top
+# drivers...", "Update me on...", "Select the best hedge...". Each branch below
+# therefore requires the follow-on token that makes the statement actual SQL.
 _SQL_HEAD = re.compile(
-    r"(?is)^\s*(?:with\b.+\bselect\b|select\b|insert\b|update\b|delete\b|create\b|"
-    r"drop\b|alter\b|pragma\b|explain\b)\b"
+    r"(?is)^\s*(?:"
+    r"with\b.+\bselect\b.+\bfrom\b"
+    r"|select\b.+\bfrom\b"
+    r"|insert\s+into\b"
+    r"|update\b.+\bset\b"
+    r"|delete\s+from\b"
+    r"|create\s+(?:temp\s+|temporary\s+|unique\s+)*(?:table|index|view|trigger|database)\b"
+    r"|drop\s+(?:table|index|view|trigger|database)\b"
+    r"|alter\s+table\b"
+    r"|pragma\s+\w+"
+    r"|explain\s+(?:query\s+plan\b|select\b|insert\b|update\b|delete\b)"
+    r")"
 )
 _MCP_TOOL = re.compile(r"(?i)\bmcp__[a-z0-9_-]+__[a-z0-9_-]+\b")
 _FILE_PATH_KEYS = re.compile(

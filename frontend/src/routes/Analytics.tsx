@@ -36,7 +36,7 @@ export function Analytics() {
   const viewed = useRunResults(id, runParam);
   const viewedStatus = viewed.data?.status;
   const runCompleted =
-    Boolean(runParam)
+    runParam
       ? viewedStatus === "ok" ||
         viewedStatus === "partial" ||
         lastStatus === "ok" ||

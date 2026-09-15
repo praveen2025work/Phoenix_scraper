@@ -1259,7 +1259,11 @@ def _job_from_row(row: sqlite3.Row) -> dict:
         "capability_id": row["capability_id"],
         "state": row["state"],
         "stage": row["stage"] if "stage" in keys else "queued",
-        "progress": float(row["progress"]) if "progress" in keys and row["progress"] is not None else 0.0,
+        "progress": (
+            float(row["progress"])
+            if "progress" in keys and row["progress"] is not None
+            else 0.0
+        ),
         "message": row["message"] if "message" in keys else None,
         "params": json.loads(row["params_json"]),
         "run_id": row["run_id"],

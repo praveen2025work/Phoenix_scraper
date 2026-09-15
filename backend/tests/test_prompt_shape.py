@@ -82,3 +82,44 @@ class TestDeterministicShape:
     def test_natural_question_is_skill(self) -> None:
         assert is_skill_shaped("Draft sign-off commentary for the rates desk") is True
         assert is_deterministic_shaped("Draft sign-off commentary for the rates desk") is False
+
+
+class TestSqlKeywordOpeners:
+    """A leading SQL *word* is not SQL. Real prompts open with Explain/Update/
+    Select/Create/Drop all the time; they belong in the promote-to-skill lane."""
+
+    PROSE = (
+        "Explain the top PLEX drivers for credit on 2026-09-08",
+        "Explain why the FX book broke overnight",
+        "Update me on the rates desk exposure",
+        "Select the best hedge for this position",
+        "Create a summary of yesterday's PLEX attribution",
+        "Drop me a note on the unmatched tickets",
+        "Delete is too strong — just archive the stale breaks",
+        "Insert the commentary into the sign-off pack",
+        "Alter the tolerance so small breaks stop paging us",
+        "With the desk closed, explain the residual",
+    )
+
+    REAL_SQL = (
+        "EXPLAIN SELECT * FROM breaks",
+        "SELECT book, amount FROM recon_breaks WHERE amount > 100",
+        "UPDATE breaks SET status = 'closed'",
+        "CREATE TABLE breaks (id TEXT)",
+        "DROP TABLE breaks",
+        "DELETE FROM breaks WHERE id = 1",
+        "INSERT INTO breaks VALUES (1)",
+        "ALTER TABLE breaks ADD COLUMN note TEXT",
+        "PRAGMA table_info(breaks)",
+        "WITH recent AS (SELECT 1) SELECT * FROM recent",
+    )
+
+    def test_prose_openers_are_skill_shaped(self) -> None:
+        for text in self.PROSE:
+            assert is_skill_shaped(text) is True, text
+            assert is_deterministic_shaped(text) is False, text
+
+    def test_real_sql_is_still_deterministic(self) -> None:
+        for text in self.REAL_SQL:
+            assert is_deterministic_shaped(text) is True, text
+            assert is_skill_shaped(text) is False, text

@@ -16,7 +16,7 @@ const ROW = {
   name: "fx-recon-triage",
   description: "Triage FX recon breaks.",
   n_example_prompts: 2,
-  content_hash: "abcdef0123456789" + "0" * 48,
+  content_hash: "abcdef0123456789" + "0".repeat(48),
 };
 
 function mock(list: unknown[] = [ROW]) {

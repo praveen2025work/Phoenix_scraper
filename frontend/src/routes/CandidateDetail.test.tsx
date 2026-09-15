@@ -17,7 +17,7 @@ const detail = {
     matched_skill: null,
     current_evidence: { count: 40, n_users: 6 },
     cluster_id: "a",
-    promoted_artifact_paths: [],
+    promoted_artifact_paths: [] as string[],
   },
   observations: [
     { run_id: "2026-09-07T10:00:00+00:00", count: 20, score: 0.8, met_evidence_bar: 0, signals: {} },
