@@ -152,9 +152,28 @@ def test_spans_filter_by_search_and_time(client: TestClient) -> None:
     assert all(word.lower() in r["input_text"].lower() for r in filtered)
 
 
-def test_cross_origin_post_rejected(client: TestClient) -> None:
+def test_cross_origin_post_rejected_when_api_key_set(tmp_path: Path) -> None:
+    # CSRF only locks down when an API key is configured (open LAN share otherwise).
+    settings = Settings(
+        _env_file=None,
+        db_path=tmp_path / "csrf.db",
+        export_dir=tmp_path / "exports",
+        skills_catalog=REPO_ROOT / "config" / "skills_catalog.yaml",
+        pricing_path=REPO_ROOT / "config" / "pricing.yaml",
+        api_key="sekret",
+    ).model_copy(update={"phoenix_endpoint": None})
+    with TestClient(create_app(settings)) as c:
+        response = c.post(
+            "/demo/seed",
+            headers={"Origin": "http://evil.example:8200", "X-API-Key": "sekret"},
+        )
+        assert response.status_code == 403
+
+
+def test_open_lan_allows_cross_origin_post(client: TestClient) -> None:
+    # No API key → open LAN share: a remote Origin must not be CSRF-blocked.
     response = client.post("/demo/seed", headers={"Origin": "http://evil.example:8200"})
-    assert response.status_code == 403
+    assert response.status_code == 200
 
 
 def test_same_origin_post_allowed(client: TestClient) -> None:
