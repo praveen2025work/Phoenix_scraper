@@ -54,4 +54,14 @@ describe("RunProgress", () => {
     expect(screen.getByTestId("wip-stat-avg thinking")).toHaveTextContent("3.0m");
     expect(screen.getByTestId("wip-stat-avg tools/queries")).toHaveTextContent("40.0s");
   });
+
+  it("hides WIP stats when none are present", () => {
+    render(
+      <RunProgress
+        job={job({ stats: null, message: "Waiting for worker…" })}
+        onBackToSetup={() => undefined}
+      />,
+    );
+    expect(screen.queryByTestId("run-progress-wip-stats")).not.toBeInTheDocument();
+  });
 });
