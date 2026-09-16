@@ -7,6 +7,9 @@ Rung 2 (make-deterministic), not Rung 1 (promote to skill). This module:
 - extracts a clean user-facing question when one is wrapped in a model payload
 - decides whether text is deterministic-shaped (tool/SQL/params) vs skill-shaped
 - splits DataFrames into user-ask spans vs LLM/MCP analysis spans for each lane
+
+Rung 1 asks are **session turns**: one root span per ``trace_id`` (Phoenix
+Turns/Traces UI — typically ``agent_request``), not every nested LLM span.
 """
 
 from __future__ import annotations
@@ -16,6 +19,8 @@ import re
 from typing import Any
 
 import pandas as pd
+
+from .turns import turn_root_spans
 
 _USER_QUERY_MARKERS = (
     # Prefer a clean line / quoted value; stop before JSON wrappers.
@@ -119,13 +124,14 @@ def is_skill_shaped(text: str) -> bool:
 
 
 def is_user_ask_span(span_kind: object, input_text: object) -> bool:
-    """True when this span is a user question for prompt→skill matching.
+    """True when this span *could* be a user question (skill-shaped text).
 
-    Convention: OpenInference ``LLM`` spans whose extracted input is skill-shaped.
-    TOOL / MCP / SQL / param payloads never qualify, even if kind is LLM.
+    Kind may be LLM, CHAIN, or AGENT — Phoenix turn roots are often CHAIN
+    ``agent_request``. Prefer :func:`filter_user_ask_spans`, which also collapses
+    to one ask per trace.
     """
     kind = str(span_kind or "UNKNOWN").strip().upper()
-    if kind != "LLM":
+    if kind not in {"LLM", "CHAIN", "AGENT"}:
         return False
     extracted = extract_user_prompt(str(input_text or ""))
     return is_skill_shaped(extracted)
@@ -135,13 +141,16 @@ def is_deterministic_source_span(span_kind: object, input_text: object) -> bool:
     """True when this span feeds skill→deterministic (Rung 2), not prompt→skill.
 
     Includes TOOL/RETRIEVER spans, deterministic-shaped payloads, and LLM spans
-    that are not clean user asks (analysis / tool-router blobs).
+    that are not clean user asks (analysis / tool-router blobs). Turn-root
+    CHAIN/AGENT asks are excluded here so they stay on Rung 1.
     """
     kind = str(span_kind or "UNKNOWN").strip().upper()
     raw = str(input_text or "").strip()
     if kind in {"TOOL", "RETRIEVER"}:
         return bool(raw) or kind == "TOOL"
     if not raw:
+        return False
+    if kind in {"CHAIN", "AGENT"} and is_user_ask_span(kind, raw):
         return False
     if is_deterministic_shaped(raw):
         return True
@@ -151,21 +160,29 @@ def is_deterministic_source_span(span_kind: object, input_text: object) -> bool:
 
 
 def filter_user_ask_spans(spans_df: pd.DataFrame) -> pd.DataFrame:
-    """Rows that belong on the prompt→skill path."""
+    """Rows for prompt→skill: one skill-shaped ask per Phoenix session turn.
+
+    Collapses each ``trace_id`` to its turn root (``agent_request`` / CHAIN),
+    then keeps roots whose extracted input is skill-shaped. Nested
+    thinking/tool/LLM spans inside the same turn are excluded.
+    """
     if spans_df is None or spans_df.empty:
         return spans_df if spans_df is not None else pd.DataFrame()
     if "input_text" not in spans_df.columns:
         return spans_df.iloc[0:0].copy()
+    roots = turn_root_spans(spans_df)
+    if roots.empty:
+        return roots
     kinds = (
-        spans_df["span_kind"]
-        if "span_kind" in spans_df.columns
-        else pd.Series(["UNKNOWN"] * len(spans_df), index=spans_df.index)
+        roots["span_kind"]
+        if "span_kind" in roots.columns
+        else pd.Series(["UNKNOWN"] * len(roots), index=roots.index)
     )
     mask = [
         is_user_ask_span(kind, text)
-        for kind, text in zip(kinds, spans_df["input_text"], strict=False)
+        for kind, text in zip(kinds, roots["input_text"], strict=False)
     ]
-    return spans_df.loc[mask].copy()
+    return roots.loc[mask].copy()
 
 
 def filter_deterministic_source_spans(spans_df: pd.DataFrame) -> pd.DataFrame:

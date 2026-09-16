@@ -265,6 +265,50 @@ class PhoenixClientWrapper:
                 sent += len(batch)
         return sent
 
+    def list_project_sessions(
+        self,
+        project: str,
+        *,
+        limit: int | None = None,
+    ) -> list[dict]:
+        """List Phoenix sessions for a project (server >= 13.5)."""
+        project = (project or "").strip()
+        if not project:
+            raise ValueError("list_project_sessions requires a project name")
+        with self._client() as client:
+            sessions = self._with_retries(
+                lambda: client.sessions.list(
+                    project_name=project,
+                    limit=limit,
+                    timeout=self._request_timeout(),
+                ),
+                "list project sessions",
+            )
+        return _as_dicts(sessions)
+
+    def fetch_session_turns(self, session_id: str) -> list[dict]:
+        """Ordered conversational turns for one session (one turn = one trace).
+
+        Each turn's ``input`` / ``output`` come from the trace root span
+        (``agent_request``), matching the Phoenix Sessions Turns UI.
+        """
+        session_id = (session_id or "").strip()
+        if not session_id:
+            return []
+        with self._client() as client:
+            turns = self._with_retries(
+                lambda: client.sessions.get_session_turns(
+                    session_id=session_id,
+                    timeout=self._request_timeout(),
+                ),
+                "fetch session turns",
+            )
+        if not turns:
+            return []
+        if isinstance(turns, list):
+            return [t for t in (_as_dict(row) for row in turns) if t]
+        return _as_dicts(turns)
+
 
 def _as_dicts(payload: object) -> list[dict]:
     """Normalize a Phoenix client response into plain dicts.

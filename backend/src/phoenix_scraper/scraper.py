@@ -14,6 +14,7 @@ from .config import Settings
 from .models import ScrapeReport, SpanRecord
 from .phoenix_client import PhoenixClientWrapper
 from .storage import Store
+from .turns import span_records_from_session_turns
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +116,16 @@ def scrape_once(
     inserted = store.upsert_spans(records)
     duplicates = len(records) - inserted
 
+    turn_inserted = _enrich_session_turns(
+        store, client, settings.project, records
+    )
+    if turn_inserted:
+        inserted += turn_inserted
+        logger.info(
+            "session turns: upserted %d turn-root spans for %s",
+            turn_inserted, settings.project,
+        )
+
     logger.info(
         "scrape %s: pulled %d, inserted %d, duplicates %d, unreadable %d%s",
         settings.project, len(rows), inserted, duplicates, dropped,
@@ -143,6 +154,66 @@ def scrape_once(
         watermark_after=watermark_after,
         truncated=truncated,
     )
+
+
+def _enrich_session_turns(
+    store: Store,
+    client: PhoenixClientWrapper,
+    project: str,
+    records: list[SpanRecord],
+) -> int:
+    """Pull Phoenix session turns and upsert turn-root spans (agent_request IO).
+
+    Best-effort: session APIs need Phoenix >= 13.5; failures log and return 0 so
+    span scrape still succeeds. Offline analysis still derives turns from spans.
+    """
+    session_ids = sorted(
+        {
+            (r.session_id or "").strip()
+            for r in records
+            if (r.session_id or "").strip()
+        }
+    )
+    if not session_ids:
+        # Spans may omit session.id; fall back to listing recent project sessions.
+        try:
+            listed = client.list_project_sessions(project, limit=50)
+        except Exception as exc:  # noqa: BLE001
+            logger.info("session list skipped for %s: %s", project, exc)
+            return 0
+        for row in listed:
+            sid = str(row.get("session_id") or row.get("id") or "").strip()
+            if sid:
+                session_ids.append(sid)
+        session_ids = sorted(set(session_ids))
+    if not session_ids:
+        return 0
+
+    # Cap enrichment so a huge project cannot explode the scrape.
+    session_ids = session_ids[:100]
+    turn_records: list[SpanRecord] = []
+    for session_id in session_ids:
+        try:
+            turns = client.fetch_session_turns(session_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.info(
+                "session turns skipped for %s/%s: %s", project, session_id, exc
+            )
+            continue
+        if not turns:
+            continue
+        user_id = next(
+            (r.user_id for r in records if r.session_id == session_id and r.user_id),
+            None,
+        )
+        turn_records.extend(
+            span_records_from_session_turns(
+                turns, project=project, session_id=session_id, user_id=user_id
+            )
+        )
+    if not turn_records:
+        return 0
+    return store.upsert_spans(turn_records)
 
 
 def _fetch_window(
