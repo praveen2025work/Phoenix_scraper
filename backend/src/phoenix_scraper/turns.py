@@ -16,6 +16,7 @@ from typing import Any
 
 import pandas as pd
 
+from .llm_messages import prefer_messages_io
 from .models import SpanRecord
 
 # Phoenix UI root name for a conversational turn (see Sessions → Traces).
@@ -135,10 +136,16 @@ def span_records_from_session_turns(
 
         input_text = _turn_io_value(turn.get("input"))
         output_text = _turn_io_value(turn.get("output"))
-        if not input_text and isinstance(attrs, dict):
-            input_text = str(attrs.get("input.value") or attrs.get("input") or "")
-        if not output_text and isinstance(attrs, dict):
-            output_text = str(attrs.get("output.value") or attrs.get("output") or "")
+        if isinstance(attrs, dict):
+            msg_in, msg_out = prefer_messages_io(
+                attributes=attrs,
+                input_value=str(attrs.get("input.value") or attrs.get("input") or ""),
+                output_value=str(
+                    attrs.get("output.value") or attrs.get("output") or ""
+                ),
+            )
+            input_text = input_text or msg_in
+            output_text = output_text or msg_out
 
         span_id = _root_span_id(root) or f"turn:{trace_id}"
         start = _parse_dt(turn.get("start_time")) or _parse_dt(root.get("start_time"))

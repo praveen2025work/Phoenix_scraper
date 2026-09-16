@@ -317,6 +317,15 @@ def create_app(
             df = insights.session_friction(store.spans_frame(filters))
         return _frame_response(df, fmt, "session_friction")
 
+    @protected.get("/insights/outliers")
+    def insights_outliers(filters: AnalysisFiltersDep, fmt: Fmt = "json") -> Response:
+        """High-signal turns: ERROR, latency/cost/tool-count outliers."""
+        from . import outliers as outliers_mod
+
+        with open_store() as store:
+            df = outliers_mod.turn_outliers(store.spans_frame(filters))
+        return _frame_response(df, fmt, "turn_outliers")
+
     @protected.get("/insights/efficiency")
     def insights_efficiency(filters: AnalysisFiltersDep, fmt: Fmt = "json") -> Response:
         with open_store() as store:

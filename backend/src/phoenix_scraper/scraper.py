@@ -11,6 +11,7 @@ from typing import Any
 import pandas as pd
 
 from .config import Settings
+from .llm_messages import prefer_messages_io
 from .models import ScrapeReport, SpanRecord
 from .phoenix_client import PhoenixClientWrapper
 from .storage import Store
@@ -51,6 +52,18 @@ def flatten_phoenix_row(
     parent_id = _text(
         _first(flat, "parent_id", "attributes.parent_id", "context.parent_id")
     ) or None
+    attributes = _attributes_dict(row)
+    # Prefer OpenInference llm.*_messages over raw input/output.value blobs.
+    input_text, output_text = prefer_messages_io(
+        attributes=attributes,
+        input_value=_text_value(_first(flat, "attributes.input.value")),
+        output_value=_text_value(_first(flat, "attributes.output.value")),
+    )
+    # Flattened message columns may live only on the row, not nested attributes.
+    if not input_text or not output_text:
+        flat_msgs_in, flat_msgs_out = prefer_messages_io(attributes=flat)
+        input_text = input_text or flat_msgs_in
+        output_text = output_text or flat_msgs_out
     return SpanRecord(
         span_id=span_id,
         trace_id=trace_id,
@@ -66,14 +79,14 @@ def flatten_phoenix_row(
         user_id=_text(_first(flat, "attributes.user.id")),
         workflow_stage=_text(_first(flat, *stage_keys, *STAGE_KEYS)),
         asset_class=_text(_first(flat, *asset_keys, *ASSET_KEYS)),
-        input_text=_text_value(_first(flat, "attributes.input.value")),
-        output_text=_text_value(_first(flat, "attributes.output.value")),
+        input_text=input_text,
+        output_text=output_text,
         prompt_template=_text(_first(flat, "attributes.llm.prompt_template.template")),
         tokens_prompt=_int(_first(flat, "attributes.llm.token_count.prompt")),
         tokens_completion=_int(_first(flat, "attributes.llm.token_count.completion")),
         tokens_total=_int(_first(flat, "attributes.llm.token_count.total")),
         cost_usd=_num(_first(flat, "attributes.llm.cost.total")),
-        attributes=_attributes_dict(row),
+        attributes=attributes,
         parent_id=parent_id,
     )
 

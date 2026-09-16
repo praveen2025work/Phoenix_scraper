@@ -34,7 +34,7 @@ from .cluster import build_clusters
 from .config import Settings
 from .costs import compute_span_costs, load_pricing
 from .evaluations import evaluate_spans
-from .insights import cluster_efficiency
+from .insights import cluster_efficiency, session_friction
 from .ladder import detect_rung1, detect_rung2, resolve_thresholds
 from .ladder_run import update_rung1, update_rung2
 from .models import (
@@ -42,6 +42,7 @@ from .models import (
     CapabilityRun,
     CapabilityRunResult,
 )
+from .outliers import outlier_trace_ids, turn_outliers
 from .phoenix_client import PhoenixClientWrapper
 from .pipeline import ANALYSIS_SPAN_LIMIT
 from .prompt_shape import (
@@ -52,6 +53,7 @@ from .scraper import scrape_once
 from .skill_coverage import annotate_coverage
 from .skills_mapper import match_clusters_with_notes
 from .storage import Store
+from .tool_paths import merge_deterministic_sources
 from .turn_latency import format_turn_latency_notes, summarize_turn_latency
 
 logger = logging.getLogger(__name__)
@@ -256,12 +258,41 @@ def run_capability_analysis(
         filter_user_ask_spans(in_scope),
         fuzz_threshold=settings.cluster_fuzz_threshold,
     )
+    deterministic_source = merge_deterministic_sources(
+        in_scope, filter_deterministic_source_spans(in_scope)
+    )
     deterministic_clusters = build_clusters(
-        filter_deterministic_source_spans(in_scope),
+        deterministic_source,
         fuzz_threshold=settings.cluster_fuzz_threshold,
     )
     turn_timing = summarize_turn_latency(in_scope)
     run_notes.extend(format_turn_latency_notes(turn_timing))
+    outlier_frame = turn_outliers(in_scope)
+    if not outlier_frame.empty:
+        run_notes.append(
+            f"Outlier queue: {len(outlier_frame)} high-signal turns "
+            f"(errors/latency/cost/tool-heavy)"
+        )
+    friction_frame = session_friction(in_scope)
+    friction_by_session: dict[str, float] = {}
+    if not friction_frame.empty:
+        friction_by_session = {
+            str(r["session_id"]): float(r["friction_score"] or 0.0)
+            for r in friction_frame.to_dict("records")
+            if r.get("session_id")
+        }
+    outlier_traces = outlier_trace_ids(in_scope)
+    span_to_session: dict[str, str] = {}
+    span_to_trace: dict[str, str] = {}
+    if not in_scope.empty and "span_id" in in_scope.columns:
+        for row in in_scope.to_dict("records"):
+            sid = str(row.get("span_id") or "")
+            if not sid:
+                continue
+            if row.get("session_id"):
+                span_to_session[sid] = str(row["session_id"])
+            if row.get("trace_id"):
+                span_to_trace[sid] = str(row["trace_id"])
     skills = load_capability_skills(settings, capability)
     _emit(
         on_progress,
@@ -386,7 +417,15 @@ def run_capability_analysis(
 
     thresholds = resolve_thresholds(capability, settings)
     rung1_signals = detect_rung1(
-        list(clusters), list(matches), annotated, efficiency, thresholds=thresholds
+        list(clusters),
+        list(matches),
+        annotated,
+        efficiency,
+        thresholds=thresholds,
+        friction_by_session=friction_by_session,
+        outlier_traces=outlier_traces,
+        span_to_session=span_to_session,
+        span_to_trace=span_to_trace,
     )
     rung1 = update_rung1(
         store, capability,
