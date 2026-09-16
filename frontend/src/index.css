@@ -1,9 +1,96 @@
 @import "tailwindcss";
-@import "./styles/mitr/css/fonts.css";
-@import "./styles/mitr/css/tokens.css";
-@import "./styles/mitr/css/components.css";
 
-/* Recharts dark mode — subset of mitr vendor-overrides (skip AG Grid / Wijmo / gray remaps). */
+/* App design tokens (formerly MITR pack — kept local so we do not vendor that tree). */
+:root {
+  --brand: #6366f1;
+  --brand-subtle: #eef2ff;
+  --brand-hover: #4f46e5;
+  --brand-active: #4338ca;
+  --brand-text: #ffffff;
+
+  --bg-primary: #ffffff;
+  --bg-secondary: #f8fafc;
+  --bg-tertiary: #f1f5f9;
+  --bg-elevated: #ffffff;
+  --bg-canvas: #f5f6fb;
+
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
+
+  --success: #059669;
+  --danger: #dc2626;
+  --warning: #d97706;
+
+  --border: #e2e8f0;
+  --border-subtle: #f1f5f9;
+
+  --radius-lg: 14px;
+  --radius-full: 9999px;
+
+  --font-sans: "Source Sans 3", "Segoe UI", sans-serif;
+  --font-display: "Sora", "Source Sans 3", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --font-inter: var(--font-sans);
+  --font-sora: var(--font-display);
+  --font-jetbrains: var(--font-mono);
+}
+
+.dark {
+  color-scheme: dark;
+  --brand: #818cf8;
+  --brand-subtle: rgba(129, 140, 248, 0.16);
+  --brand-hover: #a5b4fc;
+  --brand-active: #6366f1;
+  --brand-text: #ffffff;
+
+  --bg-primary: #0b1020;
+  --bg-secondary: #131a2e;
+  --bg-tertiary: #1d2540;
+  --bg-elevated: #161d33;
+  --bg-canvas: #090d1c;
+
+  --text-primary: #e6e8ee;
+  --text-secondary: #c7cad6;
+  --text-muted: #7e85a3;
+
+  --success: #34d399;
+  --danger: #f87171;
+  --warning: #fbbf24;
+
+  --border: #232b48;
+  --border-subtle: #1a2138;
+}
+
+* {
+  border-color: var(--border);
+}
+
+body {
+  background-color: var(--bg-canvas);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html,
+body {
+  min-height: 100vh;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+}
+
+.font-mono {
+  font-family: var(--font-mono);
+}
+
+/* Recharts dark mode */
 .dark .recharts-cartesian-grid line {
   stroke: #334155 !important;
 }
@@ -22,7 +109,7 @@
   fill: #94a3b8 !important;
 }
 
-/* Map MITR design tokens onto Tailwind v4 theme utilities used across the app. */
+/* Map design tokens onto Tailwind v4 theme utilities used across the app. */
 @theme {
   --color-background: var(--bg-canvas);
   --color-foreground: var(--text-primary);
@@ -82,16 +169,16 @@
   --color-status-info-border: hsl(226 40% 68%);
 
   --radius-base: 0.625rem;
-  --font-sans: var(--font-inter);
-  --font-display: var(--font-sora);
-  --font-mono: var(--font-jetbrains);
+  --font-sans: var(--font-sans);
+  --font-display: var(--font-display);
+  --font-mono: var(--font-mono);
 }
 
 :root {
   color-scheme: light dark;
 }
 
-/* Dark status badges when MITR `.dark` (or legacy data-theme) is active */
+/* Dark status badges when `.dark` (or legacy data-theme) is active */
 .dark,
 :root[data-theme="dark"] {
   --color-status-new: hsl(226 40% 18%);

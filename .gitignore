@@ -18,6 +18,7 @@ backend/**/__pycache__/
 #   git update-index --skip-worktree backend/.env
 
 # --- frontend (npm) ----------------------------------------------------------
+node_modules/
 frontend/node_modules/
 frontend/dist/
 frontend/coverage/
