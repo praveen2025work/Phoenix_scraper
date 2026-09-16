@@ -58,7 +58,11 @@ class TestCapabilityCrud:
         settings = client.app.state.settings  # type: ignore[attr-defined]
         with Store(settings.db_path) as store:
             assert store.delete_capability("fobo")
-        assert client.get("/capabilities/fobo").status_code == 404
+
+        # GET also rehydrates from disk (keeps yaml thresholds in sync).
+        assert client.get("/capabilities/fobo").status_code == 200
+        with Store(settings.db_path) as store:
+            store.delete_capability("fobo")
 
         r = client.post(
             "/capabilities",
@@ -67,6 +71,20 @@ class TestCapabilityCrud:
         assert r.status_code == 200, r.text
         assert r.json()["id"] == "fobo"
         assert any(c["id"] == "fobo" for c in client.get("/capabilities").json())
+
+    def test_get_rehydrates_disk_orphan_into_db(
+        self, client: TestClient, tmp_path: Path
+    ) -> None:
+        _create(client)
+        settings = client.app.state.settings  # type: ignore[attr-defined]
+        with Store(settings.db_path) as store:
+            assert store.delete_capability("fobo")
+        assert (tmp_path / "caps" / "fobo" / "capability.yaml").exists()
+        detail = client.get("/capabilities/fobo")
+        assert detail.status_code == 200
+        assert detail.json()["capability"]["id"] == "fobo"
+        with Store(settings.db_path) as store:
+            assert store.get_capability("fobo") is not None
 
     def test_list_rehydrates_disk_only_capabilities(
         self, client: TestClient, tmp_path: Path
