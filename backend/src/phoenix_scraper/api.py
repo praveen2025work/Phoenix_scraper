@@ -72,15 +72,9 @@ def create_app(
 ) -> FastAPI:
     """Build the API around one Settings instance (dependency-injectable for tests).
 
-    run_jobs=True starts the background capability-run worker (create_app_default
-    / real serving). Tests pass run_jobs=False (the default) — no thread.
-
-    CORS / CSRF:
-    - Explicit ``PHEONIX_CORS_ORIGINS`` always wins.
-    - No API key (open LAN share): allow any browser Origin so colleagues can
-      open the SPA via this machine's hostname / IPv4 without extra config.
-    - ``dev_cors=True`` with an API key and no explicit origins: allow the Vite
-      localhost:5173 origins only.
+    run_jobs=True starts the background capability-run worker. Tests use False.
+    No api_key → open CORS (any Origin). Explicit PHEONIX_CORS_ORIGINS wins.
+    With an api_key and no CORS list, ``dev_cors`` allows localhost:5173.
     """
     from .jobs import JobWorker
     from .logging_setup import configure_logging
@@ -93,7 +87,6 @@ def create_app(
     explicit_cors = settings.cors_origin_list()
     open_lan = settings.api_key is None and not explicit_cors
     if open_lan:
-        # Sentinel consumed below — CORSMiddleware gets allow_origins=["*"].
         settings = settings.model_copy(update={"cors_origins": "*"})
     elif dev_cors and not explicit_cors:
         settings = settings.model_copy(update={"cors_origins": _DEV_CORS_ORIGINS})
@@ -123,7 +116,6 @@ def create_app(
 
     _cors = settings.cors_origin_list()
     if _cors:
-        # "*" means reflect any Origin (open LAN share without an API key).
         allow_origins = ["*"] if _cors == ["*"] else _cors
         app.add_middleware(
             CORSMiddleware,
@@ -134,7 +126,6 @@ def create_app(
         )
 
     def require_api_key(provided: str | None = Security(_api_key_header)) -> None:
-        # Open mode when no key is configured (LAN share friendly by default).
         if settings.api_key is None:
             return
         if provided is None or not secrets.compare_digest(provided, settings.api_key):
@@ -230,11 +221,8 @@ def create_app(
 
     @app.middleware("http")
     async def security_guard(request, call_next):
-        # CSRF: browsers attach Origin to cross-site POSTs; reject any that
-        # don't match the host we're serving on. Non-browser clients (curl,
-        # scripts) send no Origin and pass through.
-        # Open LAN share (no API key, no explicit CORS allow-list): any Origin
-        # is allowed — the API is already reachable without auth.
+        # CSRF: reject cross-origin POSTs unless open access (no API key) or
+        # the Origin is same-host / in PHEONIX_CORS_ORIGINS.
         if request.method not in ("GET", "HEAD", "OPTIONS"):
             origin = request.headers.get("origin")
             if origin is not None and not getattr(request.app.state, "open_lan", False):

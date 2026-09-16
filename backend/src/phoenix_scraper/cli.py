@@ -100,11 +100,7 @@ ExportLimitOpt = typer.Option(10_000, "--limit", help="Max rows to export.")
 OutOpt = typer.Option(None, "--out", help="Markdown output path.")
 WhatOpt = typer.Option(..., "--what", help="Which table to export.")
 FmtOpt = typer.Option(ExportFmt.csv, "--fmt", help="Export file format.")
-HostOpt = typer.Option(
-    "0.0.0.0",
-    "--host",
-    help="Bind address. Default 0.0.0.0 (LAN-reachable). Use 127.0.0.1 for local-only.",
-)
+HostOpt = typer.Option("0.0.0.0", "--host", help="Bind address (default: all interfaces).")
 PortOpt = typer.Option(8000, "--port")
 SinceOpt = typer.Option(
     None,
@@ -509,9 +505,7 @@ def serve(
     settings = _settings(db=db, export_dir=export_dir)
     if host not in _LOOPBACK_HOSTS and not settings.api_key:
         typer.secho(
-            "Serving without PHEONIX_API_KEY on a non-loopback host — anyone on the "
-            "network who can reach this port can read scraped prompts. Set "
-            "PHEONIX_API_KEY to require X-API-Key, or use --host 127.0.0.1.",
+            "Warning: no PHEONIX_API_KEY — API is open on the network.",
             fg=typer.colors.YELLOW,
             err=True,
         )

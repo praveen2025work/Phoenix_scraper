@@ -28,11 +28,11 @@ coverage:         ## show what each skill file is asked but doesn't demonstrate
 report:           ## write markdown report + exports to backend/data/exports
 	cd backend && uv run pheonix report
 
-api:              ## start the API on :8000 (LAN-reachable; open CORS when no API key)
+api:              ## API on :8000 (all interfaces)
 	cd backend && .venv/bin/uvicorn --factory phoenix_scraper.api:create_app_default \
 	  --host 0.0.0.0 --port 8000
 
-api-reload:       ## same as `make api` but auto-reloads on backend code changes
+api-reload:       ## API with auto-reload
 	cd backend && .venv/bin/uvicorn --factory phoenix_scraper.api:create_app_default \
 	  --host 0.0.0.0 --port 8000 --reload
 
@@ -45,7 +45,7 @@ lint:             ## backend ruff check
 clean:            ## remove the local data store and exports
 	rm -rf backend/data
 
-ui:               ## frontend dev server on :5173 (talks to :8000 via CORS)
+ui:               ## SPA on :5173
 	cd frontend && npm run dev
 
 ui-build:         ## build the SPA to frontend/dist
@@ -61,8 +61,6 @@ ui-test:          ## frontend unit tests (vitest)
 ui-e2e:           ## frontend Playwright smoke (run `npx playwright install chromium` once)
 	cd frontend && npm run e2e
 
-stack:            ## reminder: how to run the full stack
-	@echo "Two terminals:"
-	@echo "  1) make api   # backend + job worker on http://0.0.0.0:8000 (LAN)"
-	@echo "  2) make ui    # SPA on http://0.0.0.0:5173 — share via this PC's IPv4"
-	@echo "Production: make ui-build && cd backend && uv run pheonix serve-ui --dist ../frontend/dist"
+stack:            ## how to run the full stack
+	@echo "Two terminals:  make api   then   make ui"
+	@echo "Share: http://<this-pc-ipv4>:5173"

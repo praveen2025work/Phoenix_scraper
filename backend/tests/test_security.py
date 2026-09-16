@@ -110,7 +110,7 @@ class TestServeGuard:
             cli_app, ["serve", "--host", "0.0.0.0", "--db", str(tmp_path / "s.db")]
         )
         assert result.exit_code == 0, result.output
-        assert "without PHEONIX_API_KEY" in result.output
+        assert "no PHEONIX_API_KEY" in result.output
 
     def test_serve_starts_the_background_job_worker(self, tmp_path, monkeypatch):
         import uvicorn

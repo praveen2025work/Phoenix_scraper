@@ -1,9 +1,5 @@
-// Prefer 127.0.0.1 over localhost: on macOS localhost often resolves to ::1 first,
-// while the API typically binds IPv4-only → fetch fails with "Failed to fetch"
-// and ApiKeyGate incorrectly shows the key form.
-//
-// When opened via a LAN hostname / IPv4 (e.g. http://192.168.1.10:5173), call
-// the API on the same host:8000 so colleagues don't need a local .env.
+// Prefer 127.0.0.1 over localhost (IPv4-only API binds).
+// Unset VITE_API_BASE → http://<page-hostname>:8000 (works on LAN).
 
 const API_PORT = "8000";
 
