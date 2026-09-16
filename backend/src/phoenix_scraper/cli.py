@@ -100,7 +100,11 @@ ExportLimitOpt = typer.Option(10_000, "--limit", help="Max rows to export.")
 OutOpt = typer.Option(None, "--out", help="Markdown output path.")
 WhatOpt = typer.Option(..., "--what", help="Which table to export.")
 FmtOpt = typer.Option(ExportFmt.csv, "--fmt", help="Export file format.")
-HostOpt = typer.Option("127.0.0.1", "--host")
+HostOpt = typer.Option(
+    "0.0.0.0",
+    "--host",
+    help="Bind address. Default 0.0.0.0 (LAN-reachable). Use 127.0.0.1 for local-only.",
+)
 PortOpt = typer.Option(8000, "--port")
 SinceOpt = typer.Option(
     None,
@@ -505,13 +509,12 @@ def serve(
     settings = _settings(db=db, export_dir=export_dir)
     if host not in _LOOPBACK_HOSTS and not settings.api_key:
         typer.secho(
-            "Refusing to bind a non-loopback host without auth: scraped prompts can "
-            "contain sensitive data. Set PHEONIX_API_KEY (clients send it as X-API-Key) "
-            f"or serve on 127.0.0.1 instead of {host}.",
-            fg=typer.colors.RED,
+            "Serving without PHEONIX_API_KEY on a non-loopback host — anyone on the "
+            "network who can reach this port can read scraped prompts. Set "
+            "PHEONIX_API_KEY to require X-API-Key, or use --host 127.0.0.1.",
+            fg=typer.colors.YELLOW,
             err=True,
         )
-        raise typer.Exit(code=1)
     typer.echo(f"Serving on http://{host}:{port} (db: {settings.db_path})")
     uvicorn.run(create_app(settings, run_jobs=True, dev_cors=True), host=host, port=port)
 

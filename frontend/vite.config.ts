@@ -7,7 +7,8 @@ import { defineConfig } from "vite";
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: { alias: { "@": path.resolve(import.meta.dirname, "src") } },
-  server: { port: 5173 },
+  // host: true → listen on 0.0.0.0 so colleagues can open via LAN IP / hostname
+  server: { host: true, port: 5173 },
   test: {
     environment: "jsdom",
     globals: true,

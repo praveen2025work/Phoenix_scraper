@@ -75,9 +75,12 @@ def create_app(
     run_jobs=True starts the background capability-run worker (create_app_default
     / real serving). Tests pass run_jobs=False (the default) — no thread.
 
-    dev_cors=True allows the Vite dev server (localhost:5173) when no
-    PHEONIX_CORS_ORIGINS is configured, so `pheonix serve` works with the SPA
-    out of the box. Ignored when CORS origins are set explicitly.
+    CORS / CSRF:
+    - Explicit ``PHEONIX_CORS_ORIGINS`` always wins.
+    - No API key (open LAN share): allow any browser Origin so colleagues can
+      open the SPA via this machine's hostname / IPv4 without extra config.
+    - ``dev_cors=True`` with an API key and no explicit origins: allow the Vite
+      localhost:5173 origins only.
     """
     from .jobs import JobWorker
     from .logging_setup import configure_logging
@@ -87,7 +90,12 @@ def create_app(
     # goes through the CLI callback that used to be the only place logging was set up.
     configure_logging(settings.log_level)
 
-    if dev_cors and not settings.cors_origin_list():
+    explicit_cors = settings.cors_origin_list()
+    open_lan = settings.api_key is None and not explicit_cors
+    if open_lan:
+        # Sentinel consumed below — CORSMiddleware gets allow_origins=["*"].
+        settings = settings.model_copy(update={"cors_origins": "*"})
+    elif dev_cors and not explicit_cors:
         settings = settings.model_copy(update={"cors_origins": _DEV_CORS_ORIGINS})
 
     worker = JobWorker(settings) if run_jobs else None
@@ -111,19 +119,22 @@ def create_app(
     )
     app.state.settings = settings
     app.state.job_worker = worker
+    app.state.open_lan = open_lan
 
     _cors = settings.cors_origin_list()
     if _cors:
+        # "*" means reflect any Origin (open LAN share without an API key).
+        allow_origins = ["*"] if _cors == ["*"] else _cors
         app.add_middleware(
             CORSMiddleware,
-            allow_origins=_cors,
+            allow_origins=allow_origins,
             allow_credentials=False,
             allow_methods=["*"],
             allow_headers=["X-API-Key", "Content-Type"],
         )
 
     def require_api_key(provided: str | None = Security(_api_key_header)) -> None:
-        # Open mode when no key is configured (loopback-only; cli.serve enforces that).
+        # Open mode when no key is configured (LAN share friendly by default).
         if settings.api_key is None:
             return
         if provided is None or not secrets.compare_digest(provided, settings.api_key):
@@ -222,12 +233,14 @@ def create_app(
         # CSRF: browsers attach Origin to cross-site POSTs; reject any that
         # don't match the host we're serving on. Non-browser clients (curl,
         # scripts) send no Origin and pass through.
+        # Open LAN share (no API key, no explicit CORS allow-list): any Origin
+        # is allowed — the API is already reachable without auth.
         if request.method not in ("GET", "HEAD", "OPTIONS"):
             origin = request.headers.get("origin")
-            if origin is not None:
+            if origin is not None and not getattr(request.app.state, "open_lan", False):
                 from urllib.parse import urlsplit
 
-                allowed = set(settings.cors_origin_list())
+                allowed = set(settings.cors_origin_list()) - {"*"}
                 same_host = urlsplit(origin).netloc == request.headers.get("host", "")
                 if not same_host and origin.rstrip("/") not in allowed:
                     return JSONResponse(

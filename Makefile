@@ -28,15 +28,13 @@ coverage:         ## show what each skill file is asked but doesn't demonstrate
 report:           ## write markdown report + exports to backend/data/exports
 	cd backend && uv run pheonix report
 
-api:              ## start the API on :8000 with the job worker (allows the :5173 SPA)
-	cd backend && PHEONIX_CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173 \
-	  .venv/bin/uvicorn --factory phoenix_scraper.api:create_app_default \
-	  --host 127.0.0.1 --port 8000
+api:              ## start the API on :8000 (LAN-reachable; open CORS when no API key)
+	cd backend && .venv/bin/uvicorn --factory phoenix_scraper.api:create_app_default \
+	  --host 0.0.0.0 --port 8000
 
 api-reload:       ## same as `make api` but auto-reloads on backend code changes
-	cd backend && PHEONIX_CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173 \
-	  .venv/bin/uvicorn --factory phoenix_scraper.api:create_app_default \
-	  --host 127.0.0.1 --port 8000 --reload
+	cd backend && .venv/bin/uvicorn --factory phoenix_scraper.api:create_app_default \
+	  --host 0.0.0.0 --port 8000 --reload
 
 test:             ## backend test suite with coverage
 	cd backend && uv run pytest --cov=phoenix_scraper --cov-report=term-missing
@@ -65,6 +63,6 @@ ui-e2e:           ## frontend Playwright smoke (run `npx playwright install chro
 
 stack:            ## reminder: how to run the full stack
 	@echo "Two terminals:"
-	@echo "  1) make api   # backend + job worker on http://localhost:8000"
-	@echo "  2) make ui    # SPA on http://localhost:5173"
+	@echo "  1) make api   # backend + job worker on http://0.0.0.0:8000 (LAN)"
+	@echo "  2) make ui    # SPA on http://0.0.0.0:5173 — share via this PC's IPv4"
 	@echo "Production: make ui-build && cd backend && uv run pheonix serve-ui --dist ../frontend/dist"

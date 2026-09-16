@@ -25,9 +25,9 @@ class Settings(BaseSettings):
     # when set, every route except /health requires it via the X-API-Key header.
     api_key: str | None = None
 
-    # Origins (comma-separated) allowed to call the API cross-site — the Vite dev
-    # server in development, the deployed SPA host in production. Empty =
-    # same-origin only (today's behaviour).
+    # Origins (comma-separated) allowed to call the API cross-site. Empty with
+    # no api_key = allow any Origin (open LAN share). With api_key set, list the
+    # SPA origins explicitly, or leave empty for same-origin only.
     cors_origins: str = ""
 
     project: str = "default"

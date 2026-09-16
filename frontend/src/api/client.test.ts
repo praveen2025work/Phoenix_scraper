@@ -1,5 +1,5 @@
 import { afterEach, expect, test, vi } from "vitest";
-import { apiKey, fetchJson, setApiKey } from "./client";
+import { apiKey, fetchJson, resolveApiBase, setApiKey } from "./client";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -34,4 +34,12 @@ test("no key stored -> no X-API-Key header", async () => {
   await fetchJson("/health");
   const headers = new Headers((spy.mock.calls[0][1] as RequestInit).headers);
   expect(headers.has("X-API-Key")).toBe(false);
+});
+
+test("resolveApiBase uses LAN hostname when env unset", () => {
+  expect(resolveApiBase(undefined, "192.168.1.10")).toBe("http://192.168.1.10:8000");
+  expect(resolveApiBase(undefined, "localhost")).toBe("http://127.0.0.1:8000");
+  expect(resolveApiBase("http://custom:9000/", "192.168.1.10")).toBe(
+    "http://custom:9000",
+  );
 });
