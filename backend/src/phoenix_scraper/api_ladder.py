@@ -1,6 +1,7 @@
 """Ladder board / candidate / decision / promote HTTP routes."""
 
 import json
+import logging
 from contextlib import contextmanager
 from datetime import UTC, datetime
 
@@ -8,11 +9,15 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from . import annotations as annotations_mod
 from . import artifacts
 from . import capability as capability_mod
 from .config import Settings
 from .ladder import DECISION_TRANSITIONS
+from .phoenix_client import PhoenixClientWrapper
 from .storage import Store
+
+logger = logging.getLogger(__name__)
 
 
 class DecisionBody(BaseModel):
@@ -20,6 +25,36 @@ class DecisionBody(BaseModel):
     actor: str | None = None
     note: str = ""
     snooze_runs: int = 3
+
+
+def _push_decision_annotation(
+    store: Store,
+    settings: Settings,
+    candidate,
+    action: str,
+    *,
+    actor: str,
+    note: str = "",
+) -> None:
+    """Best-effort: mirror promote/reject onto Phoenix; never fail the local decision."""
+    if action not in {"promote", "reject", "accept"}:
+        return
+    client = PhoenixClientWrapper(settings)
+    if not client.available():
+        return
+    try:
+        report = annotations_mod.push_ladder_decision(
+            store, client, settings, candidate, action, actor=actor, note=note
+        )
+        logger.info(
+            "pushed ladder %s annotation for %s: %d spans",
+            action, candidate.candidate_id, report.stored,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "Phoenix annotation push skipped for %s (%s): %s",
+            candidate.candidate_id, action, exc,
+        )
 
 
 def ladder_router(settings: Settings) -> APIRouter:
@@ -100,7 +135,11 @@ def ladder_router(settings: Settings) -> APIRouter:
             if body.action == "snooze":
                 ordinal = store.capability_run_ordinal(c.capability_id)
                 updates["snooze_until_run"] = ordinal + body.snooze_runs
-            store.upsert_candidate(c.model_copy(update=updates))
+            updated = c.model_copy(update=updates)
+            store.upsert_candidate(updated)
+            _push_decision_annotation(
+                store, settings, updated, body.action, actor=who, note=body.note
+            )
         return {"candidate_id": cid, "from": c.status, "to": target, "actor": who}
 
     def _promote(cid: str, *, accept: bool, dry_run: bool) -> dict:
@@ -125,6 +164,11 @@ def ladder_router(settings: Settings) -> APIRouter:
             result = artifacts.promote_candidate(
                 store, cap, c, now=now, actor=who, settings=settings, dry_run=dry_run,
             )
+            if result.wrote_files and not dry_run:
+                promoted = store.get_candidate(cid) or c
+                _push_decision_annotation(
+                    store, settings, promoted, "promote", actor=who
+                )
         return {
             "paths": list(result.paths),
             "contents": [

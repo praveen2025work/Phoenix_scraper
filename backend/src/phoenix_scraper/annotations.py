@@ -10,6 +10,9 @@ It also runs the other way: the CODE checks computed here can be pushed back as
 span annotations, which is how they become visible to everyone using the Phoenix
 UI rather than only to this tool. Push is opt-in, never automatic — it writes to
 a shared system.
+
+Ladder decisions (promote / reject / accept) can also be mirrored as CODE
+annotations on the candidate's member spans so Phoenix and SkillGap share labels.
 """
 
 import logging
@@ -18,15 +21,17 @@ from datetime import UTC, datetime
 from typing import Any
 
 from .config import Settings
-from .models import AnnotationSyncReport, QueryFilters, SpanEvaluation
+from .models import AnnotationSyncReport, Candidate, QueryFilters, SpanEvaluation
 from .phoenix_client import PhoenixClientWrapper
 from .storage import Store
 
 logger = logging.getLogger(__name__)
 
 PHOENIX_SOURCE = "phoenix"
+LADDER_DECISION_NAME = "skillgap.decision"
 _VALID_ANNOTATOR_KINDS = frozenset({"HUMAN", "LLM", "CODE"})
 _DEFAULT_ANNOTATOR_KIND = "HUMAN"
+_MAX_DECISION_SPANS = 25
 
 # Phoenix scores are free-form (0-1, 0-100, or a raw count). Anything above this
 # is read as a percentage-style score and divided down, so a 0-1 "higher is
@@ -102,6 +107,77 @@ def push_annotations(
     )
 
 
+def push_ladder_decision(
+    store: Store,
+    client: PhoenixClientWrapper,
+    settings: Settings,
+    candidate: Candidate,
+    action: str,
+    *,
+    actor: str,
+    note: str = "",
+) -> AnnotationSyncReport:
+    """Mirror a promote/reject/accept decision onto member spans in Phoenix.
+
+    Best-effort: empty report when there are no member spans. Callers should
+    catch transport errors so a Phoenix outage never blocks the local decision.
+    """
+    span_ids = candidate_member_span_ids(store, candidate)
+    if not span_ids:
+        return AnnotationSyncReport(direction="push")
+
+    project = _project_for_spans(store, settings, span_ids)
+    score = _decision_score(action)
+    explanation = (
+        f"SkillGap ladder {action} by {actor}"
+        + (f": {note}" if note else "")
+        + f" (candidate {candidate.candidate_id})"
+    )
+    payload = [
+        {
+            "span_id": sid,
+            "name": LADDER_DECISION_NAME,
+            "annotator_kind": "CODE",
+            "result": {
+                "label": action,
+                "score": score,
+                "explanation": explanation,
+            },
+            "metadata": {
+                "target": "span",
+                "candidate_id": candidate.candidate_id,
+                "rung": candidate.rung,
+                "cluster_id": candidate.cluster_id,
+                "capability_id": candidate.capability_id,
+            },
+            "identifier": f"pheonix:{candidate.candidate_id}:{action}",
+        }
+        for sid in span_ids[:_MAX_DECISION_SPANS]
+    ]
+    sent = client.push_span_annotations(project, payload)
+    return AnnotationSyncReport(
+        direction="push",
+        spans_considered=len(span_ids),
+        annotations=len(payload),
+        stored=sent,
+        skipped=len(payload) - sent,
+    )
+
+
+def candidate_member_span_ids(store: Store, candidate: Candidate) -> list[str]:
+    """Span ids for the candidate's cluster from the latest capability run."""
+    run_id = store.previous_capability_run_id(candidate.capability_id)
+    if run_id is None:
+        return []
+    members = store.capability_cluster_members_frame(candidate.capability_id, run_id)
+    if members.empty:
+        return []
+    matched = members.loc[members["cluster_id"].astype(str) == candidate.cluster_id]
+    if matched.empty:
+        return []
+    return [str(s) for s in matched["span_id"].tolist() if str(s).strip()]
+
+
 def annotation_to_evaluation(annotation: dict) -> SpanEvaluation | None:
     """Map one Phoenix annotation onto a SpanEvaluation.
 
@@ -166,6 +242,33 @@ def evaluations_to_annotations(
 
 
 # ---- helpers -----------------------------------------------------------------
+
+
+def _project_for_spans(
+    store: Store, settings: Settings, span_ids: Sequence[str]
+) -> str:
+    if not span_ids:
+        return settings.project
+    frame = store.spans_frame(QueryFilters(limit=10_000))
+    if frame.empty or "span_id" not in frame.columns:
+        return settings.project
+    hit = frame.loc[frame["span_id"].astype(str) == str(span_ids[0])]
+    if hit.empty or "project" not in hit.columns:
+        return settings.project
+    project = str(hit.iloc[0].get("project") or "").strip()
+    return project or settings.project
+
+
+def _decision_score(action: str) -> float:
+    # Higher = better outcome for the agent fleet (promote/accept good; reject = 0).
+    mapping = {
+        "promote": 1.0,
+        "accept": 0.9,
+        "snooze": 0.5,
+        "reopen": 0.4,
+        "reject": 0.0,
+    }
+    return mapping.get(action, 0.5)
 
 
 def _first(mapping: dict, *keys: str) -> Any:

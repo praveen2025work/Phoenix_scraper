@@ -71,7 +71,7 @@ class Rung1Signal(_Frozen):
     title: str
     signature: str
     matched_skill: str | None
-    score: float  # gap strength, 0-1
+    score: float  # gap strength, 0-1 (may include friction/outlier boost)
     count: int
     n_users: int
     n_sessions: int
@@ -79,6 +79,9 @@ class Rung1Signal(_Frozen):
     route_len_avg: float | None
     long_route: bool
     met_evidence_bar: bool
+    friction_score: float = 0.0
+    outlier_hits: int = 0
+    priority_boost: float = 0.0
 
 
 def _creation_floor(thresholds: LadderThresholds) -> int:
@@ -112,12 +115,26 @@ def detect_rung1(
     efficiency: pd.DataFrame,
     *,
     thresholds: LadderThresholds,
+    friction_by_session: dict[str, float] | None = None,
+    outlier_traces: frozenset[str] | None = None,
+    span_to_session: dict[str, str] | None = None,
+    span_to_trace: dict[str, str] | None = None,
 ) -> list[Rung1Signal]:
-    """One Rung1Signal per in-scope cluster that needs a skill it does not have."""
+    """One Rung1Signal per in-scope cluster that needs a skill it does not have.
+
+    Optional session friction + outlier-turn hits raise ``score`` (capped at 1.0)
+    so high-pain asks surface above frequency alone.
+    """
+    from . import outliers as outliers_mod
+
     floor = _creation_floor(thresholds)
     match_by_cluster = {m.cluster_id: m for m in matches}
     coverage = _coverage_lookup(annotated)
     routes = _efficiency_lookup(efficiency)
+    friction_map = friction_by_session or {}
+    outlier_set = outlier_traces or frozenset()
+    sid_session = span_to_session or {}
+    sid_trace = span_to_trace or {}
 
     signals: list[Rung1Signal] = []
     for cluster in clusters:
@@ -131,7 +148,7 @@ def detect_rung1(
             subtype: Literal["new_skill", "strengthen_skill"] = "new_skill"
             matched_skill: str | None = None
             best = match.score if match else 0.0
-            score = round(1.0 - best, 4)
+            base_score = round(1.0 - best, 4)
         else:
             cov = coverage.get(cluster.cluster_id, 0.0)
             if cov >= thresholds.skill_coverage_threshold:
@@ -141,7 +158,22 @@ def detect_rung1(
             gap = (
                 thresholds.skill_coverage_threshold - cov
             ) / thresholds.skill_coverage_threshold
-            score = round(min(1.0, max(0.0, gap)), 4)
+            base_score = round(min(1.0, max(0.0, gap)), 4)
+
+        friction = outliers_mod.cluster_friction_score(
+            cluster.span_ids,
+            span_to_session=sid_session,
+            friction_by_session=friction_map,
+        )
+        outlier_hits = outliers_mod.cluster_outlier_hits(
+            cluster.span_ids,
+            span_to_trace=sid_trace,
+            outlier_traces=outlier_set,
+        )
+        boost = outliers_mod.priority_boost(
+            friction=friction, outlier_hits=outlier_hits
+        )
+        score = round(min(1.0, base_score + boost), 4)
 
         route_len, long_route = routes.get(cluster.cluster_id, (None, False))
         signals.append(
@@ -162,6 +194,9 @@ def detect_rung1(
                     cluster.n_users >= thresholds.rung1_min_users
                     and cluster.count >= thresholds.rung1_min_count
                 ),
+                friction_score=friction,
+                outlier_hits=outlier_hits,
+                priority_boost=boost,
             )
         )
     return signals

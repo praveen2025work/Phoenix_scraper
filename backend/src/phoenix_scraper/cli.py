@@ -760,7 +760,23 @@ def decide(
         if action == "snooze":
             ordinal = store.capability_run_ordinal(candidate.capability_id)
             updates["snooze_until_run"] = ordinal + snooze_runs
-        store.upsert_candidate(candidate.model_copy(update=updates))
+        updated = candidate.model_copy(update=updates)
+        store.upsert_candidate(updated)
+        if action in {"reject", "accept"}:
+            from . import annotations as annotations_mod
+            from .phoenix_client import PhoenixClientWrapper
+
+            client = PhoenixClientWrapper(settings)
+            if client.available():
+                try:
+                    annotations_mod.push_ladder_decision(
+                        store, client, settings, updated, action, actor=who, note=note
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    typer.secho(
+                        f"Phoenix annotation push skipped: {exc}",
+                        fg=typer.colors.YELLOW, err=True,
+                    )
     typer.echo(f"{candidate_id}: {candidate.status} -> {target}  (by {who})")
 
 
@@ -802,6 +818,22 @@ def promote(
         result = artifacts_mod.promote_candidate(
             store, cap, candidate, now=now, actor=who, settings=settings, dry_run=dry_run,
         )
+        if result.wrote_files and not dry_run:
+            from . import annotations as annotations_mod
+            from .phoenix_client import PhoenixClientWrapper
+
+            promoted = store.get_candidate(candidate_id) or candidate
+            client = PhoenixClientWrapper(settings)
+            if client.available():
+                try:
+                    annotations_mod.push_ladder_decision(
+                        store, client, settings, promoted, "promote", actor=who
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    typer.secho(
+                        f"Phoenix annotation push skipped: {exc}",
+                        fg=typer.colors.YELLOW, err=True,
+                    )
     for path, body in result.contents:
         typer.echo(f"\n--- {path} ---")
         typer.echo(body)
