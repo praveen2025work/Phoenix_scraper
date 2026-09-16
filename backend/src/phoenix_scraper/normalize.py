@@ -51,6 +51,49 @@ _LEADING_SYMBOL_NUMBER = re.compile(r"[$€£¥]\s?\d+(?:[.,]\d+)*\s?(?:k|mm|m|b
 
 _WHITESPACE = re.compile(r"\s+")
 _SIGNATURE_PUNCT = re.compile(r"[^\w<>\s]|_")
+_ESCAPE_OR_BREAK = re.compile(r"\\[nrt]|[\n\r\t]+")
+_MULTI_SPACE = re.compile(r"[ \u00a0]+")
+_MULTI_BLANK = re.compile(r"\n{3,}")
+
+
+def breaks_to_newlines(text: str) -> str:
+    """Turn escaped ``\\n`` / ``\\t`` into real breaks (for line-bounded markers)."""
+    return _ESCAPE_OR_BREAK.sub(
+        lambda m: {"n": "\n", "r": "\n", "t": "\t"}.get(m.group(0)[-1], "\n"),
+        str(text or ""),
+    )
+
+
+def format_user_text(text: str) -> str:
+    """Escaped ``\\n`` / ``\\t`` → real breaks; squeeze spaces; keep line breaks for UI."""
+    s = breaks_to_newlines(text)
+    if not s:
+        return ""
+    lines = [_MULTI_SPACE.sub(" ", line).strip() for line in s.split("\n")]
+    # Drop leading/trailing blank lines; keep at most one blank between paragraphs.
+    while lines and not lines[0]:
+        lines.pop(0)
+    while lines and not lines[-1]:
+        lines.pop()
+    out: list[str] = []
+    blank = False
+    for line in lines:
+        if not line:
+            if not blank:
+                out.append("")
+            blank = True
+        else:
+            out.append(line)
+            blank = False
+    return "\n".join(out)
+
+
+def clean_user_text(text: str) -> str:
+    """Single-line form of :func:`format_user_text` (newlines → spaces)."""
+    s = format_user_text(text)
+    if not s:
+        return ""
+    return _MULTI_SPACE.sub(" ", s.replace("\n", " ")).strip()
 
 
 def mask_volatile(text: str) -> str:

@@ -27,6 +27,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { TBody, TD, TH, THead, TR, Table } from "@/components/ui/table";
 import { useJourney } from "@/journey/JourneyContext";
+import { displayCandidateTitle } from "@/lib/promptShape";
 import { cn } from "@/lib/utils";
 
 // Mirrors ladder.DECISION_TRANSITIONS: action -> statuses it is allowed from.
@@ -117,9 +118,8 @@ function acceptEvidenceHint(
   if (streak < sustained) {
     return `Evidence bar met on latest run — need ${sustained} consecutive runs (currently ${streak}).`;
   }
-  return status === "new"
-    ? "Still new — run again until evidence sustains."
-    : "Still accumulating — need more consecutive runs meeting the evidence bar.";
+  // Backend flips new/accumulating → ready when qualified; reopen to unlock Accept.
+  return "Evidence qualifies — reopen this candidate to unlock Accept.";
 }
 
 /** Why a decision button is disabled — shown as title/tooltip and next to Accept. */
@@ -353,7 +353,13 @@ export function CandidateDetail() {
             Results
           </Link>
         }
-        title={candidate.title || candidate.candidate_id}
+        title={
+          <span className="whitespace-pre-wrap">
+            {displayCandidateTitle(candidate.title || "") ||
+              candidate.title ||
+              candidate.candidate_id}
+          </span>
+        }
         outcome={
           <>
             {lane}:{" "}

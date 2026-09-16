@@ -18,6 +18,7 @@ import pandas as pd
 
 from .llm_messages import prefer_messages_io
 from .models import SpanRecord
+from .normalize import format_user_text
 
 # Phoenix UI root name for a conversational turn (see Sessions → Traces).
 _TURN_ROOT_NAMES = frozenset({"agent_request"})
@@ -146,6 +147,14 @@ def span_records_from_session_turns(
             )
             input_text = input_text or msg_in
             output_text = output_text or msg_out
+
+        # Prefer the typed ask (USER QUERY / messages); escaped \\n → real breaks.
+        if input_text:
+            from .prompt_shape import extract_user_prompt
+
+            input_text = extract_user_prompt(input_text)
+        if output_text:
+            output_text = format_user_text(output_text)
 
         span_id = _root_span_id(root) or f"turn:{trace_id}"
         start = _parse_dt(turn.get("start_time")) or _parse_dt(root.get("start_time"))

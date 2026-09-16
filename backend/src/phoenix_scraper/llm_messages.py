@@ -36,10 +36,15 @@ def prefer_messages_io(
     output_value: str = "",
 ) -> tuple[str, str]:
     """Return (input_text, output_text), preferring message attrs when non-empty."""
+    from .normalize import format_user_text
+
     attrs = attributes or {}
     user = messages_user_text(attrs)
     assistant = messages_assistant_text(attrs)
-    return (user or input_value or "", assistant or output_value or "")
+    return (
+        format_user_text(user or input_value or ""),
+        format_user_text(assistant or output_value or ""),
+    )
 
 
 def _find_messages(attributes: dict[str, Any], *, side: str) -> list[Any]:

@@ -20,6 +20,7 @@ from typing import Any
 
 import pandas as pd
 
+from .normalize import breaks_to_newlines, format_user_text
 from .turns import turn_root_spans
 
 _USER_QUERY_MARKERS = (
@@ -65,34 +66,41 @@ def extract_user_prompt(text: str) -> str:
     """Return the user-facing question when ``text`` wraps one; else stripped text.
 
     Handles Bedrock/Anthropic-style JSON (``messages`` / system payloads) and
-    plain ``USER QUERY:`` markers embedded in larger system prompts.
+    plain ``USER QUERY:`` markers embedded in larger system prompts. Escaped
+    ``\\n`` becomes a real newline so ladder cards can wrap the typed ask.
     """
     raw = (text or "").strip()
     if not raw:
         return ""
 
-    marker = _extract_user_query_marker(raw)
+    # Prefer literal ``\\n`` still in the string so multi-line asks after USER QUERY
+    # are captured; fall back to real newlines for line-bounded markers.
+    marker = _extract_user_query_marker(raw) or _extract_user_query_marker(
+        breaks_to_newlines(raw)
+    )
     if marker:
-        return marker
+        # Stop before a blank line / next section (``\\n\\n`` or real breaks).
+        marker = re.split(r"(?:\\n[ \t]*){2,}|\n\s*\n", marker, maxsplit=1)[0]
+        return format_user_text(marker)
 
     parsed = _try_parse_json(raw)
     if parsed is not None:
         from_json = _user_text_from_payload(parsed)
         if from_json:
-            return from_json.strip()
+            return format_user_text(from_json)
 
     # JSON-ish string that failed full parse — still try marker / message scrapes.
     if _looks_like_structured(raw):
         scraped = _scrape_user_from_blob(raw)
         if scraped:
-            return scraped
+            return format_user_text(scraped)
 
-    return raw
+    return format_user_text(raw)
 
 
 def display_title(text: str, *, max_len: int = 200) -> str:
-    """Card title: extracted user prompt, truncated."""
-    cleaned = extract_user_prompt(text).strip()
+    """Card title: extracted user prompt, truncated; ``\\n`` shown as real breaks."""
+    cleaned = extract_user_prompt(text)
     if not cleaned:
         return ""
     if len(cleaned) <= max_len:

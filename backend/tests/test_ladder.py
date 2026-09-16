@@ -181,6 +181,32 @@ class TestNextStatus:
                                 run_ordinal=1, capability_run_count=1, thresholds=self._t())
         assert tr.status == "new"
 
+    def test_new_with_met_bar_and_sustained_one_becomes_ready(self) -> None:
+        t = ladder.resolve_thresholds(
+            _capability({"rung1_sustained_runs": 1}), _settings()
+        )
+        tr = ladder.next_status(
+            _cand2("new"),
+            _o(True),
+            [_o(True)],
+            run_ordinal=1,
+            capability_run_count=1,
+            thresholds=t,
+        )
+        assert tr.status == "ready" and tr.set_ready_at is True
+
+    def test_ensure_ready_flips_stuck_accumulating(self) -> None:
+        t = ladder.resolve_thresholds(
+            _capability({"rung1_sustained_runs": 1}), _settings()
+        )
+        tr = ladder.ensure_ready_if_qualified(
+            _cand2("accumulating"),
+            [_o(True)],
+            capability_run_count=1,
+            thresholds=t,
+        )
+        assert tr is not None and tr.status == "ready"
+
     def test_new_second_observation_becomes_accumulating(self) -> None:
         tr = ladder.next_status(_cand2("new"), _o(False), [_o(False), _o(False)],
                                 run_ordinal=2, capability_run_count=2, thresholds=self._t())

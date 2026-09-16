@@ -273,7 +273,12 @@ def capability_router(settings: Settings) -> APIRouter:
             else []
         )
         with _store() as store:
-            cap = store.get_capability(cap_id)
+            # Disk yaml is SoT — refresh DB so threshold edits unlock Accept.
+            try:
+                cap = capability_mod.load_capability(root, cap_id)
+                store.upsert_capability(cap)
+            except (ValueError, FileNotFoundError, OSError):
+                cap = store.get_capability(cap_id)
             if cap is None:
                 raise HTTPException(status_code=404, detail=f"No capability {cap_id!r}")
             return {
@@ -515,6 +520,7 @@ def _candidate_records(df) -> list[dict]:  # noqa: ANN001
 def _build_run_results(
     store: Store, settings: Settings, cap_id: str, run_id: str, row: dict
 ) -> dict:
+    from .api_ladder import _flip_ready_if_qualified
     from .capability_run import load_capability_skills
 
     summary = _run_summary(row)
@@ -531,8 +537,10 @@ def _build_run_results(
     try:
         cap = capability_mod.load_capability(settings.capabilities_dir, cap_id)
         skills = load_capability_skills(settings, cap)
+        store.upsert_capability(cap)  # pick up yaml threshold changes (Accept bar)
     except (ValueError, FileNotFoundError):
         skills = []
+        cap = store.get_capability(cap_id)
 
     snap = store.capability_run_snapshot_frame(cap_id, run_id)
     previous = store.previous_capability_run_id(cap_id, before=run_id)
@@ -570,6 +578,13 @@ def _build_run_results(
     if cands.empty:
         rung1, rung2 = [], []
     else:
+        for cid in cands["candidate_id"].tolist():
+            existing = store.get_candidate(str(cid))
+            if existing is not None:
+                _flip_ready_if_qualified(
+                    store, settings, settings.capabilities_dir, existing
+                )
+        cands = store.candidates_observed_in_run(cap_id, run_id)
         rung1, rung2 = _segregate_candidates(_candidate_records(cands))
 
     n_unmatched = 0

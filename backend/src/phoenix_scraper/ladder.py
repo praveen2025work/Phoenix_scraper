@@ -285,6 +285,34 @@ def readiness_met(
     return len(window) >= sustained_runs and all(o.met_evidence_bar for o in window)
 
 
+def ensure_ready_if_qualified(
+    candidate: Candidate,
+    recent_observations: list[CandidateObservation],
+    *,
+    capability_run_count: int,
+    thresholds: LadderThresholds,
+) -> LadderTransition | None:
+    """Flip ``new``/``accumulating`` → ``ready`` when evidence already qualifies.
+
+    Used when thresholds drop (e.g. sustained_runs: 1) so operators do not need
+    another analysis run just to unlock Accept after the met-bar already shows ✓.
+    """
+    if candidate.status not in ("new", "accumulating"):
+        return None
+    sustained = (
+        thresholds.rung2_sustained_runs
+        if candidate.rung == "deterministic"
+        else thresholds.rung1_sustained_runs
+    )
+    if readiness_met(
+        recent_observations,
+        sustained_runs=sustained,
+        capability_run_count=capability_run_count,
+    ):
+        return LadderTransition(status="ready", set_ready_at=True)
+    return None
+
+
 def is_material_change(
     candidate: Candidate,
     observation: CandidateObservation,
@@ -375,7 +403,8 @@ def next_status(
         sustained_runs=sustained,
         capability_run_count=capability_run_count,
     )
-    if status == "accumulating" and ready:
+    # Ready can land from `new` when sustained_runs is 1 (single strong evidence run).
+    if status in ("new", "accumulating") and ready:
         return LadderTransition(status="ready", set_ready_at=True)
     if status == "ready" and not ready:
         return LadderTransition(
