@@ -28,7 +28,7 @@ export function CandidateCard({ candidate }: { candidate: Candidate }) {
         >
           <div className="flex flex-wrap items-start justify-between gap-x-2 gap-y-1">
             <span
-              className="min-w-0 flex-1 font-medium leading-snug text-foreground"
+              className="min-w-0 flex-1 whitespace-pre-wrap font-medium leading-snug text-foreground"
               title={candidate.title || undefined}
             >
               {title}

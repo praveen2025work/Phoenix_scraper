@@ -13,7 +13,11 @@ from . import annotations as annotations_mod
 from . import artifacts
 from . import capability as capability_mod
 from .config import Settings
-from .ladder import DECISION_TRANSITIONS
+from .ladder import (
+    DECISION_TRANSITIONS,
+    ensure_ready_if_qualified,
+    resolve_thresholds,
+)
 from .phoenix_client import PhoenixClientWrapper
 from .storage import Store
 
@@ -57,6 +61,43 @@ def _push_decision_annotation(
         )
 
 
+def _flip_ready_if_qualified(store: Store, settings: Settings, root, candidate):
+    """Persist ready when met-bar evidence already satisfies current thresholds."""
+    if candidate.status not in ("new", "accumulating"):
+        return candidate
+    try:
+        cap = capability_mod.load_capability(root, candidate.capability_id)
+    except (ValueError, FileNotFoundError, OSError):
+        cap = store.get_capability(candidate.capability_id)
+    if cap is None:
+        return candidate
+    thresholds = resolve_thresholds(cap, settings)
+    sustained = (
+        thresholds.rung2_sustained_runs
+        if candidate.rung == "deterministic"
+        else thresholds.rung1_sustained_runs
+    )
+    recent = store.recent_candidate_observations(
+        candidate.candidate_id, max(sustained, 1)
+    )
+    run_count = store.capability_run_ordinal(candidate.capability_id)
+    transition = ensure_ready_if_qualified(
+        candidate,
+        recent,
+        capability_run_count=run_count,
+        thresholds=thresholds,
+    )
+    if transition is None or transition.status != "ready":
+        return candidate
+    now = datetime.now(UTC)
+    updates: dict = {"status": "ready"}
+    if transition.set_ready_at and candidate.ready_at is None:
+        updates["ready_at"] = now
+    updated = candidate.model_copy(update=updates)
+    store.upsert_candidate(updated)
+    return updated
+
+
 def ladder_router(settings: Settings) -> APIRouter:
     router = APIRouter()
     root = settings.capabilities_dir
@@ -79,6 +120,14 @@ def ladder_router(settings: Settings) -> APIRouter:
         from .api import _frame_response
         with _store() as store:
             df = store.candidates_frame(cap_id, rung=rung, status=status)
+            # Unlock Accept for rows whose evidence already qualifies under
+            # current thresholds (no extra analysis run required).
+            if fmt != "csv":
+                for cid in list(df["candidate_id"]) if not df.empty else []:
+                    c = store.get_candidate(str(cid))
+                    if c is not None:
+                        _flip_ready_if_qualified(store, settings, root, c)
+                df = store.candidates_frame(cap_id, rung=rung, status=status)
         if fmt == "csv":
             return _frame_response(df, fmt, "candidates")
         # JSON: hand back candidate objects (json fields parsed), not raw columns.
@@ -96,6 +145,7 @@ def ladder_router(settings: Settings) -> APIRouter:
             c = store.get_candidate(cid)
             if c is None:
                 raise HTTPException(status_code=404, detail="No such candidate")
+            c = _flip_ready_if_qualified(store, settings, root, c)
             obs = store.candidate_observations_frame(cid)
             decisions = store.candidate_decisions_frame(cid)
         obs_records = json.loads(obs.to_json(orient="records"))
@@ -118,6 +168,8 @@ def ladder_router(settings: Settings) -> APIRouter:
             c = store.get_candidate(cid)
             if c is None:
                 raise HTTPException(status_code=404, detail="No such candidate")
+            if body.action == "accept":
+                c = _flip_ready_if_qualified(store, settings, root, c)
             if c.status not in allowed:
                 raise HTTPException(
                     status_code=409,

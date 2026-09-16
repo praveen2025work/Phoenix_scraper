@@ -68,4 +68,8 @@ describe("shape classification", () => {
       ),
     ).toBe("Clean question please");
   });
+
+  test("displayCandidateTitle turns escaped newlines into real breaks", () => {
+    expect(displayCandidateTitle("ask line 1\\nline 2")).toBe("ask line 1\nline 2");
+  });
 });

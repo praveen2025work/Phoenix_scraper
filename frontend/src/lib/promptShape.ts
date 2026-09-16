@@ -20,6 +20,31 @@ function matchUserQuery(text: string): string | null {
   return found || null;
 }
 
+/** Escaped ``\\n`` / ``\\t`` → real breaks for card titles. */
+export function formatDisplayText(text: string): string {
+  const raw = (text || "")
+    .replace(/\\n/g, "\n")
+    .replace(/\\r/g, "\n")
+    .replace(/\\t/g, "\t")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n");
+  const lines = raw.split("\n").map((line) => line.replace(/[ \t\u00a0]+/g, " ").trim());
+  while (lines.length && !lines[0]) lines.shift();
+  while (lines.length && !lines[lines.length - 1]) lines.pop();
+  const out: string[] = [];
+  let blank = false;
+  for (const line of lines) {
+    if (!line) {
+      if (!blank) out.push("");
+      blank = true;
+    } else {
+      out.push(line);
+      blank = false;
+    }
+  }
+  return out.join("\n");
+}
+
 function looksStructured(text: string): boolean {
   const s = text.trimStart();
   return (
@@ -154,18 +179,19 @@ function payloadMarkers(text: string): boolean {
 export function extractUserPrompt(text: string): string {
   const raw = (text || "").trim();
   if (!raw) return "";
-  const marker = matchUserQuery(raw);
-  if (marker) return marker;
+  const forMarkers = formatDisplayText(raw);
+  const marker = matchUserQuery(forMarkers);
+  if (marker) return formatDisplayText(marker);
   const parsed = tryParseJson(raw);
   if (parsed != null) {
     const fromJson = userTextFromPayload(parsed);
-    if (fromJson) return fromJson.trim();
+    if (fromJson) return formatDisplayText(fromJson);
   }
   if (looksStructured(raw)) {
     const scraped = matchUserQuery(raw);
-    if (scraped) return scraped;
+    if (scraped) return formatDisplayText(scraped);
   }
-  return raw;
+  return formatDisplayText(raw);
 }
 
 export function displayCandidateTitle(text: string, maxLen = 200): string {

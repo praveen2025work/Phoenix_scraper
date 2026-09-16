@@ -120,7 +120,10 @@ function QueueList({
               to={`/c/${capabilityId}/candidate/${encodeURIComponent(c.candidate_id)}`}
               className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 px-2.5 py-1.5 text-sm hover:bg-muted/40"
             >
-              <span className="min-w-0 flex-1 font-medium truncate" title={c.title || undefined}>
+              <span
+                className="min-w-0 flex-1 whitespace-pre-wrap font-medium leading-snug"
+                title={c.title || undefined}
+              >
                 {label}
               </span>
               <span

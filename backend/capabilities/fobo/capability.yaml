@@ -13,8 +13,9 @@ filter:
   search_any: []
 window_days: 30
 thresholds:
-  # Demo-friendly ladder (defaults are 15/3/5 — too high for interactive demos).
+  # Demo-friendly: one strong run (met bar) → ready → Accept.
   rung1_min_count: 5
-  rung1_min_users: 2
-  rung1_sustained_runs: 2
+  rung1_min_users: 1
+  rung1_sustained_runs: 1
+  rung2_sustained_runs: 1
 status: active

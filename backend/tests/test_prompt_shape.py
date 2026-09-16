@@ -4,6 +4,7 @@ import json
 
 import pandas as pd
 
+from phoenix_scraper.normalize import clean_user_text
 from phoenix_scraper.prompt_shape import (
     display_title,
     expand_cluster_trace_members,
@@ -15,6 +16,26 @@ from phoenix_scraper.prompt_shape import (
     is_skill_shaped,
     is_user_ask_span,
 )
+
+
+class TestCleanUserText:
+    def test_removes_literal_backslash_n(self) -> None:
+        assert (
+            clean_user_text(r"analyze UAXK\nand UZRZ journals\n")
+            == "analyze UAXK and UZRZ journals"
+        )
+
+    def test_collapses_real_newlines_and_tabs(self) -> None:
+        assert clean_user_text("foo\n\tbar\r\nbaz") == "foo bar baz"
+
+
+class TestFormatUserText:
+    def test_escaped_n_becomes_real_newline(self) -> None:
+        from phoenix_scraper.normalize import format_user_text
+
+        assert format_user_text(r"analyze UAXK\nand UZRZ journals\n") == (
+            "analyze UAXK\nand UZRZ journals"
+        )
 
 
 class TestExtractUserPrompt:
@@ -29,6 +50,10 @@ class TestExtractUserPrompt:
         )
         assert extract_user_prompt(blob) == "Why did the break appear?"
 
+    def test_user_query_with_escaped_newlines(self) -> None:
+        blob = r"SYSTEM\n\nUSER QUERY: analyze UAXK\nand UZRZ journals\n\nRespond"
+        assert extract_user_prompt(blob) == "analyze UAXK\nand UZRZ journals"
+
     def test_bedrock_messages_json(self) -> None:
         payload = {
             "anthropic_version": "bedrock-2023-05-31",
@@ -37,6 +62,11 @@ class TestExtractUserPrompt:
             ],
         }
         assert extract_user_prompt(json.dumps(payload)) == "Show FX breaks over 100k"
+
+    def test_display_title_keeps_real_newlines(self) -> None:
+        title = display_title("ask line 1\nline 2\\nline 3")
+        assert "\\" not in title
+        assert title == "ask line 1\nline 2\nline 3"
 
 
 class TestDeterministicShape:

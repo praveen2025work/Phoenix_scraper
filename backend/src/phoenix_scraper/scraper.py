@@ -13,6 +13,7 @@ import pandas as pd
 from .config import Settings
 from .llm_messages import prefer_messages_io
 from .models import ScrapeReport, SpanRecord
+from .normalize import format_user_text
 from .phoenix_client import PhoenixClientWrapper
 from .storage import Store
 from .turns import span_records_from_session_turns
@@ -64,6 +65,13 @@ def flatten_phoenix_row(
         flat_msgs_in, flat_msgs_out = prefer_messages_io(attributes=flat)
         input_text = input_text or flat_msgs_in
         output_text = output_text or flat_msgs_out
+    # Escaped \\n → real breaks; extract typed ask when wrappers wrap USER QUERY.
+    if input_text:
+        from .prompt_shape import extract_user_prompt
+
+        input_text = extract_user_prompt(input_text)
+    if output_text:
+        output_text = format_user_text(output_text)
     return SpanRecord(
         span_id=span_id,
         trace_id=trace_id,
