@@ -52,6 +52,7 @@ from .scraper import scrape_once
 from .skill_coverage import annotate_coverage
 from .skills_mapper import match_clusters_with_notes
 from .storage import Store
+from .turn_latency import format_turn_latency_notes, summarize_turn_latency
 
 logger = logging.getLogger(__name__)
 
@@ -259,6 +260,8 @@ def run_capability_analysis(
         filter_deterministic_source_spans(in_scope),
         fuzz_threshold=settings.cluster_fuzz_threshold,
     )
+    turn_timing = summarize_turn_latency(in_scope)
+    run_notes.extend(format_turn_latency_notes(turn_timing))
     skills = load_capability_skills(settings, capability)
     _emit(
         on_progress,
@@ -267,6 +270,12 @@ def run_capability_analysis(
         (
             f"Clustered {len(clusters)} user-ask patterns · "
             f"{len(deterministic_clusters)} tool/MCP patterns"
+            + (
+                f" · {turn_timing['n_turns']} turns "
+                f"(avg {_progress_ms(turn_timing.get('avg_turn_ms'))})"
+                if turn_timing.get("n_turns")
+                else ""
+            )
         ),
         {
             "n_spans": n_store,
@@ -275,6 +284,12 @@ def run_capability_analysis(
             "n_user_ask_clusters": len(clusters),
             "n_deterministic_clusters": len(deterministic_clusters),
             "n_skills": len(skills),
+            "n_turns": turn_timing.get("n_turns"),
+            "avg_turn_ms": turn_timing.get("avg_turn_ms"),
+            "avg_thinking_ms": turn_timing.get("avg_thinking_ms"),
+            "avg_tool_ms": turn_timing.get("avg_tool_ms"),
+            "pct_bottleneck_thinking": turn_timing.get("pct_bottleneck_thinking"),
+            "pct_bottleneck_tool": turn_timing.get("pct_bottleneck_tool"),
         },
     )
     _emit(
@@ -423,6 +438,12 @@ def run_capability_analysis(
             "n_covered": n_covered,
             "n_rung1": rung1.n_candidates,
             "n_rung2": rung2.n_candidates,
+            "n_turns": turn_timing.get("n_turns"),
+            "avg_turn_ms": turn_timing.get("avg_turn_ms"),
+            "avg_thinking_ms": turn_timing.get("avg_thinking_ms"),
+            "avg_tool_ms": turn_timing.get("avg_tool_ms"),
+            "pct_bottleneck_thinking": turn_timing.get("pct_bottleneck_thinking"),
+            "pct_bottleneck_tool": turn_timing.get("pct_bottleneck_tool"),
         },
     )
 
@@ -677,3 +698,17 @@ def run_capabilities(
             )
             results.append(CapabilityRunResult(run=failed))
     return results
+
+
+def _progress_ms(value: object) -> str:
+    if value is None:
+        return "—"
+    try:
+        ms = float(value)
+    except (TypeError, ValueError):
+        return "—"
+    if ms >= 60_000:
+        return f"{ms / 60_000:.1f}m"
+    if ms >= 1000:
+        return f"{ms / 1000:.1f}s"
+    return f"{ms:.0f}ms"

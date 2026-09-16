@@ -170,6 +170,8 @@ class PhoenixClientWrapper:
         start: datetime | None,
         end: datetime | None,
         limit: int,
+        *,
+        query: object | None = None,
     ) -> pd.DataFrame:
         from phoenix.client.types.spans import SpanQuery
 
@@ -183,6 +185,7 @@ class PhoenixClientWrapper:
                 "or PHEONIX_PROJECT); refusing an unscoped /v1/spans call"
             )
 
+        span_query = query if query is not None else SpanQuery()
         logger.info(
             "Phoenix GET spans: endpoint=%s project=%s window=%s..%s limit=%d timeout=%ds",
             self._settings.phoenix_endpoint, project,
@@ -194,7 +197,7 @@ class PhoenixClientWrapper:
         with self._client() as client:
             frame = self._with_retries(
                 lambda: client.spans.get_spans_dataframe(
-                    query=SpanQuery(),
+                    query=span_query,
                     start_time=start,
                     end_time=end,
                     limit=limit,
@@ -212,6 +215,43 @@ class PhoenixClientWrapper:
         )
         return frame
 
+    def fetch_root_spans(
+        self,
+        project: str,
+        start: datetime | None,
+        end: datetime | None,
+        limit: int,
+    ) -> pd.DataFrame:
+        """Turn roots only — Phoenix docs: ``parent_id is None`` (Sessions Input)."""
+        from phoenix.client.types.spans import SpanQuery
+
+        return self.fetch_spans(
+            project,
+            start,
+            end,
+            limit,
+            query=SpanQuery().where("parent_id is None"),
+        )
+
+    def fetch_tool_spans(
+        self,
+        project: str,
+        start: datetime | None,
+        end: datetime | None,
+        limit: int,
+    ) -> pd.DataFrame:
+        """TOOL/RETRIEVER spans for Rung 2 agent-behavior clustering."""
+        from phoenix.client.types.spans import SpanQuery
+
+        return self.fetch_spans(
+            project,
+            start,
+            end,
+            limit,
+            query=SpanQuery().where(
+                "span_kind == 'TOOL' or span_kind == 'RETRIEVER'"
+            ),
+        )
     def fetch_span_annotations(
         self, project: str, span_ids: Sequence[str]
     ) -> list[dict]:
@@ -264,6 +304,50 @@ class PhoenixClientWrapper:
                 )
                 sent += len(batch)
         return sent
+
+    def list_project_sessions(
+        self,
+        project: str,
+        *,
+        limit: int | None = None,
+    ) -> list[dict]:
+        """List Phoenix sessions for a project (server >= 13.5)."""
+        project = (project or "").strip()
+        if not project:
+            raise ValueError("list_project_sessions requires a project name")
+        with self._client() as client:
+            sessions = self._with_retries(
+                lambda: client.sessions.list(
+                    project_name=project,
+                    limit=limit,
+                    timeout=self._request_timeout(),
+                ),
+                "list project sessions",
+            )
+        return _as_dicts(sessions)
+
+    def fetch_session_turns(self, session_id: str) -> list[dict]:
+        """Ordered conversational turns for one session (one turn = one trace).
+
+        Each turn's ``input`` / ``output`` come from the trace root span
+        (``agent_request``), matching the Phoenix Sessions Turns UI.
+        """
+        session_id = (session_id or "").strip()
+        if not session_id:
+            return []
+        with self._client() as client:
+            turns = self._with_retries(
+                lambda: client.sessions.get_session_turns(
+                    session_id=session_id,
+                    timeout=self._request_timeout(),
+                ),
+                "fetch session turns",
+            )
+        if not turns:
+            return []
+        if isinstance(turns, list):
+            return [t for t in (_as_dict(row) for row in turns) if t]
+        return _as_dicts(turns)
 
 
 def _as_dicts(payload: object) -> list[dict]:

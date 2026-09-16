@@ -14,6 +14,7 @@ from .config import Settings
 from .models import ScrapeReport, SpanRecord
 from .phoenix_client import PhoenixClientWrapper
 from .storage import Store
+from .turns import span_records_from_session_turns
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,9 @@ def flatten_phoenix_row(
         latency_ms = (end_time - start_time).total_seconds() * 1000.0
 
     kind = _text(_first(flat, "attributes.openinference.span.kind", "span_kind"))
+    parent_id = _text(
+        _first(flat, "parent_id", "attributes.parent_id", "context.parent_id")
+    ) or None
     return SpanRecord(
         span_id=span_id,
         trace_id=trace_id,
@@ -70,6 +74,7 @@ def flatten_phoenix_row(
         tokens_total=_int(_first(flat, "attributes.llm.token_count.total")),
         cost_usd=_num(_first(flat, "attributes.llm.cost.total")),
         attributes=_attributes_dict(row),
+        parent_id=parent_id,
     )
 
 
@@ -115,6 +120,19 @@ def scrape_once(
     inserted = store.upsert_spans(records)
     duplicates = len(records) - inserted
 
+    turn_inserted = _enrich_session_turns(
+        store, client, settings.project, records
+    )
+    root_inserted = _enrich_root_spans(
+        store, client, settings, start, _ensure_utc(until)
+    )
+    if turn_inserted or root_inserted:
+        inserted += turn_inserted + root_inserted
+        logger.info(
+            "turn enrichment for %s: session_turns=%d root_query=%d",
+            settings.project, turn_inserted, root_inserted,
+        )
+
     logger.info(
         "scrape %s: pulled %d, inserted %d, duplicates %d, unreadable %d%s",
         settings.project, len(rows), inserted, duplicates, dropped,
@@ -143,6 +161,97 @@ def scrape_once(
         watermark_after=watermark_after,
         truncated=truncated,
     )
+
+
+def _enrich_session_turns(
+    store: Store,
+    client: PhoenixClientWrapper,
+    project: str,
+    records: list[SpanRecord],
+) -> int:
+    """Pull Phoenix session turns and upsert turn-root spans (agent_request IO).
+
+    Best-effort: session APIs need Phoenix >= 13.5; failures log and return 0 so
+    span scrape still succeeds. Offline analysis still derives turns from spans.
+    """
+    session_ids = sorted(
+        {
+            (r.session_id or "").strip()
+            for r in records
+            if (r.session_id or "").strip()
+        }
+    )
+    if not session_ids:
+        # Spans may omit session.id; fall back to listing recent project sessions.
+        try:
+            listed = client.list_project_sessions(project, limit=50)
+        except Exception as exc:  # noqa: BLE001
+            logger.info("session list skipped for %s: %s", project, exc)
+            return 0
+        for row in listed:
+            sid = str(row.get("session_id") or row.get("id") or "").strip()
+            if sid:
+                session_ids.append(sid)
+        session_ids = sorted(set(session_ids))
+    if not session_ids:
+        return 0
+
+    # Cap enrichment so a huge project cannot explode the scrape.
+    session_ids = session_ids[:100]
+    turn_records: list[SpanRecord] = []
+    for session_id in session_ids:
+        try:
+            turns = client.fetch_session_turns(session_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.info(
+                "session turns skipped for %s/%s: %s", project, session_id, exc
+            )
+            continue
+        if not turns:
+            continue
+        user_id = next(
+            (r.user_id for r in records if r.session_id == session_id and r.user_id),
+            None,
+        )
+        turn_records.extend(
+            span_records_from_session_turns(
+                turns, project=project, session_id=session_id, user_id=user_id
+            )
+        )
+    if not turn_records:
+        return 0
+    return store.upsert_spans_refresh(turn_records)
+
+
+def _enrich_root_spans(
+    store: Store,
+    client: PhoenixClientWrapper,
+    settings: Settings,
+    start: datetime | None,
+    end: datetime | None,
+) -> int:
+    """SpanQuery ``parent_id is None`` so turn roots survive truncated scrapes."""
+    try:
+        frame = client.fetch_root_spans(
+            settings.project, start, end, settings.scrape_limit
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.info("root span query skipped for %s: %s", settings.project, exc)
+        return 0
+    rows = _frame_rows(frame)
+    records: list[SpanRecord] = []
+    for row in rows:
+        record = flatten_phoenix_row(
+            row,
+            settings.project,
+            stage_keys=settings.stage_attr_keys(),
+            asset_keys=settings.asset_attr_keys(),
+        )
+        if record is not None:
+            records.append(record)
+    if not records:
+        return 0
+    return store.upsert_spans_refresh(records)
 
 
 def _fetch_window(
