@@ -210,10 +210,28 @@ class TestTriggerEndpoints:
                           "/runs", "/runs/delta"):
                 assert c.get(route).status_code == 401, route
 
-    def test_triggers_reject_cross_origin(self, client: TestClient) -> None:
+    def test_triggers_reject_cross_origin_when_api_key_set(self, tmp_path: Path) -> None:
+        # CSRF only locks down when an API key is configured (open LAN share otherwise).
+        settings = Settings(
+            _env_file=None,
+            db_path=tmp_path / "csrf.db",
+            export_dir=tmp_path / "exports",
+            skills_catalog=REPO_ROOT / "config" / "skills_catalog.yaml",
+            pricing_path=REPO_ROOT / "config" / "pricing.yaml",
+            api_key="s3cret",
+        ).model_copy(update={"phoenix_endpoint": None})
+        with TestClient(create_app(settings)) as c:
+            for route in ("/analyze/run", "/report/run"):
+                response = c.post(
+                    route,
+                    headers={"Origin": "http://evil.example", "X-API-Key": "s3cret"},
+                )
+                assert response.status_code == 403, route
+
+    def test_triggers_allow_cross_origin_when_open_lan(self, client: TestClient) -> None:
         for route in ("/analyze/run", "/report/run"):
             response = client.post(route, headers={"Origin": "http://evil.example"})
-            assert response.status_code == 403, route
+            assert response.status_code == 200, route
 
 
 class TestCoverageCli:

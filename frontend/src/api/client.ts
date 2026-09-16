@@ -1,7 +1,23 @@
-// Prefer 127.0.0.1 over localhost: on macOS localhost often resolves to ::1 first,
-// while the API typically binds IPv4-only (127.0.0.1:8000) → fetch fails with
-// "Failed to fetch" and ApiKeyGate incorrectly shows the key form.
-const BASE = import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8000";
+// Prefer 127.0.0.1 over localhost (IPv4-only API binds).
+// Unset VITE_API_BASE → http://<page-hostname>:8000 (works on LAN).
+
+const API_PORT = "8000";
+
+/** Resolve the API base URL for the current browser page. */
+export function resolveApiBase(
+  envBase: string | undefined = import.meta.env.VITE_API_BASE,
+  hostname: string | undefined = typeof window !== "undefined"
+    ? window.location.hostname
+    : undefined,
+): string {
+  const configured = (envBase || "").trim();
+  if (configured) return configured.replace(/\/$/, "");
+  const host = (hostname || "127.0.0.1").trim() || "127.0.0.1";
+  const apiHost = host === "localhost" ? "127.0.0.1" : host;
+  return `http://${apiHost}:${API_PORT}`;
+}
+
+const BASE = resolveApiBase();
 const KEY = "skillgap_api_key";
 const LEGACY_KEY = "pheonix_api_key";
 

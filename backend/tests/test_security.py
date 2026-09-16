@@ -66,17 +66,30 @@ class TestApiAuth:
 
 
 class TestCsrfGuard:
-    """Cross-origin POSTs must be rejected — /annotations/push writes to Phoenix."""
+    """Cross-origin POSTs: blocked when auth/CORS is locked down; open when no key."""
 
     def _client(self, settings) -> TestClient:
         return TestClient(create_app(settings))
 
-    def test_cross_origin_post_rejected(self, settings):
-        client = self._client(settings)
+    def test_cross_origin_post_rejected_when_api_key_set(self, settings):
+        locked = settings.model_copy(update={"api_key": "sekret"})
+        client = self._client(locked)
         for route in ("/annotations/pull", "/annotations/push", "/demo/seed"):
-            response = client.post(route, headers={"Origin": "http://evil.example"})
+            response = client.post(
+                route,
+                headers={"Origin": "http://evil.example", "X-API-Key": "sekret"},
+            )
             assert response.status_code == 403, route
             assert "Cross-origin" in response.json()["detail"]
+
+    def test_open_lan_allows_cross_origin_post(self, settings):
+        # No API key → open LAN share: colleagues hitting via hostname/IP must work.
+        client = self._client(settings)
+        response = client.post(
+            "/annotations/pull", headers={"Origin": "http://192.168.1.10:5173"}
+        )
+        # 503 (no Phoenix), not 403 — CSRF let the LAN origin through.
+        assert response.status_code == 503
 
     def test_same_origin_post_passes_the_guard(self, settings):
         client = self._client(settings)
@@ -88,10 +101,16 @@ class TestCsrfGuard:
 
 
 class TestServeGuard:
-    def test_refuses_public_bind_without_key(self, monkeypatch):
+    def test_allows_public_bind_without_key(self, monkeypatch, tmp_path):
+        import uvicorn
+
         monkeypatch.delenv("PHEONIX_API_KEY", raising=False)
-        result = CliRunner().invoke(cli_app, ["serve", "--host", "0.0.0.0"])
-        assert result.exit_code == 1
+        monkeypatch.setattr(uvicorn, "run", lambda *a, **k: None)
+        result = CliRunner().invoke(
+            cli_app, ["serve", "--host", "0.0.0.0", "--db", str(tmp_path / "s.db")]
+        )
+        assert result.exit_code == 0, result.output
+        assert "no PHEONIX_API_KEY" in result.output
 
     def test_serve_starts_the_background_job_worker(self, tmp_path, monkeypatch):
         import uvicorn

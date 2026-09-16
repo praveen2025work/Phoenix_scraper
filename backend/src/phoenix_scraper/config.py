@@ -21,13 +21,10 @@ class Settings(BaseSettings):
     ca_bundle: str = ""
     tls_verify: bool = True  # PHEONIX_TLS_VERIFY=false disables verification (last resort)
 
-    # Inbound auth for OUR API (distinct from phoenix_api_key, which is outbound):
-    # when set, every route except /health requires it via the X-API-Key header.
+    # Inbound API auth (X-API-Key). Empty = open access.
     api_key: str | None = None
 
-    # Origins (comma-separated) allowed to call the API cross-site — the Vite dev
-    # server in development, the deployed SPA host in production. Empty =
-    # same-origin only (today's behaviour).
+    # Comma-separated CORS origins. Empty + no api_key = allow any Origin.
     cors_origins: str = ""
 
     project: str = "default"

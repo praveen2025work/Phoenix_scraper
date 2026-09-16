@@ -11,7 +11,7 @@ It drives the capability + promotion-ladder loop against the headless
 
 ```bash
 npm install          # first run only
-npm run dev           # http://localhost:5173   (or `make ui` from the repo root)
+npm run dev           # http://0.0.0.0:5173 (LAN-reachable) — or `make ui`
 ```
 
 The dev server calls the backend at `http://localhost:8000`. Start it with
