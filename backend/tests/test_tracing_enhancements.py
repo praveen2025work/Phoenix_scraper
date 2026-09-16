@@ -3,19 +3,19 @@
 from datetime import UTC, datetime
 
 import pandas as pd
-import pytest
 
 from phoenix_scraper import annotations, ladder, outliers
 from phoenix_scraper.cluster import build_clusters
 from phoenix_scraper.config import Settings
 from phoenix_scraper.llm_messages import prefer_messages_io
 from phoenix_scraper.models import (
+    Candidate,
     Capability,
     CapabilityFilter,
-    Candidate,
     PromptCluster,
     SpanRecord,
 )
+from phoenix_scraper.prompt_shape import filter_deterministic_source_spans
 from phoenix_scraper.scraper import flatten_phoenix_row
 from phoenix_scraper.storage import Store
 from phoenix_scraper.tool_paths import (
@@ -23,8 +23,6 @@ from phoenix_scraper.tool_paths import (
     tool_path_cluster_frame,
     tool_path_signature,
 )
-from phoenix_scraper.prompt_shape import filter_deterministic_source_spans
-
 
 TS = datetime(2026, 8, 7, 12, 0, 0, tzinfo=UTC)
 

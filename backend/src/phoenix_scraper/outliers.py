@@ -193,7 +193,10 @@ def _turn_profiles(spans_df: pd.DataFrame) -> pd.DataFrame:
             if "tokens_total" in group.columns
             else 0
         )
-        sessions = group["session_id"].dropna() if "session_id" in group.columns else pd.Series(dtype=object)
+        if "session_id" in group.columns:
+            sessions = group["session_id"].dropna()
+        else:
+            sessions = pd.Series(dtype=object)
         rows.append(
             {
                 "trace_id": tid,
