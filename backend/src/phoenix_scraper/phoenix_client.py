@@ -170,6 +170,8 @@ class PhoenixClientWrapper:
         start: datetime | None,
         end: datetime | None,
         limit: int,
+        *,
+        query: object | None = None,
     ) -> pd.DataFrame:
         from phoenix.client.types.spans import SpanQuery
 
@@ -183,6 +185,7 @@ class PhoenixClientWrapper:
                 "or PHEONIX_PROJECT); refusing an unscoped /v1/spans call"
             )
 
+        span_query = query if query is not None else SpanQuery()
         logger.info(
             "Phoenix GET spans: endpoint=%s project=%s window=%s..%s limit=%d timeout=%ds",
             self._settings.phoenix_endpoint, project,
@@ -194,7 +197,7 @@ class PhoenixClientWrapper:
         with self._client() as client:
             frame = self._with_retries(
                 lambda: client.spans.get_spans_dataframe(
-                    query=SpanQuery(),
+                    query=span_query,
                     start_time=start,
                     end_time=end,
                     limit=limit,
@@ -212,6 +215,43 @@ class PhoenixClientWrapper:
         )
         return frame
 
+    def fetch_root_spans(
+        self,
+        project: str,
+        start: datetime | None,
+        end: datetime | None,
+        limit: int,
+    ) -> pd.DataFrame:
+        """Turn roots only — Phoenix docs: ``parent_id is None`` (Sessions Input)."""
+        from phoenix.client.types.spans import SpanQuery
+
+        return self.fetch_spans(
+            project,
+            start,
+            end,
+            limit,
+            query=SpanQuery().where("parent_id is None"),
+        )
+
+    def fetch_tool_spans(
+        self,
+        project: str,
+        start: datetime | None,
+        end: datetime | None,
+        limit: int,
+    ) -> pd.DataFrame:
+        """TOOL/RETRIEVER spans for Rung 2 agent-behavior clustering."""
+        from phoenix.client.types.spans import SpanQuery
+
+        return self.fetch_spans(
+            project,
+            start,
+            end,
+            limit,
+            query=SpanQuery().where(
+                "span_kind == 'TOOL' or span_kind == 'RETRIEVER'"
+            ),
+        )
     def fetch_span_annotations(
         self, project: str, span_ids: Sequence[str]
     ) -> list[dict]:

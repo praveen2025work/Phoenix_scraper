@@ -97,6 +97,12 @@ export interface JobProgressStats {
   n_covered?: number;
   n_rung1?: number;
   n_rung2?: number;
+  n_turns?: number;
+  avg_turn_ms?: number;
+  avg_thinking_ms?: number;
+  avg_tool_ms?: number;
+  pct_bottleneck_thinking?: number;
+  pct_bottleneck_tool?: number;
 }
 
 export interface JobDto {

@@ -44,6 +44,8 @@ class SpanRecord(_Frozen):
     tokens_total: int | None = None
     cost_usd: float | None = None
     attributes: dict[str, Any] = Field(default_factory=dict)
+    # Phoenix parent span id; None/empty ⇒ turn root (Sessions → agent_request).
+    parent_id: str | None = None
 
 
 class SessionRecord(_Frozen):

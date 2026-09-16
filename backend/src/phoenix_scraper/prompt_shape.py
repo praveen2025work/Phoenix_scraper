@@ -186,21 +186,29 @@ def filter_user_ask_spans(spans_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def filter_deterministic_source_spans(spans_df: pd.DataFrame) -> pd.DataFrame:
-    """Rows that belong on the skill→deterministic path."""
+    """Rows that belong on the skill→deterministic path (in-turn agent behavior).
+
+    Excludes Phoenix turn roots so user prompts stay on Rung 1 only.
+    """
     if spans_df is None or spans_df.empty:
         return spans_df if spans_df is not None else pd.DataFrame()
     if "input_text" not in spans_df.columns:
         return spans_df.iloc[0:0].copy()
-    kinds = (
-        spans_df["span_kind"]
-        if "span_kind" in spans_df.columns
-        else pd.Series(["UNKNOWN"] * len(spans_df), index=spans_df.index)
-    )
-    mask = [
-        is_deterministic_source_span(kind, text)
-        for kind, text in zip(kinds, spans_df["input_text"], strict=False)
-    ]
-    return spans_df.loc[mask].copy()
+
+    roots = turn_root_spans(spans_df)
+    root_ids = set()
+    if not roots.empty and "span_id" in roots.columns:
+        root_ids = {str(s) for s in roots["span_id"].tolist()}
+
+    keep: list[bool] = []
+    for i in range(len(spans_df)):
+        row = spans_df.iloc[i]
+        sid = str(row["span_id"]) if "span_id" in spans_df.columns else ""
+        if sid and sid in root_ids:
+            keep.append(False)
+            continue
+        keep.append(is_deterministic_source_span(row.get("span_kind"), row.get("input_text")))
+    return spans_df.loc[keep].copy()
 
 
 def expand_cluster_trace_members(

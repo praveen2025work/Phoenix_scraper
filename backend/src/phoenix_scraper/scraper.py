@@ -48,6 +48,9 @@ def flatten_phoenix_row(
         latency_ms = (end_time - start_time).total_seconds() * 1000.0
 
     kind = _text(_first(flat, "attributes.openinference.span.kind", "span_kind"))
+    parent_id = _text(
+        _first(flat, "parent_id", "attributes.parent_id", "context.parent_id")
+    ) or None
     return SpanRecord(
         span_id=span_id,
         trace_id=trace_id,
@@ -71,6 +74,7 @@ def flatten_phoenix_row(
         tokens_total=_int(_first(flat, "attributes.llm.token_count.total")),
         cost_usd=_num(_first(flat, "attributes.llm.cost.total")),
         attributes=_attributes_dict(row),
+        parent_id=parent_id,
     )
 
 
@@ -119,11 +123,14 @@ def scrape_once(
     turn_inserted = _enrich_session_turns(
         store, client, settings.project, records
     )
-    if turn_inserted:
-        inserted += turn_inserted
+    root_inserted = _enrich_root_spans(
+        store, client, settings, start, _ensure_utc(until)
+    )
+    if turn_inserted or root_inserted:
+        inserted += turn_inserted + root_inserted
         logger.info(
-            "session turns: upserted %d turn-root spans for %s",
-            turn_inserted, settings.project,
+            "turn enrichment for %s: session_turns=%d root_query=%d",
+            settings.project, turn_inserted, root_inserted,
         )
 
     logger.info(
@@ -213,7 +220,38 @@ def _enrich_session_turns(
         )
     if not turn_records:
         return 0
-    return store.upsert_spans(turn_records)
+    return store.upsert_spans_refresh(turn_records)
+
+
+def _enrich_root_spans(
+    store: Store,
+    client: PhoenixClientWrapper,
+    settings: Settings,
+    start: datetime | None,
+    end: datetime | None,
+) -> int:
+    """SpanQuery ``parent_id is None`` so turn roots survive truncated scrapes."""
+    try:
+        frame = client.fetch_root_spans(
+            settings.project, start, end, settings.scrape_limit
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.info("root span query skipped for %s: %s", settings.project, exc)
+        return 0
+    rows = _frame_rows(frame)
+    records: list[SpanRecord] = []
+    for row in rows:
+        record = flatten_phoenix_row(
+            row,
+            settings.project,
+            stage_keys=settings.stage_attr_keys(),
+            asset_keys=settings.asset_attr_keys(),
+        )
+        if record is not None:
+            records.append(record)
+    if not records:
+        return 0
+    return store.upsert_spans_refresh(records)
 
 
 def _fetch_window(

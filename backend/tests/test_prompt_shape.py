@@ -177,7 +177,10 @@ class TestSpanLaneSplit:
         asks = filter_user_ask_spans(df)
         dets = filter_deterministic_source_spans(df)
         assert list(asks["span_id"]) == ["u1"]
-        assert set(dets["span_id"]) == {"m1", "a1"}
+        # TOOL child stays on Rung 2; orphan Bedrock LLM on its own trace is the
+        # turn root and is excluded from both lanes (not a skill ask, not a tool).
+        assert set(dets["span_id"]) == {"m1"}
+        assert "a1" not in set(asks["span_id"]) | set(dets["span_id"])
 
     def test_expand_cluster_includes_same_trace(self) -> None:
         df = pd.DataFrame(

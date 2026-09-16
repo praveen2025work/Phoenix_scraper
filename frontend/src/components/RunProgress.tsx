@@ -33,11 +33,30 @@ function Stat({ label, value }: { label: string; value: number | string | undefi
   );
 }
 
+function formatMs(ms: number | undefined): string | undefined {
+  if (ms === undefined || ms === null || Number.isNaN(ms)) return undefined;
+  if (ms >= 60_000) return `${(ms / 60_000).toFixed(1)}m`;
+  if (ms >= 1000) return `${(ms / 1000).toFixed(1)}s`;
+  return `${Math.round(ms)}ms`;
+}
+
 function WipStats({ stats }: { stats: JobProgressStats | null | undefined }) {
   if (!stats) return null;
-  const items: { label: string; value: number | undefined }[] = [
+  const items: { label: string; value: number | string | undefined }[] = [
     { label: "spans in scope", value: stats.n_in_scope },
     { label: "users", value: stats.n_users },
+    { label: "turns", value: stats.n_turns },
+    { label: "avg turn", value: formatMs(stats.avg_turn_ms) },
+    { label: "avg thinking", value: formatMs(stats.avg_thinking_ms) },
+    { label: "avg tools/queries", value: formatMs(stats.avg_tool_ms) },
+    {
+      label: "bottleneck thinking %",
+      value: stats.pct_bottleneck_thinking,
+    },
+    {
+      label: "bottleneck tools %",
+      value: stats.pct_bottleneck_tool,
+    },
     { label: "user-ask patterns", value: stats.n_user_ask_clusters },
     { label: "tool / MCP patterns", value: stats.n_deterministic_clusters },
     { label: "skills matched", value: stats.n_matched },

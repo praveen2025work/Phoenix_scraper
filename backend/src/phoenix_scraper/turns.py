@@ -56,6 +56,26 @@ def turn_root_spans(spans_df: pd.DataFrame) -> pd.DataFrame:
 def _pick_root_row(group: pd.DataFrame) -> pd.Series | None:
     if group.empty:
         return None
+
+    # Phoenix docs: turn roots have parent_id is None.
+    if "parent_id" in group.columns:
+        parents = group["parent_id"]
+        is_root = parents.isna() | (parents.astype(str).str.strip() == "") | (
+            parents.astype(str).str.casefold().isin({"none", "nan", "null"})
+        )
+        rooted = group.loc[is_root]
+        if not rooted.empty:
+            # Prefer named agent_request among roots when several exist.
+            if "name" in rooted.columns:
+                named = rooted.loc[
+                    rooted["name"].fillna("").astype(str).str.casefold().isin(
+                        _TURN_ROOT_NAMES
+                    )
+                ]
+                if not named.empty:
+                    return named.iloc[0]
+            return rooted.iloc[0]
+
     names = (
         group["name"].fillna("").astype(str).str.casefold()
         if "name" in group.columns
@@ -185,6 +205,7 @@ def span_records_from_session_turns(
                     "pheonix.turn_source": "session_turns",
                     **{k: v for k, v in attrs.items() if isinstance(k, str)},
                 },
+                parent_id=None,
             )
         )
     return out

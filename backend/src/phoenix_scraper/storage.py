@@ -48,11 +48,14 @@ CREATE TABLE IF NOT EXISTS spans (
     tokens_completion INTEGER,
     tokens_total INTEGER,
     cost_usd REAL,
-    attributes TEXT NOT NULL DEFAULT '{}'
+    attributes TEXT NOT NULL DEFAULT '{}',
+    parent_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_spans_start ON spans (start_time);
 CREATE INDEX IF NOT EXISTS idx_spans_project_kind ON spans (project, span_kind);
 CREATE INDEX IF NOT EXISTS idx_spans_session ON spans (session_id);
+CREATE INDEX IF NOT EXISTS idx_spans_parent ON spans (parent_id);
+CREATE INDEX IF NOT EXISTS idx_spans_trace ON spans (trace_id);
 
 CREATE TABLE IF NOT EXISTS scrape_state (
     source TEXT PRIMARY KEY,
@@ -316,6 +319,7 @@ _ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("capability_jobs", "stats_json", "TEXT NOT NULL DEFAULT '{}'"),
     ("capability_runs", "skill_hashes_json", "TEXT NOT NULL DEFAULT '{}'"),
     ("capability_runs", "analytics_snapshot_json", "TEXT"),
+    ("spans", "parent_id", "TEXT"),
 )
 
 
@@ -360,15 +364,69 @@ class Store:
                 r.input_text, r.output_text, r.prompt_template,
                 r.tokens_prompt, r.tokens_completion, r.tokens_total, r.cost_usd,
                 json.dumps(r.attributes, default=str),
+                r.parent_id,
             )
             for r in records
         ]
         before = self._count("spans")
         self._conn.executemany(
-            "INSERT OR IGNORE INTO spans VALUES (" + ",".join(["?"] * 22) + ")", rows
+            "INSERT OR IGNORE INTO spans ("
+            "span_id, trace_id, session_id, project, name, span_kind, "
+            "start_time, end_time, latency_ms, status_code, model_name, user_id, "
+            "workflow_stage, asset_class, input_text, output_text, prompt_template, "
+            "tokens_prompt, tokens_completion, tokens_total, cost_usd, attributes, "
+            "parent_id"
+            ") VALUES (" + ",".join(["?"] * 23) + ")",
+            rows,
         )
         self._conn.commit()
         return self._count("spans") - before
+
+    def upsert_spans_refresh(self, records: Iterable[SpanRecord]) -> int:
+        """Insert or refresh span rows (used for session-turn root IO enrichment)."""
+        rows = [
+            (
+                r.span_id, r.trace_id, r.session_id, r.project, r.name, r.span_kind,
+                _iso(r.start_time), _iso(r.end_time), r.latency_ms, r.status_code,
+                r.model_name, r.user_id, r.workflow_stage, r.asset_class,
+                r.input_text, r.output_text, r.prompt_template,
+                r.tokens_prompt, r.tokens_completion, r.tokens_total, r.cost_usd,
+                json.dumps(r.attributes, default=str),
+                r.parent_id,
+            )
+            for r in records
+        ]
+        self._conn.executemany(
+            "INSERT INTO spans ("
+            "span_id, trace_id, session_id, project, name, span_kind, "
+            "start_time, end_time, latency_ms, status_code, model_name, user_id, "
+            "workflow_stage, asset_class, input_text, output_text, prompt_template, "
+            "tokens_prompt, tokens_completion, tokens_total, cost_usd, attributes, "
+            "parent_id"
+            ") VALUES (" + ",".join(["?"] * 23) + ") "
+            "ON CONFLICT(span_id) DO UPDATE SET "
+            "trace_id=excluded.trace_id, session_id=excluded.session_id, "
+            "project=excluded.project, name=excluded.name, "
+            "span_kind=excluded.span_kind, start_time=excluded.start_time, "
+            "end_time=excluded.end_time, latency_ms=excluded.latency_ms, "
+            "status_code=excluded.status_code, model_name=excluded.model_name, "
+            "user_id=excluded.user_id, workflow_stage=excluded.workflow_stage, "
+            "asset_class=excluded.asset_class, "
+            "input_text=CASE WHEN excluded.input_text != '' THEN excluded.input_text "
+            "ELSE spans.input_text END, "
+            "output_text=CASE WHEN excluded.output_text != '' THEN excluded.output_text "
+            "ELSE spans.output_text END, "
+            "prompt_template=excluded.prompt_template, "
+            "tokens_prompt=COALESCE(excluded.tokens_prompt, spans.tokens_prompt), "
+            "tokens_completion=COALESCE(excluded.tokens_completion, spans.tokens_completion), "
+            "tokens_total=COALESCE(excluded.tokens_total, spans.tokens_total), "
+            "cost_usd=COALESCE(excluded.cost_usd, spans.cost_usd), "
+            "attributes=excluded.attributes, "
+            "parent_id=COALESCE(excluded.parent_id, spans.parent_id)",
+            rows,
+        )
+        self._conn.commit()
+        return len(rows)
 
     def spans_frame(self, filters: QueryFilters | None = None) -> pd.DataFrame:
         f = filters or QueryFilters()

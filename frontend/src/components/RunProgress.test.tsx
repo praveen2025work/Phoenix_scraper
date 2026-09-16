@@ -33,13 +33,25 @@ describe("RunProgress", () => {
     expect(screen.getByText(/Work in progress/i)).toBeInTheDocument();
   });
 
-  it("hides WIP stats when none are present", () => {
+  it("shows turn latency breakdown when present", () => {
     render(
       <RunProgress
-        job={job({ stats: null, message: "Waiting for worker…" })}
+        job={job({
+          stats: {
+            n_turns: 9,
+            avg_turn_ms: 236000,
+            avg_thinking_ms: 180000,
+            avg_tool_ms: 40000,
+            pct_bottleneck_thinking: 66.7,
+            pct_bottleneck_tool: 33.3,
+          },
+        })}
         onBackToSetup={() => undefined}
       />,
     );
-    expect(screen.queryByTestId("run-progress-wip-stats")).not.toBeInTheDocument();
+    expect(screen.getByTestId("wip-stat-turns")).toHaveTextContent("9");
+    expect(screen.getByTestId("wip-stat-avg turn")).toHaveTextContent("3.9m");
+    expect(screen.getByTestId("wip-stat-avg thinking")).toHaveTextContent("3.0m");
+    expect(screen.getByTestId("wip-stat-avg tools/queries")).toHaveTextContent("40.0s");
   });
 });
